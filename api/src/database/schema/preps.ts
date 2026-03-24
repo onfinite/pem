@@ -3,6 +3,8 @@ import { pgTable, uuid, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { users } from './users';
 import { dumps } from './dumps';
+import { prepLogs } from './preps-logs';
+import { PrepStatus } from 'src/common/enums';
 
 export const preps = pgTable('preps', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -12,14 +14,16 @@ export const preps = pgTable('preps', {
     userId: uuid('user_id')
         .notNull()
         .references(() => users.id, { onDelete: 'cascade' }),
-    type: text('type').notNull(), // search | research | options | draft
-    status: text('status').notNull().default('pending'), // pending | processing | done | failed
-    result: jsonb('result'), // null until done
+    title: text('title').notNull(),
+    status: text('status').notNull().default(PrepStatus.PENDING),
+    result: jsonb('result'),
+
     createdAt: timestamp('created_at').defaultNow().notNull(),
-    completedAt: timestamp('completed_at'), // null until done
+    completedAt: timestamp('completed_at'),
 });
 
-export const prepsRelations = relations(preps, ({ one }) => ({
+export const prepsRelations = relations(preps, ({ one, many }) => ({
     dump: one(dumps, { fields: [preps.dumpId], references: [dumps.id] }),
     user: one(users, { fields: [preps.userId], references: [users.id] }),
+    logs: many(prepLogs),
 }));
