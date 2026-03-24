@@ -4,7 +4,6 @@ import { relations } from 'drizzle-orm';
 import { users } from './users';
 import { dumps } from './dumps';
 import { prepLogs } from './preps-logs';
-import { PrepStatus } from 'src/common/enums';
 
 export const preps = pgTable('preps', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -15,7 +14,7 @@ export const preps = pgTable('preps', {
         .notNull()
         .references(() => users.id, { onDelete: 'cascade' }),
     title: text('title').notNull(),
-    status: text('status').notNull().default(PrepStatus.PENDING),
+    status: text('status').notNull().default('pending'),
     result: jsonb('result'),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
