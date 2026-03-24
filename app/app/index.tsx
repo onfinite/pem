@@ -1,24 +1,38 @@
-import { button, layout, text } from "@/styles/theme";
-import { Pressable, Text, View } from "react-native";
+import PemButton from "@/components/PemButton";
+import PemScreen from "@/components/PemScreen";
+import PemText from "@/components/PemText";
+import { space } from "@/constants/typography";
 
 export default function Index() {
   return (
-    <View style={layout.center}>
-      <Text style={text.headline}>Pem</Text>
-      <Text style={[text.bodyMuted, { marginTop: 8 }]}>
+    <PemScreen variant="center">
+      <PemText variant="headline">Pem</PemText>
+      <PemText variant="bodyMuted" style={{ marginTop: 8 }}>
         Edit app/index.tsx to edit this screen.
-      </Text>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => { }}
-        style={({ pressed }) => [
-          button.primary,
-          { marginTop: 24 },
-          pressed && button.primaryPressed,
-        ]}
+      </PemText>
+      <PemButton
+        onPress={() => {}}
+        style={{
+          marginTop: 24,
+          paddingVertical: space[3],
+          paddingHorizontal: space[6],
+          minWidth: 200,
+        }}
       >
-        <Text style={button.primaryLabel}>Get started</Text>
-      </Pressable>
-    </View>
+        Get started
+      </PemButton>
+      <PemButton
+        variant="secondary"
+        onPress={() => {}}
+        style={{
+          marginTop: 12,
+          paddingVertical: space[3],
+          paddingHorizontal: space[6],
+          minWidth: 200,
+        }}
+      >
+        Learn more
+      </PemButton>
+    </PemScreen>
   );
 }

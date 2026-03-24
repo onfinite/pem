@@ -1,24 +1,30 @@
-import { StyleSheet } from "react-native";
+import { pemAmber, textPrimary, textSecondary } from "@/constants/theme";
+import { fontFamily, fontSize, lh, lineHeight } from "@/constants/typography";
+import type { ReactNode } from "react";
 import {
-  neutral,
-  pageBackground,
-  pemAmber,
-  textPrimary,
-  textSecondary,
-} from "@/constants/theme";
-import {
-  fontFamily,
-  fontSize,
-  lineHeight,
-  radii,
-  space,
-} from "@/constants/typography";
+  StyleSheet,
+  Text,
+  type StyleProp,
+  type TextProps,
+  type TextStyle,
+} from "react-native";
 
-function lh(size: number, ratio: number) {
-  return Math.round(size * ratio);
-}
+export const textVariants = [
+  "display",
+  "headline",
+  "title",
+  "titleLarge",
+  "body",
+  "bodyMuted",
+  "label",
+  "caption",
+  "brandItalic",
+  "link",
+] as const;
 
-export const text = StyleSheet.create({
+export type PemTextVariant = (typeof textVariants)[number];
+
+const styles = StyleSheet.create({
   display: {
     fontFamily: fontFamily.display.bold,
     fontSize: fontSize.display,
@@ -70,7 +76,6 @@ export const text = StyleSheet.create({
     lineHeight: lh(fontSize.xs, lineHeight.normal),
     color: textSecondary,
   },
-  /** Italic display accent — pair with brand amber for highlights */
   brandItalic: {
     fontFamily: fontFamily.display.italic,
     fontSize: fontSize.xl,
@@ -85,51 +90,21 @@ export const text = StyleSheet.create({
   },
 });
 
-export const layout = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: pageBackground,
-  },
-  screenPadded: {
-    flex: 1,
-    backgroundColor: pageBackground,
-    paddingHorizontal: space[4],
-    paddingVertical: space[4],
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: pageBackground,
-  },
-});
+export type PemTextProps = Omit<TextProps, "style"> & {
+  variant?: PemTextVariant;
+  style?: StyleProp<TextStyle>;
+  children?: ReactNode;
+};
 
-export const surfaces = StyleSheet.create({
-  /** Elevated surface — warm white, not full-page cream */
-  card: {
-    backgroundColor: neutral.white,
-    borderRadius: radii.md,
-    padding: space[4],
-  },
-});
-
-export const button = StyleSheet.create({
-  primary: {
-    backgroundColor: pemAmber,
-    paddingVertical: space[3],
-    paddingHorizontal: space[6],
-    borderRadius: radii.md,
-    minWidth: 200,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryPressed: {
-    opacity: 0.88,
-  },
-  primaryLabel: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.normal),
-    color: neutral.white,
-  },
-});
+export default function PemText({
+  variant = "body",
+  style,
+  children,
+  ...rest
+}: PemTextProps) {
+  return (
+    <Text style={[styles[variant], style]} {...rest}>
+      {children}
+    </Text>
+  );
+}

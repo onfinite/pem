@@ -41,6 +41,11 @@ export const lineHeight = {
   relaxed: 1.45,
 } as const;
 
+/** Line height from font size × ratio (rounded). */
+export function lh(size: number, ratio: number) {
+  return Math.round(size * ratio);
+}
+
 /** 4px grid */
 export const space = {
   0: 0,
