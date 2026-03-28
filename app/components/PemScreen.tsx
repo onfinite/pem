@@ -1,7 +1,15 @@
 import { pageBackground } from "@/constants/theme";
 import { space } from "@/constants/typography";
 import type { ReactNode } from "react";
-import { StyleSheet, View, type StyleProp, type ViewProps, type ViewStyle } from "react-native";
+import {
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewProps,
+  type ViewStyle,
+} from "react-native";
+
+export type PemScreenVariant = "screen" | "padded" | "center";
 
 const styles = StyleSheet.create({
   screen: {
@@ -22,8 +30,6 @@ const styles = StyleSheet.create({
   },
 });
 
-export type PemScreenVariant = "screen" | "padded" | "center";
-
 type PemScreenProps = Omit<ViewProps, "style"> & {
   variant?: PemScreenVariant;
   style?: StyleProp<ViewStyle>;
@@ -36,15 +42,8 @@ export default function PemScreen({
   children,
   ...rest
 }: PemScreenProps) {
-  const base =
-    variant === "padded"
-      ? styles.padded
-      : variant === "center"
-        ? styles.center
-        : styles.screen;
-
   return (
-    <View style={[base, style]} {...rest}>
+    <View style={[styles[variant], style]} {...rest}>
       {children}
     </View>
   );
