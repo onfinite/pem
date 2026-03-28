@@ -1,7 +1,7 @@
 [project]
-name = "api"
+name = "pem-api"
 version = "0.1.0"
-description = "Add your description here"
+description = "Pem API"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "arq>=0.27.0",
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.135.2",
+    "psycopg2-binary>=2.9.11",
     "pydantic-ai>=1.73.0",
     "python-dotenv>=1.2.2",
     "redis>=5.3.1",
