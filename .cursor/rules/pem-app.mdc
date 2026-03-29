@@ -1,0 +1,21 @@
+---
+description: Expo app — routing, imports, UI tokens, and RN patterns
+globs: app/**/*
+alwaysApply: false
+---
+
+# Pem mobile app (`app/`)
+
+**Entry:** `main` is `expo-router/entry`; routes live under `app/app/` (e.g. `_layout.tsx`, `index.tsx`). Use **Stack** or other layouts from `expo-router` as in `app/app/_layout.tsx`.
+
+**Imports:** Path alias **`@/` → repo root of the app package** (see `app/tsconfig.json` and `app/babel.config.js` module-resolver). Example: `import PemButton from "@/components/PemButton"`.
+
+**UI system:** Reuse primitives **`PemScreen`**, **`PemText`**, **`PemButton`** before adding one-off layout/text/button code. Brand layout and copy live in **`constants/theme.ts`** (warm amber + neutrals; page background `#faf8f4`, not pure white) and **`constants/typography.ts`** (DM Sans + Fraunces scale, `space` 4px grid, `lh()` for line heights).
+
+**Styling:** Prefer **`StyleSheet.create`** and token imports from `@/constants/*`. Keep **`accessibilityRole`** (and related) on interactive elements where applicable.
+
+**Splash / fonts:** Root layout loads fonts via `useFonts(pemFontSources)` and coordinates splash hide — follow the same pattern when changing startup flow.
+
+**Maintenance:** When you add packages, tooling, or new UI/navigation patterns under `app/`, update **`pem-app.mdc`** (and **`pem-project.mdc`** if stack-wide), and **repo-root `README.md`** if humans need new setup or stack notes. See `pem-project.mdc` → *`README.md` as source of truth* and *Keeping `.cursor/rules` in sync*.
+
+**Collaboration:** See `pem-project.mdc` → *Collaboration* (plan first, then code together).

@@ -1,0 +1,23 @@
+---
+description: Pem monorepo — layout, stack, and cross-cutting facts
+alwaysApply: true
+---
+
+# Pem project
+
+**Layout:** `app/` = mobile client, `api/` = HTTP API. Treat them as separate packages; do not assume shared runtime code between them.
+
+**Stacks (authoritative):**
+
+| Area | Stack |
+|------|--------|
+| Mobile | **Expo ~54**, **React 19**, **React Native**, **expo-router** (file-based routes), **TypeScript** (strict), **New Architecture** + **React Compiler** (see `app/app.json` experiments) |
+| API | **Python ≥3.13**, **FastAPI**, **SQLModel** (SQLAlchemy), **Alembic** migrations, **PostgreSQL** (`asyncpg` / sync URL in settings), **Redis**, **arq** (async jobs), **structlog**, **slowapi** (rate limits), **Sentry** |
+
+**Conventions:** Prefer small, focused changes; match existing naming (`Pem*` UI primitives, `app.` Python package). Run `expo lint` in `app/` and follow existing ESLint/Expo config when editing TS.
+
+**`README.md` as source of truth:** The repo-root **`README.md`** is canonical **human-facing documentation** (stack, layout, how to run, env, contributor workflow). Whenever a change affects what contributors need to know—**new packages**, **dependencies**, **patterns**, **setup**, **commands**, or **folder roles**—**update `README.md` in the same effort** so it stays accurate. Do not leave README stale while code or `.mdc` files move ahead.
+
+**Keeping `.cursor/rules` in sync:** Whenever you add **new packages**, **dependencies**, or **new patterns** (architecture, folders, tooling, env vars), **update the relevant `.mdc` files in the same effort** so agents and humans stay aligned: `pem-project.mdc` for stack and repo-wide facts; `pem-app.mdc` for Expo/RN/UI conventions; `pem-api.mdc` for backend conventions. Treat rule updates as part of the change, not an optional afterthought. **README and `.mdc` updates should land together** when the same facts change.
+
+**Collaboration:** **Share your plan first** (goal, files you will touch, tradeoffs) and **get explicit agreement before writing substantial code**, unless the user has already approved the approach or the task is trivial (typo, one-liner). The intent is to **code together** with the user steering—not to sprint ahead solo.

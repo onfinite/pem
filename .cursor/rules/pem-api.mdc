@@ -1,0 +1,25 @@
+---
+description: FastAPI backend — package layout, DB, routers, and middleware
+globs: api/**/*
+alwaysApply: false
+---
+
+# Pem API (`api/`)
+
+**Package:** Application code under **`api/app/`** with imports like `from app.core.config import settings`. Run/tests use project root on `PYTHONPATH` as your tooling expects (e.g. `uv run` from `api/`).
+
+**App factory:** `app/main.py` builds **FastAPI** with optional docs in non-prod, **`lifespan`** for startup/shutdown, middleware order (correlation ID, security headers, request size, CORS), **slowapi** on `app.state.limiter`, and **`include_router(router)`** from `app.routers`.
+
+**Config:** **`app/core/config.py`** — `pydantic-settings` `Settings` from env (`.env`): `database_url`, `database_url_sync`, `redis_url`, `env`, CORS, rate limit, etc.
+
+**Logging / errors:** **`app/core/bootstrap.py`** configures **structlog** (JSON in prod, console in dev) and **Sentry** in prod. **`CorrelationIdMiddleware`** binds `request_id` for structlog and sets `X-Request-ID`.
+
+**Data:** **`SQLModel`** models in `app/models/`; sync sessions via **`get_session`** in `app/core/database.py` (**`create_engine`** + `Session` context). Schema changes: **Alembic** under `api/migrations/`.
+
+**Routers:** One module per area (e.g. `user_routes.py`) exporting `router = APIRouter(prefix=..., tags=[...])`; aggregate in **`app/routers/__init__.py`** with `include_router`. Add new endpoints to an existing router or new module + register.
+
+**Rate limits:** Use **`slowapi`** / `limiter` from `app/middlewares/limiter.py` where endpoints need limits (follow existing patterns).
+
+**Maintenance:** When you add packages, env vars, or new API/data patterns under `api/`, update **`pem-api.mdc`** (and **`pem-project.mdc`** if stack-wide), and **repo-root `README.md`** if humans need new setup, env, or stack notes. See `pem-project.mdc` → *`README.md` as source of truth* and *Keeping `.cursor/rules` in sync*.
+
+**Collaboration:** See `pem-project.mdc` → *Collaboration* (plan first, then code together).
