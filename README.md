@@ -2,11 +2,71 @@
 
 Monorepo for the Pem product: a mobile client and a backend API. The **`app/`** and **`api/`** trees are separate packages (no shared runtime code between them).
 
+**Brand & color reference:** see **`brand/pem-brand.html`** (open in a browser) and **`brand/README.md`**. The mobile app maps these to `app/constants/theme.ts` and `app/constants/typography.ts`; when in doubt about palette, type, or voice, check the brand kit first.
+
+## What is Pem?
+
+**Pem is your prep work** — not a chatbot you prompt, not a task manager you maintain, not another AI tool that waits for you to show up.
+
+You have a busy mind. Thoughts pile up: the birthday you forgot, the email you’ve been dreading, the idea from the shower, the thing you’ve meant to look into for three weeks. You often can’t act *right now* — no time, energy, or full information — but you can’t let it go either. That unresolved loop is the gap Pem lives in.
+
+**Dump it** — voice or text, anytime (driving, in bed, between meetings). No structure, no prompting. Pem catches it all.
+
+**Pem preps** — it classifies each dump, figures out what work is needed, and fans out to parallel agents (web search, deep research, options with links and prices, drafts you can send). You don’t babysit.
+
+**You act** — come back when you’re ready. Your **preps** are waiting: summarized research, gift options, drafts to review. Mark done. The task is always **yours**; Pem doesn’t send, buy, call, or decide. It does the **thinking in the middle** so acting takes seconds, not hours.
+
+**One-liner (slide or social):** Busy mind? Dump it to Pem. It researches, surfaces options, and drafts messages while you live your life. Come back to preps ready to act on. The task is yours — the thinking doesn’t have to be.
+
+### How it works (three steps)
+
+1. **You dump** — Voice or text, anywhere. No structure required. Pem listens and catches everything, half-formed thoughts included.
+2. **Pem preps** — Pem classifies, routes work to agents in parallel, and delivers results as they’re ready. No babysitting.
+3. **You act. Mark done.** — Come back when you want. Tap through options, read summaries, review drafts. Mark complete. Brain empty.
+
+### What Pem prepares (MVP)
+
+Every dump is classified into one or more prep types (the list may grow; MVP focuses on these four):
+
+| Type | What it does | Example |
+|------|----------------|--------|
+| **Web search** | Quick answers, current info, prices, reviews | “Is this Denver neighborhood safe for families?” |
+| **Deep research** | Multiple sources → one clear answer | “Should I take this job offer? Here’s what I know…” |
+| **Find options** | Real picks with links, prices, context; you choose | “Gift for mom — gardening, budget $60.” |
+| **Draft it** | Email or text drafted for your review; you send | “Write my landlord about the leak.” |
+
+**Principle:** Pem prepares; **you** execute. No autonomous sends, purchases, or decisions on your behalf.
+
+### Mobile app navigation (direction)
+
+Expo Router groups can separate **concerns** without requiring **tabs**:
+
+| Area | Role | Typical navigator |
+|------|------|-------------------|
+| **Public** | Marketing / onboarding slider, product story, links into auth | **Stack** (`(public)/`) — no session required |
+| **Auth** | OAuth on `/welcome` (Google, Apple) — no separate auth routes | Clerk `useSSO` |
+| **App (signed-in)** | Home: prep cards, entry to **record** flow, settings (e.g. header icon) | **Stack** (e.g. `(app)/`) |
+
+**Stack vs tabs for Pem:** Your signed-in “hub” (cards + record + settings affordance) is **one home surface** with **pushed screens** for: multi-step **record**, **prep detail**, maybe **settings**. That is **stack-first**. **Tabs** are optional later if you add peer sections (e.g. Home | Library | Account) with equal weight — not required for the MVP flow you described.
+
+**Splash and fonts** stay in the **root** `_layout.tsx` once (global cold start). **ClerkProvider** wraps routes that need auth; use **signed-in vs signed-out** redirects to send users to `(public)` vs `(app)` without duplicating splash inside each group.
+
+---
+
 ## `app/` — mobile client
 
 - **Expo** (React Native), **expo-router** (file-based routes under `app/app/`)
 - **TypeScript** (strict), **React 19**, **New Architecture** + **React Compiler** (see `app/app.json`)
 - UI primitives (`PemScreen`, `PemText`, `PemButton`), tokens in `app/constants/theme.ts` and `app/constants/typography.ts`
+- **Clerk** (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in `app/.env`) — root layout: splash + fonts, then `ClerkProvider` + `<Slot />`. Sign-in is **OAuth only** on `/welcome` (**Google** + **Apple**) via `useSSO` from `@clerk/expo` with **`expo-auth-session`** + **`expo-web-browser`**. In the [Clerk dashboard](https://dashboard.clerk.com), enable **Google** and **Apple** SSO providers and add the redirect URL your app uses (see Clerk’s Expo / OAuth docs).
+
+**Routes (file-based under `app/app/`):**
+
+| Path | Group | Notes |
+|------|--------|--------|
+| `/` | `index.tsx` | Redirects to `/home` if signed in, else `/welcome` |
+| `/welcome` | `(public)/welcome.tsx` | Centered marketing + **Continue with Google** / **Continue with Apple** |
+| `/home` | `(app)/home.tsx` | Signed-in hub; `(app)/_layout.tsx` redirects guests to `/welcome` |
 
 **Develop**
 

@@ -5,6 +5,10 @@ alwaysApply: true
 
 # Pem project
 
+**Product (Pem):** A mobile product for **busy minds** — users **dump** thoughts (voice/text); Pem **preps** (search, research, options, drafts) in parallel; users **come back** to **preps** ready to act on and mark done. Pem does the **middle work** between “I need to deal with this” and “I’m ready” — **not** a chatbot to babysit or a task manager to maintain; **you** always perform the final action (send, buy, decide). Full product story, prep types table, and navigation direction: **repo `README.md`** (*What is Pem?*).
+
+**Brand & color:** For **palette, typography, logo usage, voice** when unsure, read **`brand/pem-brand.html`** in the repo (browser) and **`brand/README.md`**. Implementations should stay aligned with **`app/constants/theme.ts`** and **`app/constants/typography.ts`**.
+
 **Layout:** `app/` = mobile client, `api/` = HTTP API. Treat them as separate packages; do not assume shared runtime code between them.
 
 **Stacks (authoritative):**

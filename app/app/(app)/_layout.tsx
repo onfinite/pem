@@ -1,11 +1,8 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 
-/**
- * Entry: send signed-in users to the app hub, others to public marketing.
- */
-export default function Index() {
+export default function AppLayout() {
   const { isLoaded, isSignedIn } = useAuth();
 
   if (!isLoaded) {
@@ -16,9 +13,9 @@ export default function Index() {
     );
   }
 
-  if (isSignedIn) {
-    return <Redirect href="/home" />;
+  if (!isSignedIn) {
+    return <Redirect href="/welcome" />;
   }
 
-  return <Redirect href="/welcome" />;
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

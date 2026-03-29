@@ -97,6 +97,7 @@ type PemButtonProps = {
   size?: PemButtonSize;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  disabled?: boolean;
 };
 
 export default function PemButton({
@@ -106,6 +107,7 @@ export default function PemButton({
   size = "md",
   style,
   textStyle,
+  disabled = false,
 }: PemButtonProps) {
   const def = variantDefs[variant];
   const sizeDef = sizeDefs[size];
@@ -129,12 +131,15 @@ export default function PemButton({
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onPress}
+      accessibilityState={{ disabled }}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       style={({ pressed }) => [
         styles.chrome,
         sizeDef.container,
         def.container,
-        pressed && def.pressed,
+        pressed && !disabled && def.pressed,
+        disabled && { opacity: 0.45 },
         style,
       ]}
     >

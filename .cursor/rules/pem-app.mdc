@@ -6,7 +6,9 @@ alwaysApply: false
 
 # Pem mobile app (`app/`)
 
-**Entry:** `main` is `expo-router/entry`; routes live under `app/app/` (e.g. `_layout.tsx`, `index.tsx`). Use **Stack** or other layouts from `expo-router` as in `app/app/_layout.tsx`.
+**Product context:** Pem = **dump → prep → act**. UI should support quick capture, surfacing **preps** (cards, detail), and **record** flows without feeling like a generic chat or maintenance-heavy task list. Voice of brand: warm, clear, respectful of cognitive load — see **repo `README.md`** (*What is Pem?*). **Colors, type, and tone:** **`brand/pem-brand.html`** + **`app/constants/theme.ts`** / **`typography.ts`**.
+
+**Entry:** `main` is `expo-router/entry`; routes live under `app/app/`. **Root** `_layout.tsx`: splash + fonts, then **`ClerkProvider` + `<Slot />`**. **`index.tsx`** at `/` redirects to `/welcome` (signed out) or `/home` (signed in). Groups: **`(public)/`** (`/welcome` — OAuth Google/Apple via **`useSSO`**, **`expo-auth-session`**, **`expo-web-browser`**), **`(app)/`** (`/home` + layout guard). Nested layouts use **Stack** where needed. **Stack-first** for record/prep flows; **tabs** only if you add peer main sections.
 
 **Imports:** Path alias **`@/` → repo root of the app package** (see `app/tsconfig.json` and `app/babel.config.js` module-resolver). Example: `import PemButton from "@/components/PemButton"`.
 

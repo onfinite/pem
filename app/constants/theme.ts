@@ -60,6 +60,12 @@ export const textPrimary = neutral[700];
 export const textSecondary = neutral[500];
 export const pageBackground = neutral[50];
 
+/** Brand kit page surface (`pem-brand.html` — slightly cooler than cream) */
+export const surfacePage = "#f7f5f1" as const;
+
+/** Card / sheet on cream pages */
+export const cardBackground = neutral.white;
+
 export const colors = {
   pemAmber,
   primary: pemAmber,
