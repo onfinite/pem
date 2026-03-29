@@ -20,7 +20,13 @@ async def lifespan(app: FastAPI):
     # shutdown hooks go here
 
 
-app = FastAPI(title="PEM API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="PEM API",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.env != "prod" else None,
+    redoc_url="/redoc" if settings.env != "prod" else None,
+)
 
 app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)

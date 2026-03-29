@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, max_bytes: int = 1_000_000):  # 1MB default
+    def __init__(self, app, max_bytes: int = 1_000_000):
         super().__init__(app)
         self.max_bytes = max_bytes
 

@@ -1,5 +1,5 @@
 import uuid
-from h11 import Request
+from fastapi import Request
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 
