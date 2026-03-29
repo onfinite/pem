@@ -1,0 +1,17 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main amber circle filling full canvas -->
+  <circle cx="512" cy="512" r="512" fill="#e8763a"/>
+  <!-- Inner highlight ring -->
+  <circle cx="512" cy="512" r="512" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="3"/>
+  <!-- P letter -->
+  <text
+    x="512"
+    y="660"
+    text-anchor="middle"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="480"
+    font-weight="300"
+    fill="#ffffff"
+    opacity="1"
+  >P</text>
+</svg>
