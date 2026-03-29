@@ -6,7 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.core.config import settings
-import app.core.registry  # noqa
+import app.models  # noqa
 from sqlmodel import SQLModel
 import sqlmodel.sql.sqltypes
 
