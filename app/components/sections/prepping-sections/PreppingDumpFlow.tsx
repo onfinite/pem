@@ -28,13 +28,6 @@ export default function PreppingDumpFlow() {
         </PemText>
         <PreppingParallelRows />
       </View>
-
-      <View style={[styles.reassure, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
-        <Text style={[styles.reassureLine, { color: colors.textPrimary }]}>
-          Leave anytime — finished preps show up in{" "}
-          <Text style={{ fontFamily: fontFamily.sans.semibold }}>Preps</Text>. Nothing sends without you.
-        </Text>
-      </View>
     </View>
   );
 }

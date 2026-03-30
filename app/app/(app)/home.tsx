@@ -41,7 +41,7 @@ export default function HomeScreen() {
       ? {
           title: "Preps",
           sub: hasPreps
-            ? "Prepared for you — open a prep to review. Nothing sends without you."
+            ? "Prepared for you — open a prep to review."
             : "When you have preps, they’ll show up here as cards.",
         }
       : tab === "prepping"
