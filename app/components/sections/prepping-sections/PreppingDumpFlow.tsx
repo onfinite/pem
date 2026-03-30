@@ -3,7 +3,7 @@ import { PREPPING_FLOW_MAX_WIDTH } from "@/constants/layout";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { Check } from "lucide-react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import PreppingParallelRows from "./PreppingParallelRows";
 
 /** Acknowledgement → in-flight rows → short reassurance (CTA lives on screen footer). */
@@ -18,13 +18,13 @@ export default function PreppingDumpFlow() {
         </View>
         <PemText style={[styles.headline, { color: colors.textPrimary }]}>We got it.</PemText>
         <PemText variant="body" style={[styles.sub, { color: colors.textSecondary }]}>
-          Searching, drafting, and lining up options. Nothing is final until you open a card.
+          Pem&apos;s on it — search, drafts, and options. Nothing&apos;s final until you open a prep.
         </PemText>
       </View>
 
       <View style={styles.listSection}>
         <PemText variant="bodyMuted" style={[styles.listLabel, { color: colors.textSecondary }]}>
-          In progress
+          In flight
         </PemText>
         <PreppingParallelRows />
       </View>
@@ -78,18 +78,5 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     textAlign: "center",
     width: "100%",
-  },
-  reassure: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: space[4],
-    width: "100%",
-    alignSelf: "stretch",
-  },
-  reassureLine: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.sm,
-    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
-    textAlign: "center",
   },
 });

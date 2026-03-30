@@ -36,7 +36,7 @@ export default function WelcomeScreen() {
         </PemText>
         <PemText variant="bodyMuted" style={styles.heroBody}>
           Dump voice or text. Pem researches, drafts, and finds your options while you live your
-          life. Come back to preps ready to act on.
+          life. Come back when your preps are ready — you act in seconds.
         </PemText>
         <View style={styles.dots} accessibilityLabel="Onboarding steps">
           <View style={[styles.dotActive, { backgroundColor: pemAmber }]} />

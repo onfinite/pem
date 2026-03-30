@@ -31,7 +31,7 @@ export default function DumpMainStage({ bottomMode, pemAmber, waveInactive }: Pr
         <DumpVoiceWaveform pemAmber={pemAmber} waveInactive={waveInactive} />
       ) : (
         <PemText variant="bodyMuted" style={[styles.centerText, styles.typeHint]}>
-          Type everything on your mind — Pem will sort it out.
+          Get it all down — Pem figures out what each piece needs.
         </PemText>
       )}
     </View>

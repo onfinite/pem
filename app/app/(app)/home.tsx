@@ -41,17 +41,17 @@ export default function HomeScreen() {
       ? {
           title: "Preps",
           sub: hasPreps
-            ? "Prepared for you — open a prep to review."
-            : "When you have preps, they’ll show up here as cards.",
+            ? "Open when you’re ready — nothing goes out until you do."
+            : "Dump voice or text first. Preps land here when they’re ready to open.",
         }
       : tab === "prepping"
         ? {
             title: "Prepping",
-            sub: "Same work you see after a dump — parallel preps in flight until they land in Ready.",
+            sub: "What Pem is still working on — it’ll move to Ready when it’s done.",
           }
         : {
             title: "Archived",
-            sub: "Finished or dismissed preps stay here for your reference.",
+            sub: "Finished or dismissed — still here if you need to look back.",
           };
 
   return (
