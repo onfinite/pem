@@ -1,0 +1,1103 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pem — Your prep work.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200;1,9..144,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --cream:      #faf8f4;
+      --warm:       #f4f1eb;
+      --border:     #e8e2d8;
+      --border2:    #d8d0c4;
+      --text:       #1c1a16;
+      --text2:      #6b6560;
+      --muted:      #b8b0a4;
+      --amber:      #e8763a;
+      --amber-dark: #c45e22;
+      --amber-bg:   #fdf2ea;
+      --amber-b:    #f4d4bb;
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--cream);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ══════════════════════════════════════
+       HERO
+    ══════════════════════════════════════ */
+    .hero {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      background: var(--cream);
+    }
+
+    .hero-left {
+      padding: 100px 64px 100px 80px;
+      display: flex; flex-direction: column;
+      justify-content: center; position: relative;
+    }
+
+    .hero-kicker {
+      font-size: 11px; font-weight: 500; letter-spacing: 0.2em;
+      color: var(--muted); text-transform: uppercase; margin-bottom: 28px;
+    }
+
+    .hero-h {
+      font-family: 'Fraunces', serif; font-weight: 200;
+      font-size: clamp(40px, 4.6vw, 64px);
+      line-height: 1.06; letter-spacing: -0.015em;
+      color: var(--text); margin-bottom: 12px;
+    }
+    .hero-h em { font-style: italic; color: var(--amber); }
+
+    .hero-slogan {
+      font-family: 'Fraunces', serif; font-style: italic; font-weight: 200;
+      font-size: clamp(16px, 2vw, 22px);
+      color: var(--muted); margin-bottom: 28px;
+    }
+
+    .hero-sub {
+      font-size: 16px; font-weight: 300; color: var(--text2);
+      line-height: 1.75; max-width: 380px; margin-bottom: 40px;
+    }
+
+    /* step indicators */
+    .step-indicators {
+      display: flex; align-items: center; gap: 0;
+      margin-bottom: 40px;
+    }
+    .step-ind {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; border-radius: 8px;
+      cursor: pointer; transition: background .2s;
+    }
+    .step-ind:hover { background: var(--amber-bg); }
+    .step-ind.active { background: var(--amber-bg); }
+    .step-ind-num {
+      width: 24px; height: 24px; border-radius: 50%;
+      border: 1.5px solid var(--border2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 500; color: var(--muted);
+      transition: all .3s; flex-shrink: 0;
+    }
+    .step-ind.active .step-ind-num {
+      background: var(--amber); border-color: var(--amber); color: #fff;
+    }
+    .step-ind-label {
+      font-size: 12px; font-weight: 400; color: var(--muted);
+      transition: color .3s; white-space: nowrap;
+    }
+    .step-ind.active .step-ind-label { color: var(--text); font-weight: 500; }
+    .step-sep {
+      width: 24px; height: 1px; background: var(--border2); flex-shrink: 0;
+    }
+
+    /* progress bar */
+    .progress-bar {
+      height: 2px; background: var(--border);
+      border-radius: 2px; max-width: 380px; margin-bottom: 40px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; background: var(--amber);
+      border-radius: 2px; width: 0%;
+      transition: width linear;
+    }
+
+    /* CTA */
+    .cta-btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--amber); color: #fff; border: none;
+      padding: 16px 30px; border-radius: 12px;
+      font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 500;
+      cursor: pointer; transition: all .2s; width: fit-content;
+      box-shadow: 0 8px 28px rgba(232,118,58,.28); margin-bottom: 12px;
+    }
+    .cta-btn:hover { background: var(--amber-dark); transform: translateY(-1px); box-shadow: 0 12px 36px rgba(232,118,58,.36); }
+    .cta-note { font-size: 11px; color: var(--muted); }
+    .ef { display: none; max-width: 380px; }
+    .ef.open { display: block; }
+    .ef-row {
+      display: flex; border: 1.5px solid var(--border);
+      border-radius: 10px; overflow: hidden; background: #fff;
+      transition: border-color .2s, box-shadow .2s; margin-bottom: 8px;
+    }
+    .ef-row:focus-within { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
+    .ef-row input {
+      flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+      padding: 13px 16px; font-family: 'DM Sans', sans-serif;
+      font-size: 14px; font-weight: 300; color: var(--text);
+    }
+    .ef-row input::placeholder { color: var(--muted); }
+    .ef-row button {
+      flex-shrink: 0; background: var(--amber); border: none; padding: 13px 20px;
+      font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+      color: #fff; cursor: pointer; transition: background .2s; white-space: nowrap;
+    }
+    .ef-row button:hover { background: var(--amber-dark); }
+    .ef-note { font-size: 11px; color: var(--muted); }
+
+    /* ── SURVEY (hero) ── */
+    .survey {
+      display: none; max-width: 380px;
+      animation: slideup .35s ease;
+    }
+    .survey.open { display: block; }
+    @keyframes slideup { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+    .survey-q {
+      font-size: 13px; font-weight: 400; color: var(--text2);
+      margin-bottom: 12px; line-height: 1.5;
+    }
+    .survey-opts { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
+    .survey-opt {
+      background: #fff; border: 1.5px solid var(--border);
+      border-radius: 9px; padding: 10px 14px;
+      font-size: 13px; font-weight: 300; color: var(--text);
+      cursor: pointer; transition: all .18s; text-align: left;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .survey-opt:hover { border-color: var(--amber); background: var(--amber-bg); color: var(--amber-dark); }
+    .survey-opt.selected { border-color: var(--amber); background: var(--amber-bg); color: var(--amber-dark); font-weight: 500; }
+    .survey-skip { font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+    .survey-skip:hover { color: var(--text2); }
+
+    .ef-ok { display: none; font-family: 'Fraunces', serif; font-style: italic; font-size: 17px; color: var(--amber); margin-top: 8px; }
+
+    /* scroll cue */
+    .scroll-hint {
+      position: absolute; bottom: 32px; left: 80px;
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; opacity: 0;
+      animation: fadein 1s ease 1.5s forwards;
+    }
+    @keyframes fadein { to { opacity: 1; } }
+    .scroll-hint-txt { font-size: 10px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; }
+    .scroll-arr {
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 1px solid var(--border); background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      animation: bob 2s ease-in-out infinite;
+    }
+    .scroll-arr svg { width: 13px; height: 13px; stroke: var(--muted); fill: none; stroke-width: 2; }
+    @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(5px)} }
+
+    /* ══════════════════════════════════════
+       HERO RIGHT
+    ══════════════════════════════════════ */
+    .hero-right {
+      background: var(--cream);
+      border-left: 1px solid var(--border);
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+      padding: 60px 40px;
+    }
+    .hero-right::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 70% 60% at 55% 50%, rgba(232,118,58,.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* ══════════════════════════════════════
+       iPHONE SHELL
+    ══════════════════════════════════════ */
+    .phone-wrap {
+      position: relative; z-index: 1;
+      animation: float 7s ease-in-out infinite;
+    }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+
+    .iphone {
+      width: 270px; height: 585px;
+      background: #d0ceca;
+      border-radius: 52px; position: relative;
+      box-shadow:
+        inset 0 0 0 1.5px #e4e0da,
+        inset 0 0 0 3px #b8b4ae,
+        0 0 0 1px #a0a09a,
+        0 56px 100px rgba(0,0,0,.20),
+        0 16px 40px rgba(0,0,0,.12);
+    }
+    .iphone-front {
+      position: absolute; inset: 3px;
+      background: #f7f5f2; border-radius: 50px; overflow: hidden;
+    }
+    .iphone-front::after {
+      content:''; position:absolute; inset:0; border-radius:50px;
+      background: linear-gradient(135deg, rgba(255,255,255,.28) 0%, transparent 42%);
+      pointer-events:none; z-index:200;
+    }
+    .dyn-island {
+      position:absolute; top:14px; left:50%; transform:translateX(-50%);
+      width:100px; height:30px; background:#1c1a16; border-radius:18px; z-index:30;
+    }
+    .dyn-island::after {
+      content:''; position:absolute; right:15px; top:50%; transform:translateY(-50%);
+      width:9px; height:9px; border-radius:50%;
+      background:#0a0a0a; box-shadow:0 0 0 1.5px #2a2826;
+    }
+    .btn-r  { position:absolute; right:-3px; top:148px; width:3px; height:72px; background:#b0ada8; border-radius:2px; }
+    .btn-l1 { position:absolute; left:-3px; top:118px; width:3px; height:30px; background:#b0ada8; border-radius:2px; }
+    .btn-l2 { position:absolute; left:-3px; top:160px; width:3px; height:58px; background:#b0ada8; border-radius:2px; }
+    .btn-l3 { position:absolute; left:-3px; top:230px; width:3px; height:58px; background:#b0ada8; border-radius:2px; }
+    .home-bar { position:absolute; bottom:9px; left:50%; transform:translateX(-50%); width:88px; height:4px; background:rgba(0,0,0,.15); border-radius:3px; z-index:30; }
+
+    .screens {
+      position: absolute; inset: 3px;
+      border-radius: 50px; overflow: hidden;
+    }
+
+    .screen {
+      position: absolute; inset: 0;
+      border-radius: 50px;
+      display: flex; flex-direction: column;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+    }
+    .screen.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sb {
+      height: 52px; flex-shrink: 0;
+      display: flex; align-items: flex-end; justify-content: space-between;
+      padding: 0 22px 7px; position: relative; z-index: 10;
+    }
+    .sb-t { font-size: 13px; font-weight: 600; color: #1c1a16; font-family: -apple-system, sans-serif; }
+    .sb-i { display: flex; align-items: center; gap: 5px; }
+
+    /* SCREEN 1 — DUMP */
+    .screen-dump { background: #f7f5f2; }
+    .dump-top {
+      padding: 0 20px 12px;
+      border-bottom: 1px solid rgba(0,0,0,.07);
+      flex-shrink: 0;
+    }
+    .dump-top-title {
+      font-family: 'Fraunces', serif; font-size: 11px; font-weight: 300;
+      letter-spacing: 0.2em; color: var(--amber); text-transform: uppercase;
+    }
+    .dump-top-sub {
+      font-size: 9px; color: #8a8078; font-family: -apple-system, sans-serif; margin-top: 2px;
+    }
+    .dump-body {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 0 28px 40px; gap: 20px;
+    }
+    .rec-label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; color: #8a7060;
+      font-family: -apple-system, sans-serif;
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+    .rec-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: #ff453a;
+      animation: recdot 1s ease-in-out infinite;
+    }
+    @keyframes recdot { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .mic-circle {
+      width: 80px; height: 80px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--amber), var(--amber-dark));
+      display: flex; align-items: center; justify-content: center;
+      animation: micpulse 2s ease-out infinite;
+    }
+    @keyframes micpulse {
+      0% { box-shadow: 0 0 0 0 rgba(232,118,58,.5); }
+      70% { box-shadow: 0 0 0 22px rgba(232,118,58,0); }
+      100% { box-shadow: 0 0 0 0 rgba(232,118,58,0); }
+    }
+    .mic-circle svg { width: 30px; height: 30px; fill: #fff; }
+    .waveform { display: flex; align-items: center; gap: 3px; height: 30px; }
+    .wb { width: 3px; border-radius: 3px; background: var(--amber); opacity: .6; }
+    .wb:nth-child(1)  { height:5px;  animation:wv 1s ease-in-out .00s infinite }
+    .wb:nth-child(2)  { height:14px; animation:wv 1s ease-in-out .07s infinite }
+    .wb:nth-child(3)  { height:24px; animation:wv 1s ease-in-out .14s infinite }
+    .wb:nth-child(4)  { height:10px; animation:wv 1s ease-in-out .21s infinite }
+    .wb:nth-child(5)  { height:26px; animation:wv 1s ease-in-out .28s infinite }
+    .wb:nth-child(6)  { height:8px;  animation:wv 1s ease-in-out .35s infinite }
+    .wb:nth-child(7)  { height:20px; animation:wv 1s ease-in-out .42s infinite }
+    .wb:nth-child(8)  { height:6px;  animation:wv 1s ease-in-out .49s infinite }
+    .wb:nth-child(9)  { height:16px; animation:wv 1s ease-in-out .56s infinite }
+    .wb:nth-child(10) { height:5px;  animation:wv 1s ease-in-out .63s infinite }
+    .wb:nth-child(11) { height:22px; animation:wv 1s ease-in-out .70s infinite }
+    .wb:nth-child(12) { height:4px;  animation:wv 1s ease-in-out .77s infinite }
+    @keyframes wv { 0%,100%{transform:scaleY(1);opacity:.5} 50%{transform:scaleY(1.6);opacity:1} }
+    .transcript-text {
+      font-size: 12px; color: #8a7060;
+      font-family: -apple-system, sans-serif;
+      text-align: center; line-height: 1.55; max-width: 180px;
+    }
+    .transcript-text strong { color: #2a1a0e; font-weight: 400; }
+
+    /* SCREEN 2 — WORKING */
+    .screen-working { background: #f7f5f2; }
+    .working-top {
+      padding: 0 18px 10px;
+      border-bottom: 1px solid rgba(0,0,0,.07);
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .working-title { font-family: 'Fraunces', serif; font-size: 11px; font-weight: 300; letter-spacing: 0.2em; color: var(--amber); text-transform: uppercase; }
+    .working-sub { font-size: 9px; color: #8a8078; font-family: -apple-system, sans-serif; margin-top: 2px; }
+    .working-badge {
+      background: var(--amber-bg); color: var(--amber);
+      font-size: 9px; font-weight: 600; font-family: -apple-system, sans-serif;
+      padding: 2px 8px; border-radius: 10px; border: 1px solid var(--amber-b);
+    }
+    .working-list {
+      flex: 1; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; overflow: hidden;
+    }
+    .work-item {
+      background: #fff; border: 1px solid rgba(0,0,0,.07);
+      border-radius: 12px; padding: 11px 13px;
+      display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .4s ease, transform .4s ease;
+    }
+    .work-item.show { opacity: 1; transform: translateY(0); }
+    .wi-icon { font-size: 16px; flex-shrink: 0; }
+    .wi-body { flex: 1; min-width: 0; }
+    .wi-type { font-size: 8px; color: var(--amber); font-family: -apple-system, sans-serif; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; margin-bottom: 2px; }
+    .wi-title { font-size: 11.5px; font-weight: 600; color: #1c1a16; font-family: -apple-system, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wi-status { flex-shrink: 0; }
+    .loader {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid rgba(232,118,58,.2);
+      border-top-color: var(--amber);
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .check-done {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #34c759;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .check-done svg { width: 9px; height: 9px; stroke: #fff; stroke-width: 2.5; fill: none; }
+
+    /* SCREEN 3 — READY */
+    .screen-ready { background: #f7f5f2; }
+    .ready-top {
+      padding: 0 16px 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(0,0,0,.07);
+    }
+    .ready-title { font-family: 'Fraunces', serif; font-size: 11px; font-weight: 300; letter-spacing: 0.18em; color: var(--amber); text-transform: uppercase; }
+    .ready-sub { font-size: 9px; color: #8a8078; font-family: -apple-system, sans-serif; margin-top: 1px; }
+    .ready-badge { background: var(--amber); color: #fff; font-size: 9px; font-weight: 600; font-family: -apple-system, sans-serif; padding: 2px 8px; border-radius: 10px; }
+    .prep-cards {
+      flex: 1; padding: 8px 12px 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden;
+    }
+    .pc { background: #fff; border: 1px solid rgba(0,0,0,.07); border-radius: 12px; overflow: hidden; flex-shrink: 0; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+    .pc-head { padding: 9px 11px 0; display: flex; align-items: flex-start; gap: 7px; }
+    .pc-ico { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .pc-meta { flex: 1; min-width: 0; }
+    .pc-type { font-size: 8px; color: var(--amber); font-family: -apple-system, sans-serif; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; margin-bottom: 2px; }
+    .pc-title { font-size: 11.5px; font-weight: 600; color: #1c1a16; font-family: -apple-system, sans-serif; line-height: 1.3; }
+    .pc-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .dot-g { background: #34c759; }
+    .pc-opts { padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 3px; }
+    .pc-opt { background: #f7f5f2; border: 1px solid rgba(0,0,0,.06); border-radius: 7px; padding: 5px 8px; display: flex; align-items: center; }
+    .pc-opt-t { font-size: 10.5px; color: #1c1a16; font-family: -apple-system, sans-serif; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pc-opt-p { font-size: 9.5px; color: #8a7060; font-family: -apple-system, sans-serif; margin-left: 5px; flex-shrink: 0; }
+    .pc-opt-a { font-size: 8px; color: var(--amber); margin-left: 4px; flex-shrink: 0; }
+    .pc-body { padding: 4px 11px 9px; font-size: 10.5px; color: #6b6058; font-family: -apple-system, sans-serif; line-height: 1.5; }
+    .pc-foot { border-top: 1px solid rgba(0,0,0,.06); padding: 6px 11px; display: flex; align-items: center; justify-content: space-between; }
+    .pc-foot-t { font-size: 9px; color: var(--amber); font-family: -apple-system, sans-serif; font-weight: 600; }
+    .pc-foot-a { font-size: 9px; color: var(--amber); }
+    .pc-action { border-top: 1px solid rgba(0,0,0,.06); padding: 6px 11px; display: flex; align-items: center; gap: 7px; }
+    .pc-act-btn { background: var(--amber); color: #fff; font-size: 9.5px; font-weight: 600; font-family: -apple-system, sans-serif; padding: 4px 11px; border-radius: 7px; }
+    .pc-act-note { font-size: 9px; color: #8a8078; font-family: -apple-system, sans-serif; }
+
+    /* ══════════════════════════════════════
+       BELOW HERO
+    ══════════════════════════════════════ */
+    .section-div { height: 1px; background: var(--border); }
+
+    .ba-section {
+      padding: 120px 80px; background: #fff; text-align: center;
+    }
+    .ba-title {
+      font-family: 'Fraunces', serif; font-weight: 200;
+      font-size: clamp(32px, 4vw, 52px); line-height: 1.1;
+      color: var(--text); margin-bottom: 72px; margin-top: 16px;
+    }
+    .ba-title em { font-style: italic; color: var(--amber); }
+    .sec-label { font-size: 11px; font-weight: 500; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; margin-bottom: 20px; }
+    .ba-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 48px; max-width: 900px; margin: 0 auto; align-items: start; }
+    .ba-panel { text-align: left; }
+    .ba-panel-label { font-size: 10px; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 28px; display: flex; align-items: center; gap: 8px; }
+    .ba-panel-label.before { color: var(--muted); }
+    .ba-panel-label.after  { color: var(--amber); }
+    .ba-ind { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .ba-ind.before { background: var(--border2); }
+    .ba-ind.after  { background: var(--amber); }
+    .ba-items { display: flex; flex-direction: column; gap: 14px; }
+    .ba-item { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; font-weight: 300; line-height: 1.55; }
+    .ba-ico { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .ba-txt.x  { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border2); }
+    .ba-txt.ok { color: var(--text); }
+    .ba-divider-col { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 40px; }
+    .ba-divider-line { width: 1px; height: 48px; background: linear-gradient(180deg, transparent, var(--amber)); }
+    .ba-divider-label { font-family: 'Fraunces', serif; font-style: italic; font-weight: 200; font-size: 13px; color: var(--amber); white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); }
+    .ba-divider-arrow { font-size: 16px; color: var(--amber); }
+
+    .familiar { border-top: 1px solid var(--border); padding: 120px 80px; background: var(--cream); }
+    .fam-intro { text-align: center; margin-bottom: 64px; }
+    .fam-headline { font-family: 'Fraunces', serif; font-weight: 200; font-size: clamp(36px, 5vw, 60px); line-height: 1.1; color: var(--text); margin-bottom: 16px; }
+    .fam-sub { font-size: 17px; font-weight: 300; color: var(--text2); max-width: 420px; margin: 0 auto; line-height: 1.7; margin-bottom: 16px; }
+    .fam-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .fam-card { background: #fff; border: 1.5px solid var(--border); border-radius: 16px; padding: 32px 28px; transition: border-color .25s, box-shadow .25s; display: flex; flex-direction: column; gap: 12px; }
+    .fam-card:hover { border-color: var(--amber-b); box-shadow: 0 4px 24px rgba(232,118,58,.08); }
+    .fam-when { font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber); }
+    .fam-q { font-family: 'Fraunces', serif; font-style: italic; font-weight: 300; font-size: 17px; line-height: 1.65; color: var(--text); flex: 1; }
+    .fam-pem { font-size: 12px; font-weight: 500; color: var(--amber); letter-spacing: 0.04em; padding-top: 12px; border-top: 1px solid var(--amber-b); }
+
+    .prep-wrap { border-top: 1px solid var(--border); padding: 120px 80px; background: var(--warm); }
+    .prep-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 56px; }
+    .prep-card { background: #fff; border: 1.5px solid var(--border); border-radius: 14px; padding: 28px 24px; transition: border-color .25s, box-shadow .25s; }
+    .prep-card:hover { border-color: var(--amber-b); box-shadow: 0 4px 24px rgba(232,118,58,.08); }
+    .prep-icon { font-size: 26px; margin-bottom: 14px; display: block; }
+    .prep-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
+    .prep-body { font-size: 13.5px; font-weight: 300; color: var(--text); line-height: 1.7; margin-bottom: 16px; }
+    .prep-eg { font-family: 'Fraunces', serif; font-style: italic; font-weight: 300; font-size: 13.5px; color: var(--text2); line-height: 1.65; border-left: 2.5px solid var(--amber); padding-left: 12px; }
+
+    /* CTA section */
+    .cta-section { border-top: 1px solid var(--border); background: var(--cream); padding: 140px 24px; text-align: center; }
+    .cta-h { font-family: 'Fraunces', serif; font-weight: 200; font-size: clamp(36px, 5vw, 60px); line-height: 1.08; color: var(--text); margin-bottom: 10px; }
+    .cta-h em { font-style: italic; color: var(--amber); }
+    .cta-sub { font-size: 16px; color: var(--text2); margin-bottom: 40px; }
+    .cta-form-wrap { max-width: 380px; margin: 0 auto; }
+
+    /* ── SURVEY (bottom CTA) ── */
+    .cta-survey {
+      display: none; margin-top: 0;
+      animation: slideup .35s ease;
+    }
+    .cta-survey.open { display: block; }
+    .cta-survey .survey-q { text-align: left; }
+    .cta-survey .survey-opts { text-align: left; }
+
+    footer { border-top: 1px solid var(--border); padding: 28px 48px; display: flex; align-items: center; justify-content: space-between; background: var(--cream); }
+    .f-logo { font-family: 'Fraunces', serif; font-size: 16px; font-weight: 300; letter-spacing: .14em; color: var(--muted); }
+    .f-r { font-size: 11px; color: var(--muted); }
+
+    /* ══════════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════════ */
+    @media (max-width: 900px) {
+      /* ── hero: phone first, text below ── */
+      .hero {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto;
+        min-height: 100svh;
+      }
+      .hero-right {
+        order: -1;                          /* phone goes on top */
+        min-height: unset;
+        border-left: none;
+        border-bottom: 1px solid var(--border);
+        padding: 48px 24px 36px;
+        justify-content: center;
+      }
+      .phone-wrap { animation: none; }
+
+      /* scale phone so it fits comfortably */
+      .iphone {
+        width: 210px;
+        height: 455px;
+        border-radius: 44px;
+      }
+      .iphone-front { border-radius: 42px; }
+      .iphone-front::after { border-radius: 42px; }
+      .dyn-island { width: 80px; height: 24px; top: 11px; }
+      .btn-r  { top: 115px; height: 56px; }
+      .btn-l1 { top: 92px;  height: 24px; }
+      .btn-l2 { top: 125px; height: 45px; }
+      .btn-l3 { top: 179px; height: 45px; }
+      .screens { inset: 3px; border-radius: 42px; }
+      .screen  { border-radius: 42px; }
+
+      /* step label line: compact, below phone */
+      .step-indicators { justify-content: center; flex-wrap: nowrap; gap: 0; margin-bottom: 0; }
+      .step-ind { padding: 6px 10px; }
+      .step-ind-num { width: 20px; height: 20px; font-size: 10px; }
+      .step-ind-label { font-size: 11px; }
+
+      /* hero-left: tighter, centered on mobile */
+      .hero-left {
+        padding: 32px 28px 52px;
+        align-items: center;
+        text-align: center;
+      }
+      .hero-kicker { margin-bottom: 12px; }
+      .hero-h { font-size: clamp(32px, 9vw, 48px); margin-bottom: 8px; }
+      .hero-slogan { margin-bottom: 12px; }
+      .hero-sub { text-align: center; margin-bottom: 28px; font-size: 15px; }
+      .progress-bar { margin: 16px auto 28px; }
+      .cta-btn { align-self: center; }
+      .ef { max-width: 100%; }
+      .survey { max-width: 100%; }
+      .scroll-hint { display: none; }
+
+      /* rest of page */
+      .ba-section { padding: 80px 28px; }
+      .ba-grid { grid-template-columns: 1fr; gap: 40px; }
+      .ba-divider-col { flex-direction: row; padding-top: 0; justify-content: center; }
+      .ba-divider-line { width: 48px; height: 1px; background: linear-gradient(90deg, transparent, var(--amber)); }
+      .ba-divider-label { writing-mode: horizontal-tb; transform: none; }
+      .familiar { padding: 80px 28px; }
+      .fam-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+      .prep-wrap { padding: 80px 28px; }
+      .prep-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+      footer { padding: 24px; flex-direction: column; gap: 8px; text-align: center; }
+    }
+    @media (max-width: 540px) {
+      .fam-grid { grid-template-columns: 1fr; }
+      .prep-grid { grid-template-columns: 1fr; }
+    }
+    /* ══ MOBILE-ONLY ELEMENTS (hidden on desktop) ══ */
+    .mobile-above-phone { display: none; }
+    .mobile-steps       { display: none; }
+    .mobile-progress-bar{ display: none; }
+
+    @media (max-width: 900px) {
+      .mobile-above-phone {
+        display: flex; flex-direction: column; align-items: center;
+        gap: 6px; margin-bottom: 20px; text-align: center;
+      }
+      .mobile-kicker {
+        font-size: 10px; font-weight: 500; letter-spacing: 0.2em;
+        color: var(--muted); text-transform: uppercase;
+      }
+      .mobile-tag {
+        font-family: 'Fraunces', serif; font-weight: 200;
+        font-size: clamp(24px, 7vw, 36px);
+        line-height: 1.1; letter-spacing: -0.01em; color: var(--text);
+      }
+      .mobile-tag em { font-style: italic; color: var(--amber); }
+
+      .mobile-steps {
+        display: flex; align-items: center; justify-content: center;
+        gap: 0; margin-top: 18px;
+      }
+      .mob-step {
+        display: flex; align-items: center; gap: 6px;
+        padding: 7px 10px; border-radius: 8px;
+        cursor: pointer; transition: background .2s;
+      }
+      .mob-step.active { background: var(--amber-bg); }
+      .mob-num {
+        width: 20px; height: 20px; border-radius: 50%;
+        border: 1.5px solid var(--border2);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 10px; font-weight: 500; color: var(--muted);
+        transition: all .3s; flex-shrink: 0;
+      }
+      .mob-step.active .mob-num { background: var(--amber); border-color: var(--amber); color: #fff; }
+      .mob-lbl { font-size: 11px; font-weight: 400; color: var(--muted); transition: color .3s; white-space: nowrap; }
+      .mob-step.active .mob-lbl { color: var(--text); font-weight: 500; }
+      .mob-sep { width: 18px; height: 1px; background: var(--border2); flex-shrink: 0; }
+
+      .mobile-progress-bar {
+        display: block; width: 160px; height: 2px;
+        background: var(--border); border-radius: 2px;
+        overflow: hidden; margin-top: 10px;
+      }
+      .mobile-progress-fill {
+        height: 100%; background: var(--amber);
+        border-radius: 2px; width: 0%;
+      }
+
+      /* hide desktop step indicators on mobile */
+      .step-indicators { display: none; }
+      .progress-bar    { display: none; }
+      /* hide kicker on hero-left since it moves to above phone */
+      .hero-kicker { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════ HERO -->
+<div class="hero">
+  <div class="hero-left">
+    <div class="hero-kicker">iOS · Coming soon</div>
+
+    <h1 class="hero-h">
+      Whatever's on<br>your mind —<br><em>Pem's got it.</em>
+    </h1>
+    <p class="hero-slogan">Your prep work, done.</p>
+    <p class="hero-sub">Tell Pem what's on your mind — it researches, drafts, and finds your options while you sleep, drive, or live. Come back ready to act.</p>
+
+    <div class="step-indicators">
+      <div class="step-ind active" id="ind-0" onclick="goToStep(0)">
+        <div class="step-ind-num">1</div>
+        <div class="step-ind-label">You dump</div>
+      </div>
+      <div class="step-sep"></div>
+      <div class="step-ind" id="ind-1" onclick="goToStep(1)">
+        <div class="step-ind-num">2</div>
+        <div class="step-ind-label">Pem preps</div>
+      </div>
+      <div class="step-sep"></div>
+      <div class="step-ind" id="ind-2" onclick="goToStep(2)">
+        <div class="step-ind-num">3</div>
+        <div class="step-ind-label">You act</div>
+      </div>
+    </div>
+
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress"></div>
+    </div>
+
+    <button class="cta-btn" id="hero-btn" onclick="openForm()">
+      Get early access — it's free
+    </button>
+    <p class="cta-note" id="hero-note">iOS · No spam · One email when ready</p>
+
+    <!-- Email form (hero) -->
+    <div class="ef" id="ef">
+      <div class="ef-row">
+        <input type="email" placeholder="your@email.com" id="ei">
+        <button onclick="go()">Notify me</button>
+      </div>
+      <p class="ef-note">One email when Pem launches. No spam.</p>
+    </div>
+
+    <div class="ef-ok" id="ok">You're on the list. ✦</div>
+
+    <a class="scroll-hint" href="#familiar">
+      <span class="scroll-hint-txt">See how it works</span>
+      <div class="scroll-arr"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
+    </a>
+  </div>
+
+  <!-- RIGHT — phone -->
+  <div class="hero-right">
+    <div class="mobile-above-phone">
+      <span class="mobile-kicker">iOS · Coming soon</span>
+      <span class="mobile-tag">Whatever's on your mind —<br><em>Pem's got it.</em></span>
+    </div>
+    <div class="phone-wrap">
+      <div class="iphone">
+        <div class="btn-r"></div>
+        <div class="btn-l1"></div><div class="btn-l2"></div><div class="btn-l3"></div>
+        <div class="iphone-front">
+          <div class="dyn-island"></div>
+          <div class="home-bar"></div>
+          <div class="screens">
+
+            <!-- SCREEN 1: DUMP -->
+            <div class="screen screen-dump active" id="screen-0">
+              <div class="sb">
+                <div class="sb-t">11:02</div>
+                <div class="sb-i">
+                  <svg width="15" height="11" viewBox="0 0 17 12" fill="#1c1a16"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0.5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
+                  <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#1c1a16" stroke-opacity=".25"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#1c1a16"/><path d="M23 4.5v3a2 2 0 000-3z" fill="#1c1a16" opacity=".4"/></svg>
+                </div>
+              </div>
+              <div class="dump-top">
+                <div class="dump-top-title">Pem</div>
+                <div class="dump-top-sub">Listening...</div>
+              </div>
+              <div class="dump-body">
+                <div class="rec-label"><div class="rec-dot"></div> Recording</div>
+                <div class="mic-circle">
+                  <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4zm6.5 9a1 1 0 012 0 8.5 8.5 0 01-7.5 8.45V21h3a1 1 0 010 2h-8a1 1 0 010-2h3v-2.55A8.5 8.5 0 013.5 10a1 1 0 012 0 6.5 6.5 0 0013 0z"/></svg>
+                </div>
+                <div class="waveform">
+                  <div class="wb"></div><div class="wb"></div><div class="wb"></div>
+                  <div class="wb"></div><div class="wb"></div><div class="wb"></div>
+                  <div class="wb"></div><div class="wb"></div><div class="wb"></div>
+                  <div class="wb"></div><div class="wb"></div><div class="wb"></div>
+                </div>
+                <div class="transcript-text">
+                  <strong>"...mom's birthday next week, the gym thing, and this app idea—"</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- SCREEN 2: WORKING -->
+            <div class="screen screen-working" id="screen-1">
+              <div class="sb">
+                <div class="sb-t">11:02</div>
+                <div class="sb-i">
+                  <svg width="15" height="11" viewBox="0 0 17 12" fill="#1c1a16"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0.5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
+                  <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#1c1a16" stroke-opacity=".25"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#1c1a16"/><path d="M23 4.5v3a2 2 0 000-3z" fill="#1c1a16" opacity=".4"/></svg>
+                </div>
+              </div>
+              <div class="working-top">
+                <div>
+                  <div class="working-title">Pem</div>
+                  <div class="working-sub">Got it. On it.</div>
+                </div>
+                <div class="working-badge">Working ⚡</div>
+              </div>
+              <div class="working-list">
+                <div class="work-item" id="wi-0">
+                  <div class="wi-icon">🎁</div>
+                  <div class="wi-body">
+                    <div class="wi-type">Finding options</div>
+                    <div class="wi-title">Gift ideas for mom</div>
+                  </div>
+                  <div class="wi-status"><div class="loader"></div></div>
+                </div>
+                <div class="work-item" id="wi-1">
+                  <div class="wi-icon">🏋️</div>
+                  <div class="wi-body">
+                    <div class="wi-type">Researching</div>
+                    <div class="wi-title">Gym cancellation</div>
+                  </div>
+                  <div class="wi-status"><div class="loader"></div></div>
+                </div>
+                <div class="work-item" id="wi-2">
+                  <div class="wi-icon">🔍</div>
+                  <div class="wi-body">
+                    <div class="wi-type">Deep research</div>
+                    <div class="wi-title">Your app idea</div>
+                  </div>
+                  <div class="wi-status"><div class="loader"></div></div>
+                </div>
+                <div class="work-item" id="wi-3" style="margin-top:4px; background:var(--amber-bg); border-color:var(--amber-b);">
+                  <div class="wi-icon">💬</div>
+                  <div class="wi-body">
+                    <div class="wi-type" style="color:#8a7060;">Confirmed</div>
+                    <div class="wi-title" style="font-size:10.5px;font-weight:400;color:#6b6058;">You're free to sleep, drive, or live. I'll notify you when ready.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SCREEN 3: READY -->
+            <div class="screen screen-ready" id="screen-2">
+              <div class="sb">
+                <div class="sb-t">7:08</div>
+                <div class="sb-i">
+                  <svg width="15" height="11" viewBox="0 0 17 12" fill="#1c1a16"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0.5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
+                  <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#1c1a16" stroke-opacity=".25"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#1c1a16"/><path d="M23 4.5v3a2 2 0 000-3z" fill="#1c1a16" opacity=".4"/></svg>
+                </div>
+              </div>
+              <div class="ready-top">
+                <div>
+                  <div class="ready-title">Pem</div>
+                  <div class="ready-sub">Your prep work, ready</div>
+                </div>
+                <div class="ready-badge">3 ready</div>
+              </div>
+              <div class="prep-cards">
+                <div class="pc">
+                  <div class="pc-head">
+                    <div class="pc-ico">🎁</div>
+                    <div class="pc-meta"><div class="pc-type">Options found</div><div class="pc-title">Gift ideas for mom</div></div>
+                    <div class="pc-dot dot-g"></div>
+                  </div>
+                  <div class="pc-opts">
+                    <div class="pc-opt"><div class="pc-opt-t">🌱 Seed subscription box</div><div class="pc-opt-p">$48</div><div class="pc-opt-a">→</div></div>
+                    <div class="pc-opt"><div class="pc-opt-t">🌿 Herb garden kit</div><div class="pc-opt-p">$55</div><div class="pc-opt-a">→</div></div>
+                    <div class="pc-opt"><div class="pc-opt-t">🍳 Cooking class for two</div><div class="pc-opt-p">$60</div><div class="pc-opt-a">→</div></div>
+                  </div>
+                  <div class="pc-action">
+                    <div class="pc-act-btn">Mark done</div>
+                    <div class="pc-act-note">Pending your pick</div>
+                  </div>
+                </div>
+                <div class="pc">
+                  <div class="pc-head">
+                    <div class="pc-ico">🏋️</div>
+                    <div class="pc-meta"><div class="pc-type">Research done</div><div class="pc-title">Gym cancellation</div></div>
+                    <div class="pc-dot dot-g"></div>
+                  </div>
+                  <div class="pc-body">30-day notice required. Draft message ready — firm and polite.</div>
+                  <div class="pc-foot"><div class="pc-foot-t">Review draft</div><div class="pc-foot-a">→</div></div>
+                </div>
+                <div class="pc">
+                  <div class="pc-head">
+                    <div class="pc-ico">🔍</div>
+                    <div class="pc-meta"><div class="pc-type">Deep research</div><div class="pc-title">Your app idea</div></div>
+                    <div class="pc-dot dot-g"></div>
+                  </div>
+                  <div class="pc-body">No direct competitor. Real gap exists. Tap to read full findings.</div>
+                  <div class="pc-foot"><div class="pc-foot-t">Read findings</div><div class="pc-foot-a">→</div></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- mobile step indicators (shown only on mobile, inside hero-right) -->
+    <div class="mobile-steps">
+      <div class="mob-step active" id="mob-0" onclick="goToStep(0)"><span class="mob-num">1</span><span class="mob-lbl">You dump</span></div>
+      <div class="mob-sep"></div>
+      <div class="mob-step" id="mob-1" onclick="goToStep(1)"><span class="mob-num">2</span><span class="mob-lbl">Pem preps</span></div>
+      <div class="mob-sep"></div>
+      <div class="mob-step" id="mob-2" onclick="goToStep(2)"><span class="mob-num">3</span><span class="mob-lbl">You act</span></div>
+    </div>
+    <div class="mobile-progress-bar"><div class="mobile-progress-fill" id="mob-progress"></div></div>
+  </div>
+</div>
+
+<div class="section-div"></div>
+
+<!-- BEFORE / AFTER -->
+<div class="ba-section">
+  <div class="sec-label">The shift</div>
+  <h2 class="ba-title">From carrying it all<br>to <em>letting it go.</em></h2>
+  <div class="ba-grid">
+    <div class="ba-panel">
+      <div class="ba-panel-label before"><div class="ba-ind before"></div>Before Pem</div>
+      <div class="ba-items">
+        <div class="ba-item"><span class="ba-ico">😩</span><span class="ba-txt x">Lying awake with 12 things unresolved</span></div>
+        <div class="ba-item"><span class="ba-ico">🔍</span><span class="ba-txt x">Spending lunch on research from last week</span></div>
+        <div class="ba-item"><span class="ba-ico">📧</span><span class="ba-txt x">That email you've been dreading for days</span></div>
+        <div class="ba-item"><span class="ba-ico">🌀</span><span class="ba-txt x">The same five worries looping before sleep</span></div>
+        <div class="ba-item"><span class="ba-ico">💸</span><span class="ba-txt x">Buying the wrong thing — no time to research</span></div>
+      </div>
+    </div>
+    <div class="ba-divider-col">
+      <div class="ba-divider-line"></div>
+      <div class="ba-divider-label">Dump to Pem</div>
+      <div class="ba-divider-arrow">↓</div>
+    </div>
+    <div class="ba-panel">
+      <div class="ba-panel-label after"><div class="ba-ind after"></div>With Pem</div>
+      <div class="ba-items">
+        <div class="ba-item"><span class="ba-ico">😮‍💨</span><span class="ba-txt ok">Dump it and actually sleep</span></div>
+        <div class="ba-item"><span class="ba-ico">✅</span><span class="ba-txt ok">Research done while you lived your life</span></div>
+        <div class="ba-item"><span class="ba-ico">📨</span><span class="ba-txt ok">Draft written. Just review and send.</span></div>
+        <div class="ba-item"><span class="ba-ico">🧠</span><span class="ba-txt ok">Brain empty. Preps waiting.</span></div>
+        <div class="ba-item"><span class="ba-ico">🎯</span><span class="ba-txt ok">3 options researched. Pick one. Done.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-div"></div>
+
+<!-- SOUND FAMILIAR -->
+<div class="familiar" id="familiar">
+  <div class="fam-intro">
+    <div class="fam-headline">You know this feeling.</div>
+    <div class="fam-sub">That thing sitting in the back of your head. The one you keep meaning to deal with.</div>
+  </div>
+  <div class="fam-grid">
+    <div class="fam-card">
+      <div class="fam-when">11pm · in bed</div>
+      <div class="fam-q">"Can't sleep. Keep thinking about that email I need to send."</div>
+      <div class="fam-pem">Tell Pem. Sleep.</div>
+    </div>
+    <div class="fam-card">
+      <div class="fam-when">Driving</div>
+      <div class="fam-q">"Oh — mom's birthday. I always forget until it's too late."</div>
+      <div class="fam-pem">Tell Pem. Forget it.</div>
+    </div>
+    <div class="fam-card">
+      <div class="fam-when">Random Tuesday</div>
+      <div class="fam-q">"Wouldn't it be cool if there was an app that does XYZ..."</div>
+      <div class="fam-pem">Tell Pem. Move on.</div>
+    </div>
+    <div class="fam-card">
+      <div class="fam-when">For months now</div>
+      <div class="fam-q">"I keep meaning to cancel that gym membership. I'll do it tomorrow."</div>
+      <div class="fam-pem">Tell Pem. Done.</div>
+    </div>
+  </div>
+</div>
+
+<div class="section-div"></div>
+
+<!-- WHAT PEM PREPARES -->
+<div class="prep-wrap">
+  <div class="sec-label">What Pem prepares for you</div>
+  <div class="prep-grid">
+    <div class="prep-card">
+      <span class="prep-icon">🔍</span>
+      <div class="prep-title">Web search</div>
+      <div class="prep-body">Quick answers, current info, prices, reviews. Pem searches so you don't spend 40 minutes on Google.</div>
+      <div class="prep-eg">"Is this neighborhood in Denver safe for families?"</div>
+    </div>
+    <div class="prep-card">
+      <span class="prep-icon">📖</span>
+      <div class="prep-title">Deep research</div>
+      <div class="prep-body">For bigger questions. Pem synthesizes multiple sources into one clear, usable answer.</div>
+      <div class="prep-eg">"Should I take this job offer? Here's everything I know..."</div>
+    </div>
+    <div class="prep-card">
+      <span class="prep-icon">🛍️</span>
+      <div class="prep-title">Find options</div>
+      <div class="prep-body">Real picks with links, prices, and context. Tap to explore. You choose — Pem narrows it down.</div>
+      <div class="prep-eg">"Gift for mom — gardening lover, budget $60."</div>
+    </div>
+    <div class="prep-card">
+      <span class="prep-icon">✏️</span>
+      <div class="prep-title">Draft it</div>
+      <div class="prep-body">The email or text you've been putting off. Drafted, ready to review. You send — Pem writes.</div>
+      <div class="prep-eg">"Write to my landlord about the leak."</div>
+    </div>
+  </div>
+</div>
+
+<div class="section-div"></div>
+
+<!-- FINAL CTA -->
+<div class="cta-section" id="access">
+  <h2 class="cta-h">Whatever's on your mind —<br><em>Pem's got it.</em></h2>
+  <p class="cta-sub">iOS · Coming soon. Be the first to know.</p>
+  <div class="cta-form-wrap" id="cta-wrap">
+    <div class="ef open" id="cta-ef">
+      <div class="ef-row">
+        <input type="email" placeholder="your@email.com" id="e2">
+        <button onclick="go2()">Notify me</button>
+      </div>
+      <p class="ef-note" style="text-align:center;">No spam. One email when Pem launches.</p>
+    </div>
+
+    <div class="ef-ok" id="ok2" style="text-align:center;">You're on the list. ✦</div>
+  </div>
+</div>
+
+<footer>
+  <div class="f-logo">PEM</div>
+  <div class="f-r">heypem.com</div>
+</footer>
+
+<script>
+  /* ══ PHONE ANIMATION ══ */
+  const DURATIONS = [4000, 5000, 5000];
+  let currentStep = 0;
+  let stepTimer = null;
+  let progressTimer = null;
+  let progressStart = null;
+
+  function goToStep(step) {
+    clearTimeout(stepTimer);
+    cancelAnimationFrame(progressTimer);
+    for (let i = 0; i < 3; i++) {
+      document.getElementById(`screen-${i}`).classList.remove('active');
+      document.getElementById(`ind-${i}`).classList.remove('active');
+      const mob = document.getElementById(`mob-${i}`);
+      if (mob) mob.classList.remove('active');
+    }
+    currentStep = step;
+    document.getElementById(`screen-${step}`).classList.add('active');
+    document.getElementById(`ind-${step}`).classList.add('active');
+    const mobActive = document.getElementById(`mob-${step}`);
+    if (mobActive) mobActive.classList.add('active');
+    if (step === 1) animateWorkItems();
+    startProgress(step);
+    stepTimer = setTimeout(() => goToStep((step + 1) % 3), DURATIONS[step]);
+  }
+
+  function startProgress(step) {
+    const fill = document.getElementById('progress');
+    const mobFill = document.getElementById('mob-progress');
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+    if (mobFill) { mobFill.style.transition = 'none'; mobFill.style.width = '0%'; }
+    const dur = DURATIONS[step];
+    progressStart = performance.now();
+    function tick(now) {
+      const elapsed = now - progressStart;
+      const pct = Math.min(100, (elapsed / dur) * 100);
+      fill.style.width = pct + '%';
+      if (mobFill) mobFill.style.width = pct + '%';
+      if (pct < 100) progressTimer = requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function animateWorkItems() {
+    for (let i = 0; i < 4; i++) {
+      const el = document.getElementById(`wi-${i}`);
+      if (el) el.classList.remove('show');
+    }
+    [0, 300, 700, 1400].forEach((delay, i) => {
+      setTimeout(() => {
+        const el = document.getElementById(`wi-${i}`);
+        if (el) el.classList.add('show');
+      }, delay);
+    });
+    [
+      { id: 'wi-0', delay: 3200 },
+      { id: 'wi-1', delay: 3600 },
+      { id: 'wi-2', delay: 4100 },
+    ].forEach(({ id, delay }) => {
+      setTimeout(() => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const status = el.querySelector('.wi-status');
+        if (status) status.innerHTML = `<div class="check-done"><svg viewBox="0 0 12 10"><polyline points="1 5 4.5 8.5 11 1"/></svg></div>`;
+      }, delay);
+    });
+  }
+
+  window.addEventListener('load', () => goToStep(0));
+
+  /* ══ FORM LOGIC ══ */
+  function openForm() {
+    document.getElementById('hero-btn').style.display = 'none';
+    document.getElementById('hero-note').style.display = 'none';
+    document.getElementById('ef').classList.add('open');
+    setTimeout(() => document.getElementById('ei').focus(), 50);
+  }
+
+  async function submitOnce(email) {
+    try {
+      await fetch('https://formspree.io/f/maqpweoj', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, _subject: 'Pem early access' })
+      });
+    } catch(e) {}
+  }
+
+  function go() {
+    const el = document.getElementById('ei');
+    const email = el.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      el.style.outline = '2px solid #ff453a'; el.focus();
+      setTimeout(() => el.style.outline = '', 1500); return;
+    }
+    submitOnce(email);
+    document.getElementById('ef').style.display = 'none';
+    document.getElementById('ok').style.display = 'block';
+  }
+
+  function go2() {
+    const el = document.getElementById('e2');
+    const email = el.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      el.style.outline = '2px solid #ff453a'; el.focus();
+      setTimeout(() => el.style.outline = '', 1500); return;
+    }
+    submitOnce(email);
+    document.getElementById('cta-ef').style.display = 'none';
+    document.getElementById('ok2').style.display = 'block';
+  }
+
+  document.getElementById('ei').addEventListener('keydown', e => { if(e.key==='Enter') go(); });
+  document.getElementById('e2').addEventListener('keydown', e => { if(e.key==='Enter') go2(); });
+</script>
+</body>
+</html>

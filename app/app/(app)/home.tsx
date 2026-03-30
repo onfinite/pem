@@ -1,209 +1,90 @@
-import AppHomeHeader from "@/components/layout/AppHomeHeader";
-import PemLogoRow from "@/components/brand/PemLogoRow";
-import PemText from "@/components/ui/PemText";
-import { useTheme } from "@/contexts/ThemeContext";
-import { pemAmber } from "@/constants/theme";
-import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import { router } from "expo-router";
-import { ArrowUp, Mic } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import HomeArchivedList from "@/components/sections/home-sections/HomeArchivedList";
+import HomeGlassHeader from "@/components/sections/home-sections/HomeGlassHeader";
+import HomePageHead from "@/components/sections/home-sections/HomePageHead";
+import HomePrepingList from "@/components/sections/home-sections/HomePrepingList";
+import HomeReadyEmpty from "@/components/sections/home-sections/HomeReadyEmpty";
+import HomeReadyPrepsList from "@/components/sections/home-sections/HomeReadyPrepsList";
+import HomeTabDock from "@/components/sections/home-sections/HomeTabDock";
 import {
-  Alert,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  TouchableWithoutFeedback,
-  View,
-} from "react-native";
+  TAB_DOCK_INNER_MIN,
+  TOP_BAR_ROW_PAD,
+  TOP_ICON_CHIP,
+} from "@/components/sections/home-sections/homeLayout";
+import { SHOW_SAMPLE_PREPS, type PrepTab } from "@/components/sections/home-sections/homePrepData";
+import { usePrepHub } from "@/contexts/PrepHubContext";
+import { useTheme } from "@/contexts/ThemeContext";
+import { space } from "@/constants/typography";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+/** Preps hub — glass header, tab dock, Ready / Preping / Archived. */
 export default function HomeScreen() {
   const { colors, resolved } = useTheme();
+  const { readyPreps } = usePrepHub();
   const insets = useSafeAreaInsets();
-  const [draft, setDraft] = useState("");
-  const trimmed = draft.trim();
-  const canSend = trimmed.length > 0;
+  const [tab, setTab] = useState<PrepTab>("ready");
+  const blurTint = resolved === "dark" ? "dark" : "light";
+  const glassBorder =
+    resolved === "dark" ? "rgba(255,255,255,0.12)" : "rgba(28,26,22,0.08)";
 
-  const onSettingsPress = useCallback(() => {
-    router.push("/settings");
-  }, []);
+  const tabDockBottomSpace = insets.bottom + TAB_DOCK_INNER_MIN + space[2] * 2;
+  const bottomPad = tabDockBottomSpace + space[6];
+  const scrollTopPad =
+    insets.top + TOP_BAR_ROW_PAD * 2 + TOP_ICON_CHIP + space[1];
+  const hasPreps = SHOW_SAMPLE_PREPS && readyPreps.length > 0;
 
-  const onSend = useCallback(() => {
-    if (!canSend) return;
-    Alert.alert("Pem", "Your dump will be sent to Pem when the API is wired up.");
-    setDraft("");
-  }, [canSend]);
-
-  const onMic = useCallback(() => {
-    Alert.alert("Voice", "Voice capture will start the record flow.");
-  }, []);
+  const pageHead =
+    tab === "ready"
+      ? {
+          title: "Preps",
+          sub: hasPreps
+            ? "Prepared for you — open a prep to review. Nothing sends without you."
+            : "When you have preps, they’ll show up here as cards.",
+        }
+      : tab === "preping"
+        ? {
+            title: "Preping",
+            sub: "Parallel work in flight — same as when you leave the preping screen. Nothing is final until it lands in Ready.",
+          }
+        : {
+            title: "Archived",
+            sub: "Finished or dismissed preps stay here for your reference.",
+          };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.flex, { backgroundColor: colors.pageBackground }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-    >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: colors.pageBackground }]}>
-          <View style={styles.headerPad}>
-            <AppHomeHeader variant="minimal" onSettingsPress={onSettingsPress} />
-          </View>
+    <View style={[styles.screen, { backgroundColor: colors.pageBackground }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: scrollTopPad, paddingBottom: bottomPad },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <HomePageHead title={pageHead.title} sub={pageHead.sub} />
 
-          <View style={styles.hero}>
-            <PemLogoRow size="hero" />
-            <PemText variant="brandItalic" style={styles.tagline}>
-              Tell Pem what{"'"}s on your mind
-            </PemText>
-            <PemText variant="bodyMuted" style={styles.hint}>
-              Voice or text — Pem turns it into preps you can act on.
-            </PemText>
-          </View>
+        {tab === "ready" && !hasPreps ? <HomeReadyEmpty /> : null}
+        {tab === "ready" && hasPreps ? <HomeReadyPrepsList resolved={resolved} /> : null}
+        {tab === "preping" ? <HomePrepingList /> : null}
+        {tab === "archived" ? <HomeArchivedList resolved={resolved} /> : null}
+      </ScrollView>
 
-          <View
-            style={[
-              styles.composerWrap,
-              { paddingBottom: Math.max(insets.bottom, space[4]) },
-            ]}
-          >
-            <View
-              style={[
-                styles.composer,
-                {
-                  backgroundColor: colors.cardBackground,
-                  borderColor: colors.borderMuted,
-                  ...Platform.select({
-                    ios: {
-                      shadowColor: resolved === "dark" ? "#000000" : "#1c1a16",
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: resolved === "dark" ? 0.35 : 0.06,
-                      shadowRadius: 20,
-                    },
-                    android: {
-                      elevation: 4,
-                    },
-                  }),
-                },
-              ]}
-            >
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Dump a thought, task, or worry…"
-                placeholderTextColor={colors.placeholder}
-                style={[
-                  styles.input,
-                  { color: colors.textPrimary },
-                ]}
-                multiline
-                maxLength={8000}
-                textAlignVertical="top"
-                accessibilityLabel="Message to Pem"
-                returnKeyType="default"
-              />
-              <View style={styles.composerActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Record voice"
-                  onPress={onMic}
-                  style={({ pressed }) => [
-                    styles.iconCircle,
-                    { backgroundColor: colors.brandMutedSurface },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Mic size={22} stroke={pemAmber} strokeWidth={2.25} />
-                </Pressable>
-                {canSend ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Send"
-                    onPress={onSend}
-                    style={({ pressed }) => [
-                      styles.iconCircle,
-                      { backgroundColor: colors.pemAmber },
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <ArrowUp size={22} stroke={colors.onPrimary} strokeWidth={2.25} />
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
-          </View>
-        </View>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+      <HomeGlassHeader blurTint={blurTint} glassBorder={glassBorder} />
+      <HomeTabDock tab={tab} onTab={setTab} blurTint={blurTint} glassBorder={glassBorder} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   screen: {
     flex: 1,
   },
-  headerPad: {
-    paddingHorizontal: space[4],
-  },
-  hero: {
+  scroll: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: space[8],
+  },
+  scrollContent: {
+    paddingHorizontal: space[4],
     gap: space[4],
-  },
-  tagline: {
-    textAlign: "center",
-    fontSize: fontSize.xxl,
-    lineHeight: lh(fontSize.xxl, lineHeight.snug),
-    marginTop: space[2],
-  },
-  hint: {
-    textAlign: "center",
-    maxWidth: 300,
-  },
-  composerWrap: {
-    paddingHorizontal: space[4],
-    paddingTop: space[2],
-  },
-  composer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: space[3],
-    paddingLeft: space[5],
-    paddingRight: space[3],
-    paddingVertical: space[3],
-    borderRadius: radii.xl,
-    borderWidth: 1,
-  },
-  input: {
-    flex: 1,
-    minHeight: 44,
-    maxHeight: 140,
-    paddingVertical: space[2],
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.relaxed),
-  },
-  composerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[2],
-    paddingBottom: 2,
-  },
-  iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.full,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pressed: {
-    opacity: 0.85,
   },
 });

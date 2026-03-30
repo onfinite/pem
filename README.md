@@ -45,9 +45,9 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 |------|------|-------------------|
 | **Public** | Marketing / onboarding slider, product story, links into auth | **Stack** (`(public)/`) — no session required |
 | **Auth** | OAuth on `/welcome` (Google, Apple) — no separate auth routes | Clerk `useSSO` |
-| **App (signed-in)** | Home: prep cards, entry to **record** flow, settings (e.g. header icon) | **Stack** (e.g. `(app)/`) |
+| **App (signed-in)** | **`/home`** = preps hub; **Stack** pushes **dump**, **preping**, **received**, **settings** | **Stack** (`(app)/`) |
 
-**Stack vs tabs for Pem:** Your signed-in “hub” (cards + record + settings affordance) is **one home surface** with **pushed screens** for: multi-step **record**, **prep detail**, maybe **settings**. That is **stack-first**. **Tabs** are optional later if you add peer sections (e.g. Home | Library | Account) with equal weight — not required for the MVP flow you described.
+**Stack vs tabs for Pem:** Signed-in users land on **`/home`**. **Pem mark** or **Record** control → **`/dump`** → **`/preping`** → **`/received`** → **`/home`**. **Settings** on the same stack.
 
 **Splash and fonts** stay in the **root** `_layout.tsx` once (global cold start). **ClerkProvider** wraps routes that need auth; use **signed-in vs signed-out** redirects to send users to `(public)` vs `(app)` without duplicating splash inside each group.
 
@@ -57,8 +57,10 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 
 - **Expo** (React Native), **expo-router** (file-based routes under `app/app/`)
 - **TypeScript** (strict), **React 19**, **New Architecture** + **React Compiler** (see `app/app.json`)
-- UI primitives: `app/components/ui/` (`PemText`, `PemButton`, `PemTextField`); layout shells: `app/components/layout/` (`PemScreen`, `ScreenScroll`, …). Tokens: `app/constants/theme.ts` and `typography.ts`
+- UI primitives: `app/components/ui/` (`PemText`, `PemButton`, `PemTextField`); layout shells: `app/components/layout/` (`PemScreen`, `ScreenScroll`, …). **Page sections** (one-off chunks to keep route files short): `app/components/sections/<page>-sections/` (e.g. `home-sections/`, `dump-sections/`). Tokens: `app/constants/theme.ts` and `typography.ts`
 - **Icons:** `lucide-react-native` (stroke-based icons; requires **`react-native-svg`**, installed alongside)
+- **Gradients:** `expo-linear-gradient` (e.g. full-screen capture on **`/dump`**)
+- **Blur / glass:** `expo-blur` (`BlurView` — frosted header + tab dock on **`/home`**)
 - **Theme:** `contexts/ThemeContext.tsx` — **light / dark / system**, persisted with **`@react-native-async-storage/async-storage`**. `useTheme()` supplies semantic colors (see `ThemeSemantic`); root `StatusBar` follows resolved scheme.
 - **Clerk** (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in `app/.env`) — root layout: splash + fonts, then `ClerkProvider` + `<Slot />`. Sign-in is **OAuth only** on `/welcome` (**Google** + **Apple**) via `useSSO` from `@clerk/expo` with **`expo-auth-session`** + **`expo-web-browser`**. In the [Clerk dashboard](https://dashboard.clerk.com), enable **Google** and **Apple** SSO providers and add the redirect URL your app uses (see Clerk’s Expo / OAuth docs).
 
@@ -68,7 +70,11 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 |------|--------|--------|
 | `/` | `index.tsx` | Redirects to `/home` if signed in, else `/welcome` |
 | `/welcome` | `(public)/welcome.tsx` | Centered marketing + **Continue with Google** / **Continue with Apple** |
-| `/home` | `(app)/home.tsx` | Signed-in capture surface: centered Pem mark + tagline, bottom composer (text + voice); gear opens **`/settings`** |
+| `/home` | `(app)/home.tsx` | **Preps hub:** glass **BlurView** header + floating glass tab dock; tabs **Ready** / **Preping** / **Archived**; **Pem mark** + **Record** (in dock) → **`/dump`**; prep cards → **`/prep/[id]`** (detail) |
+| `/prep/[id]` | `(app)/prep/[id].tsx` | Full prep: options, research, or draft + **Copy** where relevant; **Close** → back |
+| `/dump` | `(app)/dump.tsx` | Full-bleed gradient; **Try saying** + website-style example; bottom bar **keyboard** swaps to **text field + mic** (back to voice) + **Send**; **Done** / **Send** → **`/preping`**; **Close** → **`/home`** |
+| `/preping` | `(app)/preping.tsx` | Parallel work in progress; **Continue** → **`/received`**; **back** → **`/home`** |
+| `/received` | `(app)/received.tsx` | Short acknowledgement; **Close** / **Back to Preps** → **`/home`** |
 | `/settings` | `(app)/settings.tsx` | Profile (Clerk), appearance (light / dark / system), sign out; **Close** (`X`) runs **`router.back()`** or **`/home`** if there is no stack history |
 
 **Develop**

@@ -1,5 +1,5 @@
 import { neutral, pemAmber } from "@/constants/theme";
-import { fontFamily, fontSize, radii, space } from "@/constants/typography";
+import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { useEffect, useRef } from "react";
 import { Animated, Dimensions, StyleSheet, Text, View } from "react-native";
 
@@ -90,6 +90,10 @@ export default function SplashScreenView() {
   );
 }
 
+const ICON_SIZE = 118;
+/** Room for Fraunces overshoots (serif P, italic descenders) — avoids Android/iOS glyph clipping. */
+const ICON_INSET = 6;
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -97,18 +101,22 @@ const styles = StyleSheet.create({
     backgroundColor: pemAmber,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: space[6],
     paddingBottom: space[12],
   },
   iconWrap: {
     marginBottom: space[10],
+    overflow: "visible",
   },
   iconCircle: {
-    width: 108,
-    height: 108,
-    borderRadius: radii.full,
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+    borderRadius: ICON_SIZE / 2,
     backgroundColor: neutral.white,
     alignItems: "center",
     justifyContent: "center",
+    padding: ICON_INSET,
+    overflow: "visible",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.28,
@@ -117,29 +125,36 @@ const styles = StyleSheet.create({
   },
   iconLetter: {
     fontSize: fontSize.display,
-    lineHeight: 72,
+    lineHeight: lh(fontSize.display, lineHeight.snug),
     color: pemAmber,
     fontFamily: fontFamily.display.bold,
     includeFontPadding: false,
-    textAlignVertical: "center",
+    textAlign: "center",
   },
   tagline: {
     alignItems: "center",
     gap: space[2],
+    width: "100%",
+    maxWidth: 400,
+    paddingHorizontal: space[2],
   },
   line1: {
     fontSize: fontSize.xl,
+    lineHeight: lh(fontSize.xl, lineHeight.relaxed),
     color: "rgba(255,255,255,0.92)",
     fontFamily: fontFamily.display.italic,
     letterSpacing: 0.2,
     textAlign: "center",
+    includeFontPadding: false,
   },
   line2: {
     fontSize: fontSize.sm,
+    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
     color: "rgba(255,255,255,0.65)",
     fontFamily: fontFamily.sans.semibold,
     letterSpacing: 0.8,
     textTransform: "uppercase",
     textAlign: "center",
+    includeFontPadding: false,
   },
 });
