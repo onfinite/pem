@@ -57,7 +57,9 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 
 - **Expo** (React Native), **expo-router** (file-based routes under `app/app/`)
 - **TypeScript** (strict), **React 19**, **New Architecture** + **React Compiler** (see `app/app.json`)
-- UI primitives (`PemScreen`, `PemText`, `PemButton`), tokens in `app/constants/theme.ts` and `app/constants/typography.ts`
+- UI primitives: `app/components/ui/` (`PemText`, `PemButton`, `PemTextField`); layout shells: `app/components/layout/` (`PemScreen`, `ScreenScroll`, …). Tokens: `app/constants/theme.ts` and `typography.ts`
+- **Icons:** `lucide-react-native` (stroke-based icons; requires **`react-native-svg`**, installed alongside)
+- **Theme:** `contexts/ThemeContext.tsx` — **light / dark / system**, persisted with **`@react-native-async-storage/async-storage`**. `useTheme()` supplies semantic colors (see `ThemeSemantic`); root `StatusBar` follows resolved scheme.
 - **Clerk** (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in `app/.env`) — root layout: splash + fonts, then `ClerkProvider` + `<Slot />`. Sign-in is **OAuth only** on `/welcome` (**Google** + **Apple**) via `useSSO` from `@clerk/expo` with **`expo-auth-session`** + **`expo-web-browser`**. In the [Clerk dashboard](https://dashboard.clerk.com), enable **Google** and **Apple** SSO providers and add the redirect URL your app uses (see Clerk’s Expo / OAuth docs).
 
 **Routes (file-based under `app/app/`):**
@@ -66,7 +68,8 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 |------|--------|--------|
 | `/` | `index.tsx` | Redirects to `/home` if signed in, else `/welcome` |
 | `/welcome` | `(public)/welcome.tsx` | Centered marketing + **Continue with Google** / **Continue with Apple** |
-| `/home` | `(app)/home.tsx` | Signed-in hub; `(app)/_layout.tsx` redirects guests to `/welcome` |
+| `/home` | `(app)/home.tsx` | Signed-in capture surface: centered Pem mark + tagline, bottom composer (text + voice); gear opens **`/settings`** |
+| `/settings` | `(app)/settings.tsx` | Profile (Clerk), appearance (light / dark / system), sign out; **Close** (`X`) runs **`router.back()`** or **`/home`** if there is no stack history |
 
 **Develop**
 

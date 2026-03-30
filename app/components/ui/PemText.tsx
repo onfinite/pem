@@ -1,4 +1,4 @@
-import { pemAmber, textPrimary, textSecondary } from "@/constants/theme";
+import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight } from "@/constants/typography";
 import type { ReactNode } from "react";
 import {
@@ -24,69 +24,59 @@ export const textVariants = [
 
 export type PemTextVariant = (typeof textVariants)[number];
 
-const styles = StyleSheet.create({
+const layout = StyleSheet.create({
   display: {
     fontFamily: fontFamily.display.bold,
     fontSize: fontSize.display,
     lineHeight: lh(fontSize.display, lineHeight.tight),
-    color: textPrimary,
     letterSpacing: -0.6,
   },
   headline: {
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.xxxl,
     lineHeight: lh(fontSize.xxxl, lineHeight.snug),
-    color: textPrimary,
     letterSpacing: -0.4,
   },
   title: {
     fontFamily: fontFamily.sans.semibold,
     fontSize: fontSize.xl,
     lineHeight: lh(fontSize.xl, lineHeight.normal),
-    color: textPrimary,
   },
   titleLarge: {
     fontFamily: fontFamily.sans.semibold,
     fontSize: fontSize.xxl,
     lineHeight: lh(fontSize.xxl, lineHeight.snug),
-    color: textPrimary,
   },
   body: {
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.base,
     lineHeight: lh(fontSize.base, lineHeight.relaxed),
-    color: textPrimary,
   },
   bodyMuted: {
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.base,
     lineHeight: lh(fontSize.base, lineHeight.relaxed),
-    color: textSecondary,
   },
   label: {
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.sm,
     lineHeight: lh(fontSize.sm, lineHeight.normal),
-    color: textSecondary,
     letterSpacing: 0.15,
   },
   caption: {
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.xs,
     lineHeight: lh(fontSize.xs, lineHeight.normal),
-    color: textSecondary,
   },
   brandItalic: {
     fontFamily: fontFamily.display.italic,
     fontSize: fontSize.xl,
     lineHeight: lh(fontSize.xl, lineHeight.normal),
-    color: pemAmber,
   },
   link: {
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.base,
     lineHeight: lh(fontSize.base, lineHeight.relaxed),
-    color: pemAmber,
   },
 });
 
@@ -102,8 +92,17 @@ export default function PemText({
   children,
   ...rest
 }: PemTextProps) {
+  const { colors } = useTheme();
+
+  const color =
+    variant === "bodyMuted" || variant === "label" || variant === "caption"
+      ? colors.textSecondary
+      : variant === "brandItalic" || variant === "link"
+        ? colors.pemAmber
+        : colors.textPrimary;
+
   return (
-    <Text style={[styles[variant], style]} {...rest}>
+    <Text style={[layout[variant], { color }, style]} {...rest}>
       {children}
     </Text>
   );

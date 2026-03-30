@@ -1,4 +1,4 @@
-import { pageBackground } from "@/constants/theme";
+import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
 import type { ReactNode } from "react";
 import {
@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type ScreenScrollProps = {
   children: ReactNode;
-  /** Default: warm cream page background */
+  /** Default: theme page background */
   backgroundColor?: string;
   contentStyle?: ViewStyle;
   /** Extra bottom padding for keyboard */
@@ -21,10 +21,13 @@ type ScreenScrollProps = {
 
 export default function ScreenScroll({
   children,
-  backgroundColor = pageBackground,
+  backgroundColor: backgroundColorProp,
   contentStyle,
   bottomInset = space[8],
 }: ScreenScrollProps) {
+  const { colors } = useTheme();
+  const backgroundColor = backgroundColorProp ?? colors.pageBackground;
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView

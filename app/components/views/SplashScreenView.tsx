@@ -5,16 +5,11 @@ import { Animated, Dimensions, StyleSheet, Text, View } from "react-native";
 
 const { height } = Dimensions.get("window");
 
-interface Props {
-  fontsLoaded: boolean;
-  onDone: () => void;
-}
-
-export default function SplashScreenView({ fontsLoaded, onDone }: Props) {
+/** Entrance-only animation; exit / handoff is handled by the root layout crossfade. */
+export default function SplashScreenView() {
   const iconAnim = useRef(new Animated.Value(0)).current;
   const line1Anim = useRef(new Animated.Value(0)).current;
   const line2Anim = useRef(new Animated.Value(0)).current;
-  const exitAnim = useRef(new Animated.Value(1)).current;
 
   const iconScale = iconAnim.interpolate({
     inputRange: [0, 1],
@@ -30,7 +25,6 @@ export default function SplashScreenView({ fontsLoaded, onDone }: Props) {
   });
 
   useEffect(() => {
-    // Entrance sequence
     Animated.sequence([
       Animated.delay(80),
       Animated.spring(iconAnim, {
@@ -58,24 +52,11 @@ export default function SplashScreenView({ fontsLoaded, onDone }: Props) {
         useNativeDriver: true,
       }),
     ]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only entrance; animated refs are stable
   }, []);
 
-  useEffect(() => {
-    if (!fontsLoaded) return;
-    // Hold briefly then fade out
-    const timeout = setTimeout(() => {
-      Animated.timing(exitAnim, {
-        toValue: 0,
-        duration: 320,
-        useNativeDriver: true,
-      }).start(() => onDone());
-    }, 2000);
-    return () => clearTimeout(timeout);
-  }, [fontsLoaded]);
-
   return (
-    <Animated.View style={[styles.root, { opacity: exitAnim }]}>
-      {/* Icon */}
+    <View style={styles.root}>
       <Animated.View
         style={[
           styles.iconWrap,
@@ -87,7 +68,6 @@ export default function SplashScreenView({ fontsLoaded, onDone }: Props) {
         </View>
       </Animated.View>
 
-      {/* Tagline */}
       <View style={styles.tagline}>
         <Animated.Text
           style={[
@@ -95,7 +75,7 @@ export default function SplashScreenView({ fontsLoaded, onDone }: Props) {
             { opacity: line1Anim, transform: [{ translateY: line1Y }] },
           ]}
         >
-          Whatever&apos;s on your mind
+          Whatever{"'"}s on your mind
         </Animated.Text>
         <Animated.Text
           style={[
@@ -103,10 +83,10 @@ export default function SplashScreenView({ fontsLoaded, onDone }: Props) {
             { opacity: line2Anim, transform: [{ translateY: line2Y }] },
           ]}
         >
-          Pem&apos;s got it.
+          Pem{"'"}s got it.
         </Animated.Text>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 

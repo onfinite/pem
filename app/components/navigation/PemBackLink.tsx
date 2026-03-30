@@ -1,4 +1,4 @@
-import PemText from "@/components/PemText";
+import PemText from "@/components/ui/PemText";
 import { router } from "expo-router";
 import { Pressable, StyleSheet } from "react-native";
 

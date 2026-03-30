@@ -1,14 +1,16 @@
 import PemLogoRow from "@/components/brand/PemLogoRow";
 import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
 import ScreenScroll from "@/components/layout/ScreenScroll";
-import PemText from "@/components/PemText";
-import { pemAmber, surfacePage } from "@/constants/theme";
+import PemText from "@/components/ui/PemText";
+import { useTheme } from "@/contexts/ThemeContext";
+import { pemAmber } from "@/constants/theme";
 import { space } from "@/constants/typography";
 import { useAuth } from "@clerk/expo";
 import { Redirect } from "expo-router";
 import { StyleSheet, View } from "react-native";
 
 export default function WelcomeScreen() {
+  const { colors } = useTheme();
   const { isLoaded, isSignedIn } = useAuth();
 
   if (!isLoaded) {
@@ -20,7 +22,7 @@ export default function WelcomeScreen() {
 
   return (
     <ScreenScroll
-      backgroundColor={surfacePage}
+      backgroundColor={colors.surfacePage}
       bottomInset={space[10]}
       contentStyle={styles.scrollInner}
     >
@@ -37,9 +39,19 @@ export default function WelcomeScreen() {
           life. Come back to preps ready to act on.
         </PemText>
         <View style={styles.dots} accessibilityLabel="Onboarding steps">
-          <View style={[styles.dot, styles.dotActive]} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
+          <View style={[styles.dotActive, { backgroundColor: pemAmber }]} />
+          <View
+            style={[
+              styles.dot,
+              { backgroundColor: colors.textSecondary, opacity: 0.22 },
+            ]}
+          />
+          <View
+            style={[
+              styles.dot,
+              { backgroundColor: colors.textSecondary, opacity: 0.22 },
+            ]}
+          />
         </View>
         <SocialSignInButtons />
       </View>
@@ -88,10 +100,10 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "rgba(27, 26, 22, 0.15)",
   },
   dotActive: {
-    backgroundColor: pemAmber,
     width: 22,
+    height: 8,
+    borderRadius: 4,
   },
 });

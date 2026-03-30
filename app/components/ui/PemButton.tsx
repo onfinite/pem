@@ -1,4 +1,4 @@
-import { neutral, pemAmber, textPrimary } from "@/constants/theme";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   fontFamily,
   fontSize,
@@ -33,35 +33,6 @@ const styles = StyleSheet.create({
     lineHeight: lh(fontSize.md, lineHeight.normal),
   },
 });
-
-const variantDefs: Record<
-  PemButtonVariant,
-  {
-    container: ViewStyle;
-    pressed: ViewStyle;
-    labelColor: string;
-  }
-> = {
-  primary: {
-    container: { backgroundColor: pemAmber },
-    pressed: { opacity: 0.88 },
-    labelColor: neutral.white,
-  },
-  secondary: {
-    container: {
-      backgroundColor: neutral.white,
-      borderWidth: 1,
-      borderColor: neutral[300],
-    },
-    pressed: { backgroundColor: neutral[100] },
-    labelColor: textPrimary,
-  },
-  ghost: {
-    container: { backgroundColor: "transparent" },
-    pressed: { opacity: 0.65 },
-    labelColor: pemAmber,
-  },
-};
 
 const sizeDefs: Record<
   PemButtonSize,
@@ -109,8 +80,35 @@ export default function PemButton({
   textStyle,
   disabled = false,
 }: PemButtonProps) {
-  const def = variantDefs[variant];
+  const { colors } = useTheme();
   const sizeDef = sizeDefs[size];
+
+  const variantStyle: {
+    container: ViewStyle;
+    pressed: ViewStyle;
+    labelColor: string;
+  } =
+    variant === "primary"
+      ? {
+          container: { backgroundColor: colors.pemAmber },
+          pressed: { opacity: 0.88 },
+          labelColor: colors.onPrimary,
+        }
+      : variant === "secondary"
+        ? {
+            container: {
+              backgroundColor: colors.secondarySurface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+            pressed: { opacity: 0.92 },
+            labelColor: colors.textPrimary,
+          }
+        : {
+            container: { backgroundColor: "transparent" },
+            pressed: { opacity: 0.65 },
+            labelColor: colors.pemAmber,
+          };
 
   const content =
     typeof children === "string" || typeof children === "number" ? (
@@ -118,7 +116,7 @@ export default function PemButton({
         style={[
           styles.label,
           sizeDef.label,
-          { color: def.labelColor },
+          { color: variantStyle.labelColor },
           textStyle,
         ]}
       >
@@ -137,8 +135,8 @@ export default function PemButton({
       style={({ pressed }) => [
         styles.chrome,
         sizeDef.container,
-        def.container,
-        pressed && !disabled && def.pressed,
+        variantStyle.container,
+        pressed && !disabled && variantStyle.pressed,
         disabled && { opacity: 0.45 },
         style,
       ]}

@@ -6,19 +6,35 @@ alwaysApply: false
 
 # Pem API (`api/`)
 
-**Package:** Application code under **`api/app/`** with imports like `from app.core.config import settings`. Run/tests use project root on `PYTHONPATH` as your tooling expects (e.g. `uv run` from `api/`).
+**Package:** Application code under **`api/app/`** with imports like `from app.core.config import settings`. Use **`uv`** for env and dependency management (`uv sync`, `uv run` from `api/`). Run/tests use project root on `PYTHONPATH` as your tooling expects.
+
+**Python & stack:** **Python ≥3.13**, **FastAPI**, **Pydantic v2** / **SQLModel**, **arq** for async jobs, **structlog** for logging. Prefer **async** end-to-end for I/O-bound paths; **don’t mix** ad-hoc sync DB access alongside async routes for the same concern—follow the pattern established in **`app/core/database.py`** and existing routers.
 
 **App factory:** `app/main.py` builds **FastAPI** with optional docs in non-prod, **`lifespan`** for startup/shutdown, middleware order (correlation ID, security headers, request size, CORS), **slowapi** on `app.state.limiter`, and **`include_router(router)`** from `app.routers`.
 
-**Config:** **`app/core/config.py`** — `pydantic-settings` `Settings` from env (`.env`): `database_url`, `database_url_sync`, `redis_url`, `env`, CORS, rate limit, etc.
+**Config:** **`app/core/config.py`** — `pydantic-settings` **`Settings`** from env (`.env`): `database_url`, `database_url_sync`, `redis_url`, `env`, CORS, rate limit, etc. **Never hardcode secrets**—always env-driven.
 
-**Logging / errors:** **`app/core/bootstrap.py`** configures **structlog** (JSON in prod, console in dev) and **Sentry** in prod. **`CorrelationIdMiddleware`** binds `request_id` for structlog and sets `X-Request-ID`.
+**Security (first-class):** Treat security as a default requirement, not a later pass.
 
-**Data:** **`SQLModel`** models in `app/models/`; sync sessions via **`get_session`** in `app/core/database.py` (**`create_engine`** + `Session` context). Schema changes: **Alembic** under `api/migrations/`.
+- **Validate all input** with **Pydantic** models / field constraints; reject unknown shapes early.
+- **Authn / authz:** enforce identity and permissions on protected routes (**`Depends()`** patterns, no “trust the client” for user id or roles).
+- **Secrets & config:** env-only; no secrets in code, logs, or error messages returned to clients.
+- **Data access:** use **SQLModel/SQLAlchemy** parameterized queries—no string-built SQL with user input.
+- **HTTP surface:** use existing **CORS**, **security headers**, **request size** limits, and **rate limiting** (`slowapi`)—extend deliberately when adding endpoints.
+- **Dependencies:** keep frameworks and transitive deps reasonably current for security patches.
+- **Reuse before reinventing:** prefer **FastAPI**, **Pydantic**, and ecosystem patterns (OAuth, password hashing, etc.) over custom crypto or ad-hoc auth.
 
-**Routers:** One module per area (e.g. `user_routes.py`) exporting `router = APIRouter(prefix=..., tags=[...])`; aggregate in **`app/routers/__init__.py`** with `include_router`. Add new endpoints to an existing router or new module + register.
+**Logging / errors:** **`app/core/bootstrap.py`** configures **structlog** (JSON in prod, console in dev) and **Sentry** in prod. **`CorrelationIdMiddleware`** binds `request_id` for structlog and sets `X-Request-ID`. Prefer **centralized** error handling (middleware / exception handlers / service patterns) over scattered bare `try/except` in every route—**no bare `print()`** for operational logs.
+
+**Data:** **`SQLModel`** models in `app/models/`; sessions via **`get_session`** in **`app/core/database.py`**. Schema changes: **Alembic** under **`api/migrations/`**.
+
+**Routers & domain logic:** **`app/routers/`** — one router module per area (`APIRouter` + `include_router` from **`app/routers/__init__.py`**). **Keep routers thin**—validation and HTTP glue in the route; heavier logic in **services** or dedicated modules as the API grows (this repo uses **`routers/`** + **`models/`** + **`core/`** rather than a separate `modules/` tree—extend that pattern). **Dependency injection** via FastAPI **`Depends()`**—avoid hidden globals for DB sessions and settings.
+
+**Workers / jobs:** Background work goes through **arq** (or the project’s existing job pattern)—keep job entrypoints consistent with **`structlog`** and shared config.
 
 **Rate limits:** Use **`slowapi`** / `limiter` from `app/middlewares/limiter.py` where endpoints need limits (follow existing patterns).
+
+**Types:** **Type-annotate** public functions and service methods. Use **Pydantic** models for request/response bodies and exported shapes—those models are the **documented API contract**.
 
 **Maintenance:** When you add packages, env vars, or new API/data patterns under `api/`, update **`pem-api.mdc`** (and **`pem-project.mdc`** if stack-wide), and **repo-root `README.md`** if humans need new setup, env, or stack notes. See `pem-project.mdc` → *`README.md` as source of truth* and *Keeping `.cursor/rules` in sync*.
 

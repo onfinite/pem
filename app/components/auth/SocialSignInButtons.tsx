@@ -1,5 +1,5 @@
-import PemText from "@/components/PemText";
-import { error as errorColor, neutral, textPrimary } from "@/constants/theme";
+import PemText from "@/components/ui/PemText";
+import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { useSSO } from "@clerk/expo";
 import { useRouter } from "expo-router";
@@ -13,6 +13,7 @@ type LoadingId = "google" | "apple" | null;
  * and Google / Apple enabled in the Clerk dashboard.
  */
 export default function SocialSignInButtons() {
+  const { colors } = useTheme();
   const { startSSOFlow } = useSSO();
   const router = useRouter();
   const [loading, setLoading] = useState<LoadingId>(null);
@@ -83,15 +84,21 @@ export default function SocialSignInButtons() {
         disabled={busy}
         style={({ pressed }) => [
           styles.btn,
-          styles.google,
+          {
+            backgroundColor: colors.secondarySurface,
+            borderWidth: 1,
+            borderColor: colors.border,
+          },
           pressed && !busy && styles.pressed,
           busy && loading !== "google" && styles.dimmed,
         ]}
       >
         {loading === "google" ? (
-          <ActivityIndicator color={textPrimary} />
+          <ActivityIndicator color={colors.textPrimary} />
         ) : (
-          <PemText style={styles.googleLabel}>Continue with Google</PemText>
+          <PemText style={[styles.googleLabel, { color: colors.textPrimary }]}>
+            Continue with Google
+          </PemText>
         )}
       </Pressable>
 
@@ -115,7 +122,7 @@ export default function SocialSignInButtons() {
       </Pressable>
 
       {message ? (
-        <PemText variant="caption" style={styles.err}>
+        <PemText variant="caption" style={[styles.err, { color: colors.error }]}>
           {message}
         </PemText>
       ) : null}
@@ -136,16 +143,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: space[5],
   },
-  google: {
-    backgroundColor: neutral.white,
-    borderWidth: 1,
-    borderColor: neutral[300],
-  },
   googleLabel: {
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.md,
     lineHeight: lh(fontSize.md, lineHeight.normal),
-    color: textPrimary,
   },
   apple: {
     backgroundColor: "#000000",
@@ -163,7 +164,6 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   err: {
-    color: errorColor,
     textAlign: "center",
     marginTop: space[2],
   },

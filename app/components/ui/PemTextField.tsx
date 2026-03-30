@@ -1,5 +1,5 @@
-import PemText from "@/components/PemText";
-import { error as errorColor, neutral, textPrimary } from "@/constants/theme";
+import PemText from "@/components/ui/PemText";
+import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import type { ReactNode } from "react";
 import {
@@ -27,15 +27,29 @@ export default function PemTextField({
   style,
   ...inputProps
 }: PemTextFieldProps) {
+  const { colors } = useTheme();
+
   return (
     <View style={containerStyle}>
       <PemText variant="label" style={styles.label}>
         {label}
       </PemText>
-      <View style={[styles.fieldRow, error ? styles.fieldError : null]}>
+      <View
+        style={[
+          styles.fieldRow,
+          {
+            borderColor: error ? colors.error : colors.border,
+            backgroundColor: colors.secondarySurface,
+          },
+        ]}
+      >
         <TextInput
-          placeholderTextColor={neutral[400]}
-          style={[styles.input, style]}
+          placeholderTextColor={colors.placeholder}
+          style={[
+            styles.input,
+            { color: colors.textPrimary },
+            style,
+          ]}
           {...inputProps}
         />
         {accessoryRight ? (
@@ -43,7 +57,7 @@ export default function PemTextField({
         ) : null}
       </View>
       {error ? (
-        <PemText variant="caption" style={styles.errorText}>
+        <PemText variant="caption" style={[styles.errorText, { color: colors.error }]}>
           {error}
         </PemText>
       ) : null}
@@ -62,13 +76,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: neutral[300],
     borderRadius: radii.sm,
-    backgroundColor: neutral.white,
     minHeight: 48,
-  },
-  fieldError: {
-    borderColor: errorColor,
   },
   input: {
     flex: 1,
@@ -77,13 +86,11 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.base,
     lineHeight: lh(fontSize.base, lineHeight.relaxed),
-    color: textPrimary,
   },
   accessory: {
     paddingRight: space[3],
   },
   errorText: {
-    color: errorColor,
     marginTop: space[1],
   },
 });

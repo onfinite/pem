@@ -5,6 +5,22 @@ alwaysApply: true
 
 # Pem project
 
+## Coding philosophy
+
+- **Simplicity first.** If it feels too complex, simplify before adding more.
+- **No over-engineering.** Solve the problem in front of you, not hypothetical future ones.
+- **Clarity over cleverness.** Prefer obvious code and modern, standard patterns.
+- **Short, focused files.** If a file is doing too much, split it.
+- **Consistent naming and patterns** across the repo.
+- **DRY:** centralize shared behavior; don’t copy-paste logic.
+- **Meaningful layout:** a file’s folder should signal its role (see stack-specific `.mdc` files).
+- **Docs with code:** when behavior, structure, or APIs change, update **`README.md`** and relevant **`.mdc`** in the same effort—not only after.
+- **Reuse before reinventing:** Before writing new helpers, check **framework and library APIs** (Expo, React Native, FastAPI, Pydantic, SQLAlchemy/SQLModel, etc.) and **existing code in this repo**—prefer extending or composing what’s already there over duplicating behavior.
+
+**When in doubt:** Prefer a quick alignment question over a large wrong implementation. Flag assumptions in PRs or reviews. If two approaches are equal, pick the **simpler** one.
+
+*(This complements **Collaboration** below: substantial work still follows “plan first, then code”—see that section.)*
+
 **Product (Pem):** A mobile product for **busy minds** — users **dump** thoughts (voice/text); Pem **preps** (search, research, options, drafts) in parallel; users **come back** to **preps** ready to act on and mark done. Pem does the **middle work** between “I need to deal with this” and “I’m ready” — **not** a chatbot to babysit or a task manager to maintain; **you** always perform the final action (send, buy, decide). Full product story, prep types table, and navigation direction: **repo `README.md`** (*What is Pem?*).
 
 **Brand & color:** For **palette, typography, logo usage, voice** when unsure, read **`brand/pem-brand.html`** in the repo (browser) and **`brand/README.md`**. Implementations should stay aligned with **`app/constants/theme.ts`** and **`app/constants/typography.ts`**.
@@ -23,5 +39,7 @@ alwaysApply: true
 **`README.md` as source of truth:** The repo-root **`README.md`** is canonical **human-facing documentation** (stack, layout, how to run, env, contributor workflow). Whenever a change affects what contributors need to know—**new packages**, **dependencies**, **patterns**, **setup**, **commands**, or **folder roles**—**update `README.md` in the same effort** so it stays accurate. Do not leave README stale while code or `.mdc` files move ahead.
 
 **Keeping `.cursor/rules` in sync:** Whenever you add **new packages**, **dependencies**, or **new patterns** (architecture, folders, tooling, env vars), **update the relevant `.mdc` files in the same effort** so agents and humans stay aligned: `pem-project.mdc` for stack and repo-wide facts; `pem-app.mdc` for Expo/RN/UI conventions; `pem-api.mdc` for backend conventions. Treat rule updates as part of the change, not an optional afterthought. **README and `.mdc` updates should land together** when the same facts change.
+
+**Docs (cross-cutting):** New modules or cross-cutting patterns deserve a short **why** (intent, tradeoff), not a restatement of the code. API **request/response** shapes stay documented—**Pydantic** models are part of that contract.
 
 **Collaboration:** **Share your plan first** (goal, files you will touch, tradeoffs) and **get explicit agreement before writing substantial code**, unless the user has already approved the approach or the task is trivial (typo, one-liner). The intent is to **code together** with the user steering—not to sprint ahead solo.

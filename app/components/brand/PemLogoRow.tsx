@@ -1,16 +1,18 @@
-import { pemAmber, textPrimary } from "@/constants/theme";
+import { useTheme } from "@/contexts/ThemeContext";
+import { pemAmber } from "@/constants/theme";
 import { fontFamily, space } from "@/constants/typography";
 import { StyleSheet, Text, View } from "react-native";
 
 type PemLogoRowProps = {
-  /** Larger logo for welcome; compact for auth headers */
-  size?: "default" | "large";
+  /** Larger logo for welcome; compact for auth headers; hero for signed-in home */
+  size?: "default" | "large" | "hero";
 };
 
 export default function PemLogoRow({ size = "default" }: PemLogoRowProps) {
-  const circle = size === "large" ? 56 : 44;
-  const pSize = size === "large" ? 28 : 22;
-  const wordSize = size === "large" ? 32 : 26;
+  const { colors } = useTheme();
+  const circle = size === "hero" ? 80 : size === "large" ? 56 : 44;
+  const pSize = size === "hero" ? 40 : size === "large" ? 28 : 22;
+  const wordSize = size === "hero" ? 38 : size === "large" ? 32 : 26;
 
   return (
     <View style={styles.row} accessibilityRole="header">
@@ -24,7 +26,12 @@ export default function PemLogoRow({ size = "default" }: PemLogoRowProps) {
           P
         </Text>
       </View>
-      <Text style={[styles.wordmark, { fontSize: wordSize, lineHeight: wordSize * 1.05 }]}>
+      <Text
+        style={[
+          styles.wordmark,
+          { fontSize: wordSize, lineHeight: wordSize * 1.05, color: colors.textPrimary },
+        ]}
+      >
         pem
       </Text>
     </View>
@@ -48,7 +55,6 @@ const styles = StyleSheet.create({
   },
   wordmark: {
     fontFamily: fontFamily.display.semibold,
-    color: textPrimary,
     letterSpacing: -0.8,
     fontWeight: "300",
   },
