@@ -16,7 +16,7 @@ export default function PreppingDumpFlow() {
         <View style={[styles.iconBadge, { backgroundColor: colors.brandMutedSurface }]}>
           <Check size={36} stroke={colors.pemAmber} strokeWidth={2.5} />
         </View>
-        <PemText style={[styles.headline, { color: colors.textPrimary }]}>We got it.</PemText>
+        <PemText style={[styles.headline, { color: colors.textPrimary }]}>Pem’s got it.</PemText>
         <PemText variant="body" style={[styles.sub, { color: colors.textSecondary }]}>
           Pem&apos;s on it — search, drafts, and options. Nothing&apos;s final until you open a prep.
         </PemText>

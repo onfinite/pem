@@ -73,7 +73,7 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 | `/home` | `(app)/home.tsx` | **Preps hub:** fixed **`HomeTopBar`** (title · **Settings**) + tab dock (**Ready** / **Prepping** / **Archived**); **Dump** → **`/dump`**; prep cards → **`/prep/[id]`** (detail) |
 | `/prep/[id]` | `(app)/prep/[id].tsx` | Full prep: options, research, or draft + **Copy** where relevant; **Close** → back |
 | `/dump` | `(app)/dump.tsx` | Full-bleed gradient; **Try saying** + website-style example; bottom bar **keyboard** swaps to **text field + mic** (back to voice) + **Send**; **Done** / **Send** → **`/prepping`**; **Close** → **`/home`** |
-| `/prepping` | `(app)/prepping.tsx` | After a dump: **We got it** + in-flight prep rows + reassurance (scrolls); **Back to Preps** pinned at bottom — **`/home`** |
+| `/prepping` | `(app)/prepping.tsx` | After a dump: **Pem’s got it** + in-flight prep rows + reassurance (scrolls); **Back to Preps** pinned at bottom — **`/home`** |
 | `/settings` | `(app)/settings.tsx` | Profile (Clerk), appearance (light / dark / system), sign out; **Close** (`X`) runs **`router.back()`** or **`/home`** if there is no stack history |
 
 **Develop**

@@ -41,13 +41,13 @@ export default function HomeScreen() {
       ? {
           title: "Preps",
           sub: hasPreps
-            ? "Open when you’re ready — nothing goes out until you do."
+            ? "Your prep work, ready."
             : "Dump voice or text first. Preps land here when they’re ready to open.",
         }
       : tab === "prepping"
         ? {
             title: "Prepping",
-            sub: "What Pem is still working on — it’ll move to Ready when it’s done.",
+            sub: "Pem’s on it — moves to Ready when done.",
           }
         : {
             title: "Archived",
