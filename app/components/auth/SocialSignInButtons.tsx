@@ -2,7 +2,9 @@ import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { useSSO } from "@clerk/expo";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
+import GoogleGLogo from "./GoogleGLogo";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
@@ -96,9 +98,12 @@ export default function SocialSignInButtons() {
         {loading === "google" ? (
           <ActivityIndicator color={colors.textPrimary} />
         ) : (
-          <PemText style={[styles.googleLabel, { color: colors.textPrimary }]}>
-            Continue with Google
-          </PemText>
+          <View style={styles.btnContent}>
+            <GoogleGLogo size={20} />
+            <PemText style={[styles.googleLabel, { color: colors.textPrimary }]}>
+              Continue with Google
+            </PemText>
+          </View>
         )}
       </Pressable>
 
@@ -117,7 +122,10 @@ export default function SocialSignInButtons() {
         {loading === "apple" ? (
           <ActivityIndicator color="#ffffff" />
         ) : (
-          <PemText style={styles.appleLabel}>Continue with Apple</PemText>
+          <View style={styles.btnContent}>
+            <Ionicons name="logo-apple" size={22} color="#ffffff" />
+            <PemText style={styles.appleLabel}>Continue with Apple</PemText>
+          </View>
         )}
       </Pressable>
 
@@ -142,6 +150,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: space[5],
+  },
+  btnContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: space[3],
   },
   googleLabel: {
     fontFamily: fontFamily.sans.medium,

@@ -1,5 +1,6 @@
 import PemText from "@/components/ui/PemText";
-import { fontSize, lh, lineHeight, space } from "@/constants/typography";
+import { useTheme } from "@/contexts/ThemeContext";
+import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { StyleSheet, View } from "react-native";
 import DumpVoiceWaveform from "./DumpVoiceWaveform";
 
@@ -18,12 +19,22 @@ type Props = {
 };
 
 export default function DumpMainStage({ bottomMode, pemAmber, waveInactive }: Props) {
+  const { colors } = useTheme();
   return (
     <View style={styles.main}>
       <PemText variant="label" style={styles.centerText}>
         {bottomMode === "voice" ? VOICE_TRY_LABEL : TYPE_TRY_LABEL}
       </PemText>
-      <PemText variant="brandItalic" style={[styles.centerText, styles.quoteSize]}>
+      <PemText
+        style={[
+          styles.centerText,
+          styles.quoteSize,
+          {
+            fontFamily: fontFamily.display.italic,
+            color: colors.textSecondary,
+          },
+        ]}
+      >
         {bottomMode === "voice" ? VOICE_EXAMPLE : TYPE_EXAMPLE}
       </PemText>
 

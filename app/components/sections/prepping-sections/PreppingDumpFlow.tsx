@@ -1,12 +1,12 @@
+import HomePreppingList from "@/components/sections/home-sections/HomePreppingList";
 import PemText from "@/components/ui/PemText";
 import { PREPPING_FLOW_MAX_WIDTH } from "@/constants/layout";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { Check } from "lucide-react-native";
 import { StyleSheet, View } from "react-native";
-import PreppingParallelRows from "./PreppingParallelRows";
 
-/** Acknowledgement → in-flight rows → short reassurance (CTA lives on screen footer). */
+/** Post-dump acknowledgement + same in-flight rows as the hub Prepping tab; CTA is the screen footer. */
 export default function PreppingDumpFlow() {
   const { colors } = useTheme();
 
@@ -26,7 +26,7 @@ export default function PreppingDumpFlow() {
         <PemText variant="bodyMuted" style={[styles.listLabel, { color: colors.textSecondary }]}>
           In flight
         </PemText>
-        <PreppingParallelRows />
+        <HomePreppingList />
       </View>
     </View>
   );
@@ -38,12 +38,23 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: PREPPING_FLOW_MAX_WIDTH,
     alignSelf: "center",
-    alignItems: "center",
+    alignItems: "stretch",
   },
   hero: {
     gap: space[3],
     width: "100%",
     alignItems: "center",
+  },
+  listSection: {
+    gap: space[2],
+    width: "100%",
+  },
+  listLabel: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.xs,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    textAlign: "center",
   },
   iconBadge: {
     width: 88,
@@ -65,18 +76,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 360,
     alignSelf: "center",
-  },
-  listSection: {
-    gap: space[2],
-    width: "100%",
-    alignItems: "stretch",
-  },
-  listLabel: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.xs,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    textAlign: "center",
-    width: "100%",
   },
 });

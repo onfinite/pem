@@ -2,7 +2,7 @@ import PemText from "@/components/ui/PemText";
 import { useTheme, type ThemeSemantic } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
-import { PREPPING_ROWS } from "./homePrepData";
+import { PREPPING_ROWS, prepKindTagColor } from "./homePrepData";
 
 function PreppingRow({
   row,
@@ -13,6 +13,7 @@ function PreppingRow({
   colors: ThemeSemantic;
   resolved: "light" | "dark";
 }) {
+  const subColor = prepKindTagColor(row.kind, resolved);
   return (
     <View
       style={[
@@ -32,17 +33,17 @@ function PreppingRow({
         },
       ]}
     >
-      <View style={[styles.preppingIconWell, { backgroundColor: colors.brandMutedSurface }]}>
-        <row.Icon size={24} stroke={colors.pemAmber} strokeWidth={2.25} />
+      <View style={[styles.preppingIconWell, { backgroundColor: colors.secondarySurface }]}>
+        <row.Icon size={18} stroke={colors.textSecondary} strokeWidth={2} />
       </View>
       <View style={styles.preppingRowBody}>
-        <PemText style={[styles.preppingRowSub, { color: colors.pemAmber }]}>{row.subtitle}</PemText>
+        <PemText style={[styles.preppingRowSub, { color: subColor }]}>{row.subtitle}</PemText>
         <PemText style={[styles.preppingRowTitle, { color: colors.textPrimary }]} numberOfLines={2}>
           {row.title}
         </PemText>
       </View>
       <View style={styles.preppingSpinner}>
-        <ActivityIndicator size="small" color={colors.pemAmber} />
+        <ActivityIndicator size="small" color={colors.placeholder} />
       </View>
     </View>
   );
@@ -73,9 +74,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   preppingIconWell: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },

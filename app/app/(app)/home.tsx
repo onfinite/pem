@@ -1,6 +1,7 @@
 import HomeArchivedList from "@/components/sections/home-sections/HomeArchivedList";
 import HomeTopBar from "@/components/sections/home-sections/HomeTopBar";
 import HomePageHead from "@/components/sections/home-sections/HomePageHead";
+import HomePreppingEmpty from "@/components/sections/home-sections/HomePreppingEmpty";
 import HomePreppingList from "@/components/sections/home-sections/HomePreppingList";
 import HomeReadyEmpty from "@/components/sections/home-sections/HomeReadyEmpty";
 import HomeReadyPrepsList from "@/components/sections/home-sections/HomeReadyPrepsList";
@@ -11,7 +12,11 @@ import {
   TOP_ICON_CHIP,
   glassChromeBorder,
 } from "@/components/sections/home-sections/homeLayout";
-import { SHOW_SAMPLE_PREPS, type PrepTab } from "@/components/sections/home-sections/homePrepData";
+import {
+  SHOW_PREPPING_HUB_ROWS,
+  SHOW_SAMPLE_PREPS,
+  type PrepTab,
+} from "@/components/sections/home-sections/homePrepData";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
@@ -68,7 +73,8 @@ export default function HomeScreen() {
 
         {tab === "ready" && !hasPreps ? <HomeReadyEmpty /> : null}
         {tab === "ready" && hasPreps ? <HomeReadyPrepsList resolved={resolved} /> : null}
-        {tab === "prepping" ? <HomePreppingList /> : null}
+        {tab === "prepping" && SHOW_PREPPING_HUB_ROWS ? <HomePreppingList /> : null}
+        {tab === "prepping" && !SHOW_PREPPING_HUB_ROWS ? <HomePreppingEmpty /> : null}
         {tab === "archived" ? <HomeArchivedList resolved={resolved} /> : null}
       </ScrollView>
 

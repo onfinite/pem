@@ -47,7 +47,7 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 | **Auth** | OAuth on `/welcome` (Google, Apple) — no separate auth routes | Clerk `useSSO` |
 | **App (signed-in)** | **`/home`** = preps hub; **Stack** pushes **dump**, **prepping**, **settings** | **Stack** (`(app)/`) |
 
-**Stack vs tabs for Pem:** Signed-in users land on **`/home`**. **Dump** (dock) → **`/dump`** → **`/prepping`** (acknowledgement + in-flight preps) → **`/home`**. **Settings** (fixed in **`HomeTopBar`**) on the same stack.
+**Stack vs tabs for Pem:** Signed-in users land on **`/home`**. **Dump** (dock) → **`/dump`** → **`/prepping`** (acknowledgement + in-flight prep rows + **Back to Preps**) → **`/home`**. **Settings** (fixed in **`HomeTopBar`**) on the same stack.
 
 **Splash and fonts** stay in the **root** `_layout.tsx` once (global cold start). **ClerkProvider** wraps routes that need auth; use **signed-in vs signed-out** redirects to send users to `(public)` vs `(app)` without duplicating splash inside each group. On **wide viewports** (tablet, web), the root layout **caps content width** (`MAX_APP_CONTENT_WIDTH` in `app/constants/layout.ts`) and centers it so chrome and screens stay phone-sized.
 
@@ -73,7 +73,7 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 | `/home` | `(app)/home.tsx` | **Preps hub:** fixed **`HomeTopBar`** (title · **Settings**) + tab dock (**Ready** / **Prepping** / **Archived**); **Dump** → **`/dump`**; prep cards → **`/prep/[id]`** (detail) |
 | `/prep/[id]` | `(app)/prep/[id].tsx` | Full prep: options, research, or draft + **Copy** where relevant; **Close** → back |
 | `/dump` | `(app)/dump.tsx` | Full-bleed gradient; **Try saying** + website-style example; bottom bar **keyboard** swaps to **text field + mic** (back to voice) + **Send**; **Done** / **Send** → **`/prepping`**; **Close** → **`/home`** |
-| `/prepping` | `(app)/prepping.tsx` | After a dump: **Pem’s got it** + in-flight prep rows + reassurance (scrolls); **Back to Preps** pinned at bottom — **`/home`** |
+| `/prepping` | `(app)/prepping.tsx` | After a dump: **Pem’s got it** + **In flight** rows (same demo as hub) + reassurance (scrolls); **Back to Preps** pinned at bottom — **`/home`** |
 | `/settings` | `(app)/settings.tsx` | Profile (Clerk), appearance (light / dark / system), sign out; **Close** (`X`) runs **`router.back()`** or **`/home`** if there is no stack history |
 
 **Develop**

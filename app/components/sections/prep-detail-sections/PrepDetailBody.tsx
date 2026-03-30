@@ -43,7 +43,7 @@ export default function PrepDetailBody({ prep }: Props) {
       {prep.body ? (
         <View style={[styles.bodyBlock, { borderColor: colors.borderMuted }]}>
           <View style={styles.bodyHead}>
-            <FileText size={18} stroke={colors.pemAmber} strokeWidth={2} />
+            <FileText size={18} stroke={colors.textSecondary} strokeWidth={2} />
             <PemText style={[styles.bodyHeadLabel, { color: colors.textPrimary }]}>
               {prep.kind === "deep_research"
                 ? "Research"
@@ -71,8 +71,8 @@ export default function PrepDetailBody({ prep }: Props) {
                 { backgroundColor: colors.cardBackground, opacity: pressed ? 0.88 : 1 },
               ]}
             >
-              <Copy size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
-              <PemText style={[styles.copyLabel, { color: colors.pemAmber }]}>
+              <Copy size={18} stroke={colors.textSecondary} strokeWidth={2.25} />
+              <PemText style={[styles.copyLabel, { color: colors.textPrimary }]}>
                 {copied ? "Copied" : "Copy"}
               </PemText>
             </Pressable>

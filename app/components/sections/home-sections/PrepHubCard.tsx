@@ -1,21 +1,22 @@
-import PemButton from "@/components/ui/PemButton";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import type { LucideIcon } from "lucide-react-native";
+import { ChevronRight, type LucideIcon } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
-import type { Prep } from "./homePrepData";
+import { prepKindTagColor, type Prep } from "./homePrepData";
 
 function IconWell({
   Icon,
-  colors,
+  iconColor,
+  surfaceColor,
 }: {
   Icon: LucideIcon;
-  colors: { pemAmber: string; brandMutedSurface: string };
+  iconColor: string;
+  surfaceColor: string;
 }) {
   return (
-    <View style={[styles.iconWell, { backgroundColor: colors.brandMutedSurface }]}>
-      <Icon size={24} stroke={colors.pemAmber} strokeWidth={2.25} />
+    <View style={[styles.iconWell, { backgroundColor: surfaceColor }]}>
+      <Icon size={18} stroke={iconColor} strokeWidth={2} />
     </View>
   );
 }
@@ -23,11 +24,11 @@ function IconWell({
 type Props = {
   prep: Prep;
   resolved: "light" | "dark";
-  /** Opens full prep detail (card tap + View use the same). */
   onOpenDetail: () => void;
   archivedVisual?: boolean;
 };
 
+/** Full card is tappable — chevron only; no separate CTA strip. */
 export default function PrepHubCard({
   prep,
   resolved,
@@ -35,7 +36,9 @@ export default function PrepHubCard({
   archivedVisual = false,
 }: Props) {
   const { colors } = useTheme();
-  const tagColor = archivedVisual ? colors.textSecondary : colors.pemAmber;
+  const tagColor = archivedVisual
+    ? colors.textSecondary
+    : prepKindTagColor(prep.kind, resolved);
 
   const cardChrome = [
     styles.card,
@@ -62,33 +65,35 @@ export default function PrepHubCard({
   ];
 
   return (
-    <View style={cardChrome}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${prep.title}. ${prep.summary}`}
-        onPress={onOpenDetail}
-        style={({ pressed }) => [styles.cardTap, pressed && { opacity: 0.96 }]}
-      >
-        <View style={styles.cardHead}>
-          <IconWell Icon={prep.Icon} colors={colors} />
-          <View style={styles.cardHeadText}>
-            <PemText style={[styles.cardTag, { color: tagColor }]}>{prep.tag}</PemText>
-            <PemText style={[styles.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>
-              {prep.title}
-            </PemText>
-            <PemText style={[styles.summary, { color: colors.textSecondary }]} numberOfLines={3}>
-              {prep.summary}
-            </PemText>
-          </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${prep.title}. ${prep.summary}. Open`}
+      onPress={onOpenDetail}
+      style={({ pressed }) => [...cardChrome, pressed && { opacity: 0.94 }]}
+    >
+      <View style={styles.cardRow}>
+        <IconWell
+          Icon={prep.Icon}
+          iconColor={colors.textSecondary}
+          surfaceColor={colors.secondarySurface}
+        />
+        <View style={styles.cardHeadText}>
+          <PemText style={[styles.cardTag, { color: tagColor }]}>{prep.tag}</PemText>
+          <PemText style={[styles.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+            {prep.title}
+          </PemText>
+          <PemText style={[styles.summary, { color: colors.textSecondary }]} numberOfLines={3}>
+            {prep.summary}
+          </PemText>
         </View>
-      </Pressable>
-
-      <View style={[styles.actions, { borderTopColor: colors.borderMuted }]}>
-        <PemButton variant="secondary" size="sm" onPress={onOpenDetail} style={styles.viewBtn}>
-          {prep.viewLabel}
-        </PemButton>
+        <ChevronRight
+          size={20}
+          stroke={colors.textSecondary}
+          strokeWidth={2}
+          style={styles.chevron}
+        />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -98,19 +103,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
-  cardTap: {
-    borderRadius: radii.lg,
-  },
-  cardHead: {
+  cardRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: space[3],
-    padding: space[4],
+    paddingVertical: space[4],
+    paddingLeft: space[4],
+    paddingRight: space[3],
   },
   iconWell: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -118,6 +122,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: space[1],
+  },
+  chevron: {
+    opacity: 0.65,
+    flexShrink: 0,
   },
   cardTag: {
     fontFamily: fontFamily.sans.semibold,
@@ -135,17 +143,5 @@ const styles = StyleSheet.create({
     lineHeight: lh(fontSize.sm, lineHeight.relaxed),
     fontFamily: fontFamily.sans.regular,
     marginTop: space[1],
-  },
-  actions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[3],
-    paddingVertical: space[3],
-    paddingHorizontal: space[4],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  viewBtn: {
-    flex: 1,
-    minWidth: 0,
   },
 });

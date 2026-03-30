@@ -186,7 +186,7 @@ export default function SettingsScreen() {
               {(!imageUrl || !avatarDecoded) && (
                 <View style={styles.avatarFallback} pointerEvents="none">
                   {imageUrl && !avatarDecoded ? (
-                    <ActivityIndicator color={colors.pemAmber} />
+                    <ActivityIndicator color={colors.placeholder} />
                   ) : (
                     <UserRound size={28} stroke={colors.textSecondary} strokeWidth={2} />
                   )}

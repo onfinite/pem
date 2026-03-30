@@ -26,6 +26,34 @@ export type PrepKind =
   | "decide"
   | "follow_up";
 
+/** Buckets for subtle tag tint (options vs draft vs research) — scanning, not loud brand amber. */
+export type PrepKindTagBucket = "options" | "draft" | "research";
+
+export function prepKindBucket(kind: PrepKind): PrepKindTagBucket {
+  if (kind === "options" || kind === "decide" || kind === "follow_up") return "options";
+  if (kind === "draft" || kind === "web") return "draft";
+  return "research";
+}
+
+/** Muted tints per prep family — light/dark tuned for contrast on cream/charcoal. */
+export function prepKindTagColor(kind: PrepKind, resolved: "light" | "dark"): string {
+  const b = prepKindBucket(kind);
+  if (resolved === "dark") {
+    const dark = {
+      options: "#9bb5a8",
+      draft: "#b4a8d6",
+      research: "#c9a882",
+    } as const;
+    return dark[b];
+  }
+  const light = {
+    options: "#4d6b5f",
+    draft: "#5c5278",
+    research: "#725a44",
+  } as const;
+  return light[b];
+}
+
 export type Prep = {
   id: string;
   Icon: LucideIcon;
@@ -198,9 +226,17 @@ export const TABS: { id: PrepTab; label: string; Icon: LucideIcon }[] = [
   { id: "archived", label: "Archived", Icon: Archive },
 ];
 
-/** In-flight preps — same shape as `PreppingParallelRows` demo rows. */
-export const PREPPING_ROWS: { id: string; title: string; subtitle: string; Icon: LucideIcon }[] = [
-  { id: "p1", Icon: Gift, title: "Gift ideas for mom", subtitle: "Finding options" },
-  { id: "p2", Icon: Dumbbell, title: "Gym cancellation", subtitle: "Researching policy" },
-  { id: "p3", Icon: Search, title: "Your app idea", subtitle: "Deep research" },
+/** In-flight preps on the Prepping tab — set `SHOW_PREPPING_HUB_ROWS` false to preview empty state. */
+export const SHOW_PREPPING_HUB_ROWS = true;
+
+export const PREPPING_ROWS: {
+  id: string;
+  title: string;
+  subtitle: string;
+  Icon: LucideIcon;
+  kind: PrepKind;
+}[] = [
+  { id: "p1", Icon: Gift, title: "Gift ideas for mom", subtitle: "Finding options", kind: "options" },
+  { id: "p2", Icon: Dumbbell, title: "Gym cancellation", subtitle: "Researching policy", kind: "draft" },
+  { id: "p3", Icon: Search, title: "Your app idea", subtitle: "Deep research", kind: "deep_research" },
 ];

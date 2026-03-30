@@ -1,4 +1,5 @@
 import PrepDetailBody from "@/components/sections/prep-detail-sections/PrepDetailBody";
+import { prepKindTagColor } from "@/components/sections/home-sections/homePrepData";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -13,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function PrepDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getPrep, readyPreps, archivePrep } = usePrepHub();
-  const { colors } = useTheme();
+  const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
 
   const prep = typeof id === "string" ? getPrep(id) : undefined;
@@ -66,7 +67,7 @@ export default function PrepDetailScreen() {
               },
             ]}
           >
-            <Archive size={22} stroke={colors.pemAmber} strokeWidth={2} />
+            <Archive size={22} stroke={colors.textSecondary} strokeWidth={2} />
           </Pressable>
         ) : (
           <View style={styles.headerCtrl} />
@@ -83,7 +84,9 @@ export default function PrepDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <PemText style={[styles.tag, { color: colors.pemAmber }]}>{prep.tag}</PemText>
+        <PemText style={[styles.tag, { color: prepKindTagColor(prep.kind, resolved) }]}>
+          {prep.tag}
+        </PemText>
         <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
         <PrepDetailBody prep={prep} />
       </ScrollView>

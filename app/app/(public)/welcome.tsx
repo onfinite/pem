@@ -3,7 +3,6 @@ import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
 import ScreenScroll from "@/components/layout/ScreenScroll";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
-import { pemAmber } from "@/constants/theme";
 import { space } from "@/constants/typography";
 import { useAuth } from "@clerk/expo";
 import { Redirect } from "expo-router";
@@ -38,22 +37,9 @@ export default function WelcomeScreen() {
           Dump voice or text. Pem researches, drafts, and finds your options while you live your
           life. Come back when your preps are ready — you act in seconds.
         </PemText>
-        <View style={styles.dots} accessibilityLabel="Onboarding steps">
-          <View style={[styles.dotActive, { backgroundColor: pemAmber }]} />
-          <View
-            style={[
-              styles.dot,
-              { backgroundColor: colors.textSecondary, opacity: 0.22 },
-            ]}
-          />
-          <View
-            style={[
-              styles.dot,
-              { backgroundColor: colors.textSecondary, opacity: 0.22 },
-            ]}
-          />
+        <View style={styles.authBlock}>
+          <SocialSignInButtons />
         </View>
-        <SocialSignInButtons />
       </View>
     </ScreenScroll>
   );
@@ -89,21 +75,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: space[2],
   },
-  dots: {
-    flexDirection: "row",
-    gap: space[2],
-    marginTop: space[8],
-    marginBottom: space[10],
+  authBlock: {
+    marginTop: space[10],
+    width: "100%",
     alignItems: "center",
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dotActive: {
-    width: 22,
-    height: 8,
-    borderRadius: 4,
   },
 });
