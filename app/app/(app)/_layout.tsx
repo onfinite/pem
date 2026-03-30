@@ -1,9 +1,11 @@
 import { PrepHubProvider } from "@/contexts/PrepHubContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 
 export default function AppLayout() {
+  const { colors } = useTheme();
   const { isLoaded, isSignedIn } = useAuth();
 
   if (!isLoaded) {
@@ -20,7 +22,12 @@ export default function AppLayout() {
 
   return (
     <PrepHubProvider>
-      <Stack screenOptions={{ headerShown: false }} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.pageBackground },
+        }}
+      />
     </PrepHubProvider>
   );
 }

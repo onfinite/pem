@@ -38,6 +38,7 @@ export default function ScreenScroll({
         <ScrollView
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          style={{ backgroundColor }}
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: bottomInset },

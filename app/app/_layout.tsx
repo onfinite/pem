@@ -11,6 +11,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
@@ -100,7 +101,14 @@ export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <ThemeProvider>
-        <RootLayoutInner />
+        {/*
+          Expo Router’s outer SafeAreaProvider sets initialMetrics only on web, so on iOS the first
+          frame can use 0 top inset — chrome draws under the status bar / Dynamic Island, then jumps.
+          This inner provider uses native initialWindowMetrics so insets are correct from frame 1.
+        */}
+        <SafeAreaProvider initialMetrics={initialWindowMetrics ?? undefined}>
+          <RootLayoutInner />
+        </SafeAreaProvider>
       </ThemeProvider>
     </ClerkProvider>
   );
