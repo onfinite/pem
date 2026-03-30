@@ -4,7 +4,7 @@ import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { router, useLocalSearchParams } from "expo-router";
-import { X } from "lucide-react-native";
+import { Archive, X } from "lucide-react-native";
 import { useEffect } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 /** Full prep content — close returns to hub. */
 export default function PrepDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getPrep } = usePrepHub();
+  const { getPrep, readyPreps, archivePrep } = usePrepHub();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -28,6 +28,13 @@ export default function PrepDetailScreen() {
     return null;
   }
 
+  const canArchive = readyPreps.some((p) => p.id === prep.id);
+
+  const onArchive = () => {
+    archivePrep(prep.id);
+    router.back();
+  };
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: colors.pageBackground }]}>
       <View style={[styles.header, { paddingHorizontal: space[4] }]}>
@@ -35,11 +42,35 @@ export default function PrepDetailScreen() {
           accessibilityRole="button"
           accessibilityLabel="Close"
           onPress={() => router.back()}
-          hitSlop={12}
-          style={styles.closeHit}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={({ pressed }) => [
+            styles.headerCtrl,
+            pressed && { opacity: 0.75 },
+          ]}
         >
-          <X size={24} stroke={colors.textSecondary} strokeWidth={2} />
+          <X size={22} stroke={colors.textSecondary} strokeWidth={2} />
         </Pressable>
+        {canArchive ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Archive ${prep.title}`}
+            onPress={onArchive}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={({ pressed }) => [
+              styles.headerCtrl,
+              styles.archiveCtrl,
+              {
+                borderColor: colors.borderMuted,
+                backgroundColor: colors.secondarySurface,
+                opacity: pressed ? 0.88 : 1,
+              },
+            ]}
+          >
+            <Archive size={22} stroke={colors.pemAmber} strokeWidth={2} />
+          </Pressable>
+        ) : (
+          <View style={styles.headerCtrl} />
+        )}
       </View>
 
       <ScrollView
@@ -67,11 +98,20 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 44,
     marginBottom: space[2],
   },
-  closeHit: {
-    padding: space[2],
-    alignSelf: "flex-start",
+  /** Same outer box for close, archive, and placeholder — keeps icons aligned. */
+  headerCtrl: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  archiveCtrl: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   scroll: {
     gap: space[4],

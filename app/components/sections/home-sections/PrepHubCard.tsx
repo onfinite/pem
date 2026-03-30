@@ -2,7 +2,7 @@ import PemButton from "@/components/ui/PemButton";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import { Archive, type LucideIcon } from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import type { Prep } from "./homePrepData";
 
@@ -25,8 +25,6 @@ type Props = {
   resolved: "light" | "dark";
   /** Opens full prep detail (card tap + View use the same). */
   onOpenDetail: () => void;
-  /** When set, shows archive control. */
-  onArchive?: () => void;
   archivedVisual?: boolean;
 };
 
@@ -34,7 +32,6 @@ export default function PrepHubCard({
   prep,
   resolved,
   onOpenDetail,
-  onArchive,
   archivedVisual = false,
 }: Props) {
   const { colors } = useTheme();
@@ -90,20 +87,6 @@ export default function PrepHubCard({
         <PemButton variant="secondary" size="sm" onPress={onOpenDetail} style={styles.viewBtn}>
           {prep.viewLabel}
         </PemButton>
-        {onArchive ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Archive ${prep.title}`}
-            onPress={onArchive}
-            hitSlop={8}
-            style={({ pressed }) => [
-              styles.archiveHit,
-              { borderColor: colors.borderMuted, opacity: pressed ? 0.85 : 1 },
-            ]}
-          >
-            <Archive size={20} stroke={colors.textSecondary} strokeWidth={2} />
-          </Pressable>
-        ) : null}
       </View>
     </View>
   );
@@ -164,13 +147,5 @@ const styles = StyleSheet.create({
   viewBtn: {
     flex: 1,
     minWidth: 0,
-  },
-  archiveHit: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });
