@@ -30,7 +30,7 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-/** Voice / text capture — full-bleed gradient; Done or Send → preping flow. */
+/** Voice / text capture — full-bleed gradient; Done or Send → prepping flow. */
 export default function DumpScreen() {
   const insets = useSafeAreaInsets();
   const { colors, resolved } = useTheme();
@@ -74,7 +74,7 @@ export default function DumpScreen() {
   const waveInactive = colors.border;
 
   const goNext = useCallback(() => {
-    router.replace("/preping");
+    router.replace("/prepping");
   }, []);
 
   const onPrimarySend = useCallback(() => {

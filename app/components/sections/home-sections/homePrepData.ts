@@ -190,16 +190,16 @@ export function getPrepById(id: string): Prep | undefined {
   return ALL_PREPS.find((p) => p.id === id);
 }
 
-export type PrepTab = "ready" | "preping" | "archived";
+export type PrepTab = "ready" | "prepping" | "archived";
 
 export const TABS: { id: PrepTab; label: string; Icon: LucideIcon }[] = [
   { id: "ready", label: "Ready", Icon: CheckCircle2 },
-  { id: "preping", label: "Preping", Icon: Loader2 },
+  { id: "prepping", label: "Prepping", Icon: Loader2 },
   { id: "archived", label: "Archived", Icon: Archive },
 ];
 
-/** In-flight preps — same shape as `PrepingParallelRows` demo rows. */
-export const PREPING_ROWS: { id: string; title: string; subtitle: string; Icon: LucideIcon }[] = [
+/** In-flight preps — same shape as `PreppingParallelRows` demo rows. */
+export const PREPPING_ROWS: { id: string; title: string; subtitle: string; Icon: LucideIcon }[] = [
   { id: "p1", Icon: Gift, title: "Gift ideas for mom", subtitle: "Finding options" },
   { id: "p2", Icon: Dumbbell, title: "Gym cancellation", subtitle: "Researching policy" },
   { id: "p3", Icon: Search, title: "Your app idea", subtitle: "Deep research" },

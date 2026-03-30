@@ -1,7 +1,7 @@
 import HomeArchivedList from "@/components/sections/home-sections/HomeArchivedList";
 import HomeTopBar from "@/components/sections/home-sections/HomeTopBar";
 import HomePageHead from "@/components/sections/home-sections/HomePageHead";
-import HomePrepingList from "@/components/sections/home-sections/HomePrepingList";
+import HomePreppingList from "@/components/sections/home-sections/HomePreppingList";
 import HomeReadyEmpty from "@/components/sections/home-sections/HomeReadyEmpty";
 import HomeReadyPrepsList from "@/components/sections/home-sections/HomeReadyPrepsList";
 import HomeTabDock from "@/components/sections/home-sections/HomeTabDock";
@@ -19,7 +19,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** Preps hub — settings in top bar, tab dock, Ready / Preping / Archived. */
+/** Preps hub — settings in top bar, tab dock, Ready / Prepping / Archived. */
 export default function HomeScreen() {
   const { colors, resolved } = useTheme();
   const { readyPreps } = usePrepHub();
@@ -44,9 +44,9 @@ export default function HomeScreen() {
             ? "Prepared for you — open a prep to review. Nothing sends without you."
             : "When you have preps, they’ll show up here as cards.",
         }
-      : tab === "preping"
+      : tab === "prepping"
         ? {
-            title: "Preping",
+            title: "Prepping",
             sub: "Same work you see after a dump — parallel preps in flight until they land in Ready.",
           }
         : {
@@ -68,7 +68,7 @@ export default function HomeScreen() {
 
         {tab === "ready" && !hasPreps ? <HomeReadyEmpty /> : null}
         {tab === "ready" && hasPreps ? <HomeReadyPrepsList resolved={resolved} /> : null}
-        {tab === "preping" ? <HomePrepingList /> : null}
+        {tab === "prepping" ? <HomePreppingList /> : null}
         {tab === "archived" ? <HomeArchivedList resolved={resolved} /> : null}
       </ScrollView>
 

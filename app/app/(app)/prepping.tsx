@@ -1,6 +1,6 @@
-import PrepingDumpFlow from "@/components/sections/preping-sections/PrepingDumpFlow";
+import PreppingDumpFlow from "@/components/sections/prepping-sections/PreppingDumpFlow";
 import PemButton from "@/components/ui/PemButton";
-import { PREPING_FLOW_MAX_WIDTH } from "@/constants/layout";
+import { PREPPING_FLOW_MAX_WIDTH } from "@/constants/layout";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
 import { router } from "expo-router";
@@ -8,7 +8,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /** After a dump: scrollable body + pinned “Back to Preps” so long lists stay usable. */
-export default function PrepingScreen() {
+export default function PreppingScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -31,7 +31,7 @@ export default function PrepingScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <PrepingDumpFlow />
+        <PreppingDumpFlow />
       </ScrollView>
 
       <View
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
   },
   footerInner: {
     width: "100%",
-    maxWidth: PREPING_FLOW_MAX_WIDTH,
+    maxWidth: PREPPING_FLOW_MAX_WIDTH,
     paddingHorizontal: space[5],
   },
   footerBtn: {

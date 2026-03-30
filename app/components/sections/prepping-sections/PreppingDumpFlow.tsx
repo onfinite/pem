@@ -1,13 +1,13 @@
 import PemText from "@/components/ui/PemText";
-import { PREPING_FLOW_MAX_WIDTH } from "@/constants/layout";
+import { PREPPING_FLOW_MAX_WIDTH } from "@/constants/layout";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { Check } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
-import PrepingParallelRows from "./PrepingParallelRows";
+import PreppingParallelRows from "./PreppingParallelRows";
 
 /** Acknowledgement → in-flight rows → short reassurance (CTA lives on screen footer). */
-export default function PrepingDumpFlow() {
+export default function PreppingDumpFlow() {
   const { colors } = useTheme();
 
   return (
@@ -26,7 +26,7 @@ export default function PrepingDumpFlow() {
         <PemText variant="bodyMuted" style={[styles.listLabel, { color: colors.textSecondary }]}>
           In progress
         </PemText>
-        <PrepingParallelRows />
+        <PreppingParallelRows />
       </View>
 
       <View style={[styles.reassure, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
@@ -43,7 +43,7 @@ const styles = StyleSheet.create({
   root: {
     gap: space[5],
     width: "100%",
-    maxWidth: PREPING_FLOW_MAX_WIDTH,
+    maxWidth: PREPPING_FLOW_MAX_WIDTH,
     alignSelf: "center",
     alignItems: "center",
   },

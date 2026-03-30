@@ -1,4 +1,3 @@
-import PemLogoRow from "@/components/brand/PemLogoRow";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
@@ -13,7 +12,7 @@ type Props = {
   glassBorder: string;
 };
 
-/** Fixed top row: Pem mark (decorative) | centered title | settings. */
+/** Fixed top row: page title (left) + settings (right). */
 export default function HomeTopBar({ title, glassBorder }: Props) {
   const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
@@ -39,7 +38,21 @@ export default function HomeTopBar({ title, glassBorder }: Props) {
           }}
         >
           <View style={styles.row}>
-            <View style={styles.sideSlot} accessible={false} importantForAccessibility="no">
+            <PemText
+              accessibilityRole="header"
+              numberOfLines={1}
+              style={[styles.title, { color: colors.textPrimary }]}
+            >
+              {title}
+            </PemText>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+              onPress={() => router.push("/settings")}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              style={({ pressed }) => [styles.hit, { opacity: pressed ? 0.85 : 1 }]}
+            >
               <View
                 style={[
                   styles.chip,
@@ -59,53 +72,10 @@ export default function HomeTopBar({ title, glassBorder }: Props) {
                 ]}
               >
                 <View style={styles.iconSlot}>
-                  <PemLogoRow size="mark" />
+                  <Settings size={20} stroke={colors.textSecondary} strokeWidth={2} />
                 </View>
               </View>
-            </View>
-
-            <View style={styles.centerSlot}>
-              <PemText
-                accessibilityRole="header"
-                numberOfLines={1}
-                style={[styles.title, { color: colors.textPrimary }]}
-              >
-                {title}
-              </PemText>
-            </View>
-
-            <View style={styles.sideSlot}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Settings"
-                onPress={() => router.push("/settings")}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                style={({ pressed }) => [styles.hit, { opacity: pressed ? 0.85 : 1 }]}
-              >
-                <View
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: chipFill,
-                      borderColor: glassBorder,
-                    },
-                    Platform.select({
-                      ios: {
-                        shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: resolved === "dark" ? 0.2 : 0.06,
-                        shadowRadius: 4,
-                      },
-                      android: { elevation: resolved === "dark" ? 2 : 2 },
-                    }),
-                  ]}
-                >
-                  <View style={styles.iconSlot}>
-                    <Settings size={20} stroke={colors.textSecondary} strokeWidth={2} />
-                  </View>
-                </View>
-              </Pressable>
-            </View>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -129,28 +99,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: space[3],
     minHeight: TOP_ICON_CHIP,
     paddingVertical: TOP_BAR_ROW_PAD,
   },
-  sideSlot: {
-    width: TOP_ICON_CHIP,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  centerSlot: {
+  title: {
     flex: 1,
     minWidth: 0,
-    paddingHorizontal: space[2],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    width: "100%",
-    textAlign: "center",
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.xl,
     lineHeight: lh(fontSize.xl, lineHeight.snug),
     letterSpacing: -0.3,
+    textAlign: "left",
   },
   chip: {
     width: TOP_ICON_CHIP,

@@ -2,21 +2,21 @@ import PemText from "@/components/ui/PemText";
 import { useTheme, type ThemeSemantic } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
-import { PREPING_ROWS } from "./homePrepData";
+import { PREPPING_ROWS } from "./homePrepData";
 
-function PrepingRow({
+function PreppingRow({
   row,
   colors,
   resolved,
 }: {
-  row: (typeof PREPING_ROWS)[number];
+  row: (typeof PREPPING_ROWS)[number];
   colors: ThemeSemantic;
   resolved: "light" | "dark";
 }) {
   return (
     <View
       style={[
-        styles.prepingRow,
+        styles.preppingRow,
         {
           backgroundColor: colors.cardBackground,
           borderColor: colors.borderMuted,
@@ -32,38 +32,38 @@ function PrepingRow({
         },
       ]}
     >
-      <View style={[styles.prepingIconWell, { backgroundColor: colors.brandMutedSurface }]}>
+      <View style={[styles.preppingIconWell, { backgroundColor: colors.brandMutedSurface }]}>
         <row.Icon size={24} stroke={colors.pemAmber} strokeWidth={2.25} />
       </View>
-      <View style={styles.prepingRowBody}>
-        <PemText style={[styles.prepingRowSub, { color: colors.pemAmber }]}>{row.subtitle}</PemText>
-        <PemText style={[styles.prepingRowTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+      <View style={styles.preppingRowBody}>
+        <PemText style={[styles.preppingRowSub, { color: colors.pemAmber }]}>{row.subtitle}</PemText>
+        <PemText style={[styles.preppingRowTitle, { color: colors.textPrimary }]} numberOfLines={2}>
           {row.title}
         </PemText>
       </View>
-      <View style={styles.prepingSpinner}>
+      <View style={styles.preppingSpinner}>
         <ActivityIndicator size="small" color={colors.pemAmber} />
       </View>
     </View>
   );
 }
 
-export default function HomePrepingList() {
+export default function HomePreppingList() {
   const { colors, resolved } = useTheme();
   return (
-    <View style={styles.prepingList}>
-      {PREPING_ROWS.map((row) => (
-        <PrepingRow key={row.id} row={row} colors={colors} resolved={resolved} />
+    <View style={styles.preppingList}>
+      {PREPPING_ROWS.map((row) => (
+        <PreppingRow key={row.id} row={row} colors={colors} resolved={resolved} />
       ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  prepingList: {
+  preppingList: {
     gap: space[3],
   },
-  prepingRow: {
+  preppingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: space[3],
@@ -72,30 +72,30 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
   },
-  prepingIconWell: {
+  preppingIconWell: {
     width: 48,
     height: 48,
     borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
   },
-  prepingRowBody: {
+  preppingRowBody: {
     flex: 1,
     minWidth: 0,
     gap: 4,
   },
-  prepingRowSub: {
+  preppingRowSub: {
     fontFamily: fontFamily.sans.semibold,
     fontSize: fontSize.xs,
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
-  prepingRowTitle: {
+  preppingRowTitle: {
     fontFamily: fontFamily.sans.semibold,
     fontSize: fontSize.md,
     lineHeight: lh(fontSize.md, lineHeight.snug),
   },
-  prepingSpinner: {
+  preppingSpinner: {
     width: 28,
     alignItems: "center",
     justifyContent: "center",

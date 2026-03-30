@@ -14,7 +14,7 @@ const ROWS: Row[] = [
   { id: "6", Icon: Search, title: "Your app idea", subtitle: "Deep research" },
 ];
 
-export default function PrepingParallelRows() {
+export default function PreppingParallelRows() {
   const { colors, resolved } = useTheme();
   return (
     <View style={styles.list}>
