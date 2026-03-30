@@ -105,7 +105,7 @@ export default function HomeTabDock({ tab, onTab, glassBorder }: Props) {
             })}
           </View>
 
-          {/* Separator + primary capture — visually distinct from navigation */}
+          {/* Separator + primary capture (Dump) — distinct from hub tabs */}
           <View
             style={[
               styles.divider,
@@ -115,15 +115,15 @@ export default function HomeTabDock({ tab, onTab, glassBorder }: Props) {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="New dump — record by voice or text"
+            accessibilityLabel="Dump — voice or text"
             onPress={() => router.push("/dump")}
-            style={({ pressed }) => [styles.recordColumn, pressed && { opacity: 0.94 }]}
+            style={({ pressed }) => [styles.dumpColumn, pressed && { opacity: 0.94 }]}
           >
             {({ pressed }) => (
-              <View style={styles.recordInner}>
+              <View style={styles.dumpInner}>
                 <View
                   style={[
-                    styles.recordCircle,
+                    styles.dumpCircle,
                     {
                       backgroundColor: pressed ? amber[600] : colors.pemAmber,
                       borderColor: "rgba(255,255,255,0.28)",
@@ -144,14 +144,14 @@ export default function HomeTabDock({ tab, onTab, glassBorder }: Props) {
                 <PemText
                   numberOfLines={1}
                   style={[
-                    styles.recordLabel,
+                    styles.dumpLabel,
                     {
                       marginTop: 3,
                       color: colors.pemAmber,
                     },
                   ]}
                 >
-                  Record
+                  Dump
                 </PemText>
               </View>
             )}
@@ -212,17 +212,17 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     opacity: 0.9,
   },
-  recordColumn: {
+  dumpColumn: {
     width: 56,
     alignItems: "center",
     justifyContent: "flex-end",
     paddingBottom: 0,
   },
-  recordInner: {
+  dumpInner: {
     alignItems: "center",
     justifyContent: "center",
   },
-  recordCircle: {
+  dumpCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  recordLabel: {
+  dumpLabel: {
     fontSize: fontSize.xs,
     lineHeight: lh(fontSize.xs, lineHeight.snug),
     fontFamily: fontFamily.sans.semibold,

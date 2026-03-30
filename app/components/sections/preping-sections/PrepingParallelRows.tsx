@@ -9,7 +9,9 @@ type Row = { id: string; title: string; subtitle: string; Icon: LucideIcon };
 const ROWS: Row[] = [
   { id: "1", Icon: Gift, title: "Gift ideas for mom", subtitle: "Finding options" },
   { id: "2", Icon: Dumbbell, title: "Gym cancellation", subtitle: "Researching policy" },
-  { id: "3", Icon: Search, title: "Your app idea", subtitle: "Deep research" },
+  { id: "4", Icon: Search, title: "Your app idea", subtitle: "Deep research" },
+  { id: "5", Icon: Search, title: "Your app idea", subtitle: "Deep research" },
+  { id: "6", Icon: Search, title: "Your app idea", subtitle: "Deep research" },
 ];
 
 export default function PrepingParallelRows() {

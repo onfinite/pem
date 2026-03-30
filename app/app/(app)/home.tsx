@@ -1,5 +1,5 @@
 import HomeArchivedList from "@/components/sections/home-sections/HomeArchivedList";
-import HomeGlassHeader from "@/components/sections/home-sections/HomeGlassHeader";
+import HomeTopBar from "@/components/sections/home-sections/HomeTopBar";
 import HomePageHead from "@/components/sections/home-sections/HomePageHead";
 import HomePrepingList from "@/components/sections/home-sections/HomePrepingList";
 import HomeReadyEmpty from "@/components/sections/home-sections/HomeReadyEmpty";
@@ -19,7 +19,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** Preps hub — glass header, tab dock, Ready / Preping / Archived. */
+/** Preps hub — settings in top bar, tab dock, Ready / Preping / Archived. */
 export default function HomeScreen() {
   const { colors, resolved } = useTheme();
   const { readyPreps } = usePrepHub();
@@ -64,7 +64,7 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <HomePageHead title={pageHead.title} sub={pageHead.sub} />
+        <HomePageHead sub={pageHead.sub} />
 
         {tab === "ready" && !hasPreps ? <HomeReadyEmpty /> : null}
         {tab === "ready" && hasPreps ? <HomeReadyPrepsList resolved={resolved} /> : null}
@@ -72,7 +72,7 @@ export default function HomeScreen() {
         {tab === "archived" ? <HomeArchivedList resolved={resolved} /> : null}
       </ScrollView>
 
-      <HomeGlassHeader glassBorder={glassBorder} />
+      <HomeTopBar title={pageHead.title} glassBorder={glassBorder} />
       <HomeTabDock tab={tab} onTab={setTab} glassBorder={glassBorder} />
     </View>
   );

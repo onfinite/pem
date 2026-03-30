@@ -1,11 +1,13 @@
 import PrepingDumpFlow from "@/components/sections/preping-sections/PrepingDumpFlow";
+import PemButton from "@/components/ui/PemButton";
+import { PREPING_FLOW_MAX_WIDTH } from "@/constants/layout";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
 import { router } from "expo-router";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** After a dump: acknowledgement, in-flight preps, reassurance — no chrome; user leaves via “Back to Preps”. */
+/** After a dump: scrollable body + pinned “Back to Preps” so long lists stay usable. */
 export default function PrepingScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -17,17 +19,37 @@ export default function PrepingScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.pageBackground }]}>
       <ScrollView
+        style={styles.scrollFlex}
         contentContainerStyle={[
-          styles.scroll,
+          styles.scrollContent,
           {
             paddingTop: insets.top + space[4],
-            paddingBottom: Math.max(insets.bottom, space[8]),
+            paddingBottom: space[6],
+            alignItems: "center",
+            width: "100%",
           },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <PrepingDumpFlow onBackToPreps={goHome} />
+        <PrepingDumpFlow />
       </ScrollView>
+
+      <View
+        style={[
+          styles.footer,
+          {
+            borderTopColor: colors.borderMuted,
+            backgroundColor: colors.pageBackground,
+            paddingBottom: Math.max(insets.bottom, space[3]),
+          },
+        ]}
+      >
+        <View style={styles.footerInner}>
+          <PemButton variant="primary" size="lg" onPress={goHome} style={styles.footerBtn}>
+            Back to Preps
+          </PemButton>
+        </View>
+      </View>
     </View>
   );
 }
@@ -36,7 +58,25 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  scroll: {
+  scrollFlex: {
+    flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: space[5],
+    maxWidth: "100%",
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: space[4],
+    alignItems: "center",
+    width: "100%",
+  },
+  footerInner: {
+    width: "100%",
+    maxWidth: PREPING_FLOW_MAX_WIDTH,
+    paddingHorizontal: space[5],
+  },
+  footerBtn: {
+    width: "100%",
   },
 });
