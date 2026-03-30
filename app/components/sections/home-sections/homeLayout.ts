@@ -6,12 +6,10 @@ export const TAB_DOCK_INNER_MIN = 50;
 export const TOP_ICON_CHIP = 36;
 export const TOP_BAR_ROW_PAD = space[1];
 
-/** Small icon rings on the header strip (sit above the frosted bar). */
-export const chipOnStrip = (resolved: "light" | "dark") =>
-  resolved === "dark"
-    ? "rgba(255, 255, 255, 0.1)"
-    : "rgba(255, 255, 255, 0.55)";
+/** Hairline between chrome and scroll body — a touch stronger in light for separation. */
+export const glassChromeBorder = (resolved: "light" | "dark") =>
+  resolved === "dark" ? "rgba(255, 255, 255, 0.12)" : "rgba(28, 26, 22, 0.14)";
 
-/** ~80% opaque frosted strip so scrolling content reads through slightly. */
-export const headerStripScrim = (resolved: "light" | "dark") =>
-  resolved === "dark" ? "rgba(24, 22, 20, 0.8)" : "rgba(250, 248, 244, 0.8)";
+/** Segmented tab track tint — light needs slightly more weight on cream. */
+export const segmentTrackTint = (resolved: "light" | "dark") =>
+  resolved === "dark" ? "rgba(255, 255, 255, 0.07)" : "rgba(28, 26, 22, 0.09)";

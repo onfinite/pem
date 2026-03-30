@@ -3,28 +3,35 @@ import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { Check } from "lucide-react-native";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import PrepingParallelRows from "./PrepingParallelRows";
 
-type Props = { onBackToPreps: () => void; bottomInset: number };
+type Props = {
+  onBackToPreps: () => void;
+};
 
-export default function ReceivedScrollBody({ onBackToPreps, bottomInset }: Props) {
+/** Single scroll: acknowledgement → in-flight preps → reassurance → CTA. */
+export default function PrepingDumpFlow({ onBackToPreps }: Props) {
   const { colors } = useTheme();
+
   return (
-    <ScrollView
-      contentContainerStyle={[
-        styles.scrollInner,
-        { paddingBottom: Math.max(bottomInset, space[8]) },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={[styles.iconBadge, { backgroundColor: colors.brandMutedSurface }]}>
-        <Check size={40} stroke={colors.pemAmber} strokeWidth={2.5} />
+    <View style={styles.root}>
+      <View style={[styles.hero, { alignItems: "center" }]}>
+        <View style={[styles.iconBadge, { backgroundColor: colors.brandMutedSurface }]}>
+          <Check size={36} stroke={colors.pemAmber} strokeWidth={2.5} />
+        </View>
+        <PemText style={[styles.headline, { color: colors.textPrimary }]}>We got it.</PemText>
+        <PemText variant="body" style={[styles.sub, { color: colors.textSecondary }]}>
+          Pem is working on your dump in the background — searching, drafting, and lining up options where it helps.
+        </PemText>
       </View>
 
-      <PemText style={[styles.headline, { color: colors.textPrimary }]}>We got it.</PemText>
-      <PemText variant="body" style={[styles.sub, { color: colors.textSecondary }]}>
-        Pem is working on your dump in the background — searching, drafting, and lining up options where it helps.
-      </PemText>
+      <View style={styles.listSection}>
+        <PemText style={[styles.listLead, { color: colors.textPrimary }]}>
+          Pem is spinning up parallel work on each prep below. Nothing is final until you open your cards.
+        </PemText>
+        <PrepingParallelRows />
+      </View>
 
       <View style={[styles.reassure, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
         <Text style={[styles.reassureLine, { color: colors.textPrimary }]}>
@@ -40,23 +47,23 @@ export default function ReceivedScrollBody({ onBackToPreps, bottomInset }: Props
       <PemButton variant="primary" size="lg" onPress={onBackToPreps} style={styles.cta}>
         Back to Preps
       </PemButton>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollInner: {
-    flexGrow: 1,
-    paddingHorizontal: space[6],
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space[5],
-    minHeight: 480,
+  root: {
+    gap: space[6],
+    width: "100%",
+  },
+  hero: {
+    gap: space[3],
+    width: "100%",
   },
   iconBadge: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -71,14 +78,24 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     lineHeight: lh(fontSize.md, lineHeight.relaxed),
     textAlign: "center",
-    maxWidth: 340,
+    maxWidth: 360,
+    alignSelf: "center",
+  },
+  listSection: {
+    gap: space[3],
+    width: "100%",
+  },
+  listLead: {
+    fontSize: fontSize.md,
+    lineHeight: lh(fontSize.md, lineHeight.relaxed),
+    fontFamily: fontFamily.sans.regular,
+    maxWidth: 420,
   },
   reassure: {
     borderWidth: 1,
     borderRadius: 16,
     padding: space[5],
     gap: space[3],
-    maxWidth: 400,
     width: "100%",
   },
   reassureLine: {
@@ -93,7 +110,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   cta: {
-    marginTop: space[2],
+    alignSelf: "center",
     minWidth: 240,
+    marginTop: space[1],
   },
 });

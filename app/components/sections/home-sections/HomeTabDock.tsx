@@ -1,64 +1,38 @@
 import PemText from "@/components/ui/PemText";
-import { useTheme, type ThemeSemantic } from "@/contexts/ThemeContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { amber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { Mic } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { TAB_DOCK_INNER_MIN } from "./homeLayout";
+import { TAB_DOCK_INNER_MIN, segmentTrackTint } from "./homeLayout";
 import { TABS, type PrepTab } from "./homePrepData";
 
 type Props = {
   tab: PrepTab;
   onTab: (t: PrepTab) => void;
-  blurTint: "light" | "dark";
   glassBorder: string;
 };
 
-function segmentTrackTint(colors: ThemeSemantic, resolved: "light" | "dark") {
-  return resolved === "dark"
-    ? "rgba(255, 255, 255, 0.07)"
-    : "rgba(28, 26, 22, 0.06)";
-}
-
-function dockScrim(resolved: "light" | "dark") {
-  return resolved === "dark" ? "rgba(24, 22, 20, 0.72)" : "rgba(250, 248, 244, 0.82)";
-}
-
-export default function HomeTabDock({ tab, onTab, blurTint, glassBorder }: Props) {
+export default function HomeTabDock({ tab, onTab, glassBorder }: Props) {
   const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
-  const trackTint = segmentTrackTint(colors, resolved);
+  const trackTint = segmentTrackTint(resolved);
 
   return (
     <View style={styles.tabDockShell} pointerEvents="box-none">
-      <BlurView
-        intensity={resolved === "dark" ? 42 : 52}
-        tint={blurTint}
+      <View
         style={[
           styles.tabDockBlur,
           {
+            backgroundColor: colors.pageBackground,
             borderTopColor: glassBorder,
             overflow: "hidden",
           },
           Platform.OS === "ios" && { borderCurve: "continuous" },
-          Platform.select({
-            ios: {
-              shadowColor: resolved === "dark" ? "#000" : "#1c1a16",
-              shadowOffset: { width: 0, height: -3 },
-              shadowOpacity: resolved === "dark" ? 0.2 : 0.06,
-              shadowRadius: 8,
-            },
-            android: { elevation: 10 },
-          }),
         ]}
       >
-        <View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { backgroundColor: dockScrim(resolved) }]}
-        />
         <View
           style={[
             styles.tabDockRow,
@@ -87,11 +61,12 @@ export default function HomeTabDock({ tab, onTab, blurTint, glassBorder }: Props
                     styles.segmentTab,
                     active && styles.segmentTabActive,
                     active && {
-                      backgroundColor: colors.cardBackground,
+                      backgroundColor:
+                        resolved === "light" ? colors.secondarySurface : colors.cardBackground,
                       borderColor:
                         resolved === "dark"
                           ? "rgba(255, 255, 255, 0.1)"
-                          : "rgba(28, 26, 22, 0.06)",
+                          : "rgba(28, 26, 22, 0.1)",
                     },
                     active &&
                       Platform.select({
@@ -182,7 +157,7 @@ export default function HomeTabDock({ tab, onTab, blurTint, glassBorder }: Props
             )}
           </Pressable>
         </View>
-      </BlurView>
+      </View>
     </View>
   );
 }

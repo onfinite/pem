@@ -37,7 +37,8 @@ export type ThemeSemantic = {
 const lightSemantic: ThemeSemantic = {
   pageBackground: "#faf8f4",
   surfacePage: "#f7f5f1",
-  cardBackground: "#ffffff",
+  /** Warm off-white — distinct from page + glass chrome (not pure white). */
+  cardBackground: "#f4f1eb",
   textPrimary: "#1c1a16",
   textSecondary: "#6b6560",
   border: "#d8d0c4",
@@ -46,6 +47,7 @@ const lightSemantic: ThemeSemantic = {
   onPrimary: "#ffffff",
   error: "#ff453a",
   placeholder: "#b8b0a4",
+  /** Inputs / secondary controls — slightly lifted vs cards when needed. */
   secondarySurface: "#ffffff",
   brandMutedSurface: "#fdf2ea",
 };

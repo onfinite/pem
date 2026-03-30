@@ -1,44 +1,33 @@
 import PemLogoRow from "@/components/brand/PemLogoRow";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
-import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { Settings } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  TOP_BAR_ROW_PAD,
-  TOP_ICON_CHIP,
-  chipOnStrip,
-  headerStripScrim,
-} from "./homeLayout";
+import { TOP_BAR_ROW_PAD, TOP_ICON_CHIP } from "./homeLayout";
 
 type Props = {
-  blurTint: "light" | "dark";
   glassBorder: string;
 };
 
-export default function HomeGlassHeader({ blurTint, glassBorder }: Props) {
+export default function HomeGlassHeader({ glassBorder }: Props) {
   const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
+  const chipFill = colors.secondarySurface;
 
   return (
     <View style={styles.glassHeaderWrap} pointerEvents="box-none">
-      <BlurView
-        intensity={resolved === "dark" ? 38 : 50}
-        tint={blurTint}
+      <View
         style={[
           styles.headerBackdrop,
           {
+            backgroundColor: colors.pageBackground,
             borderBottomColor: glassBorder,
           },
           Platform.OS === "ios" && { borderCurve: "continuous" },
         ]}
       >
-        <View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { backgroundColor: headerStripScrim(resolved) }]}
-        />
         <View
           style={{
             paddingTop: insets.top,
@@ -58,17 +47,17 @@ export default function HomeGlassHeader({ blurTint, glassBorder }: Props) {
                 style={[
                   styles.topGlassChip,
                   {
-                    backgroundColor: chipOnStrip(resolved),
+                    backgroundColor: chipFill,
                     borderColor: glassBorder,
                   },
                   Platform.select({
                     ios: {
-                      shadowColor: resolved === "dark" ? "#000" : "#1c1a16",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: resolved === "dark" ? 0.25 : 0.08,
-                      shadowRadius: 8,
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: resolved === "dark" ? 0.2 : 0.06,
+                      shadowRadius: 4,
                     },
-                    android: { elevation: 3 },
+                    android: { elevation: resolved === "dark" ? 2 : 2 },
                   }),
                 ]}
               >
@@ -89,17 +78,17 @@ export default function HomeGlassHeader({ blurTint, glassBorder }: Props) {
                 style={[
                   styles.topGlassChip,
                   {
-                    backgroundColor: chipOnStrip(resolved),
+                    backgroundColor: chipFill,
                     borderColor: glassBorder,
                   },
                   Platform.select({
                     ios: {
-                      shadowColor: resolved === "dark" ? "#000" : "#1c1a16",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: resolved === "dark" ? 0.25 : 0.08,
-                      shadowRadius: 8,
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: resolved === "dark" ? 0.2 : 0.06,
+                      shadowRadius: 4,
                     },
-                    android: { elevation: 3 },
+                    android: { elevation: resolved === "dark" ? 2 : 2 },
                   }),
                 ]}
               >
@@ -110,7 +99,7 @@ export default function HomeGlassHeader({ blurTint, glassBorder }: Props) {
             </Pressable>
           </View>
         </View>
-      </BlurView>
+      </View>
     </View>
   );
 }

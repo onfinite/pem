@@ -9,6 +9,7 @@ import {
   TAB_DOCK_INNER_MIN,
   TOP_BAR_ROW_PAD,
   TOP_ICON_CHIP,
+  glassChromeBorder,
 } from "@/components/sections/home-sections/homeLayout";
 import { SHOW_SAMPLE_PREPS, type PrepTab } from "@/components/sections/home-sections/homePrepData";
 import { usePrepHub } from "@/contexts/PrepHubContext";
@@ -24,16 +25,15 @@ export default function HomeScreen() {
   const { readyPreps } = usePrepHub();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<PrepTab>("ready");
-  const blurTint = resolved === "dark" ? "dark" : "light";
-  const glassBorder =
-    resolved === "dark" ? "rgba(255,255,255,0.12)" : "rgba(28,26,22,0.08)";
+  const glassBorder = glassChromeBorder(resolved);
 
   /** Matches dock: top pad + row + home indicator (dock stays `bottom: 0`). */
   const tabDockBottomSpace =
     insets.bottom + TAB_DOCK_INNER_MIN + space[1] + space[2];
   const bottomPad = tabDockBottomSpace + space[6];
+  /** Matches header height + a little gap so the first block isn’t tight to the bar. */
   const scrollTopPad =
-    insets.top + TOP_BAR_ROW_PAD * 2 + TOP_ICON_CHIP + space[1];
+    insets.top + TOP_BAR_ROW_PAD * 2 + TOP_ICON_CHIP + space[1] + space[3];
   const hasPreps = SHOW_SAMPLE_PREPS && readyPreps.length > 0;
 
   const pageHead =
@@ -47,7 +47,7 @@ export default function HomeScreen() {
       : tab === "preping"
         ? {
             title: "Preping",
-            sub: "Parallel work in flight — same as when you leave the preping screen. Nothing is final until it lands in Ready.",
+            sub: "Same work you see after a dump — parallel preps in flight until they land in Ready.",
           }
         : {
             title: "Archived",
@@ -72,8 +72,8 @@ export default function HomeScreen() {
         {tab === "archived" ? <HomeArchivedList resolved={resolved} /> : null}
       </ScrollView>
 
-      <HomeGlassHeader blurTint={blurTint} glassBorder={glassBorder} />
-      <HomeTabDock tab={tab} onTab={setTab} blurTint={blurTint} glassBorder={glassBorder} />
+      <HomeGlassHeader glassBorder={glassBorder} />
+      <HomeTabDock tab={tab} onTab={setTab} glassBorder={glassBorder} />
     </View>
   );
 }
