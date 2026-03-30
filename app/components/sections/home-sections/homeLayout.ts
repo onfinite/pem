@@ -1,7 +1,7 @@
 import { space } from "@/constants/typography";
 
 /** Tab row min height (icons + labels), excluding vertical padding and safe inset. */
-export const TAB_DOCK_INNER_MIN = 56;
+export const TAB_DOCK_INNER_MIN = 50;
 /** Compact header chrome — maximize scroll area below. */
 export const TOP_ICON_CHIP = 36;
 export const TOP_BAR_ROW_PAD = space[1];

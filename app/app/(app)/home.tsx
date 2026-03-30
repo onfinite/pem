@@ -28,7 +28,9 @@ export default function HomeScreen() {
   const glassBorder =
     resolved === "dark" ? "rgba(255,255,255,0.12)" : "rgba(28,26,22,0.08)";
 
-  const tabDockBottomSpace = insets.bottom + TAB_DOCK_INNER_MIN + space[2] * 2;
+  /** Matches dock: top pad + row + home indicator (dock stays `bottom: 0`). */
+  const tabDockBottomSpace =
+    insets.bottom + TAB_DOCK_INNER_MIN + space[1] + space[2];
   const bottomPad = tabDockBottomSpace + space[6];
   const scrollTopPad =
     insets.top + TOP_BAR_ROW_PAD * 2 + TOP_ICON_CHIP + space[1];
