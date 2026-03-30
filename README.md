@@ -49,7 +49,7 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 
 **Stack vs tabs for Pem:** Signed-in users land on **`/home`**. **Pem mark** or **Record** control → **`/dump`** → **`/preping`** (acknowledgement + in-flight preps) → **`/home`**. **Settings** on the same stack.
 
-**Splash and fonts** stay in the **root** `_layout.tsx` once (global cold start). **ClerkProvider** wraps routes that need auth; use **signed-in vs signed-out** redirects to send users to `(public)` vs `(app)` without duplicating splash inside each group.
+**Splash and fonts** stay in the **root** `_layout.tsx` once (global cold start). **ClerkProvider** wraps routes that need auth; use **signed-in vs signed-out** redirects to send users to `(public)` vs `(app)` without duplicating splash inside each group. On **wide viewports** (tablet, web), the root layout **caps content width** (`MAX_APP_CONTENT_WIDTH` in `app/constants/layout.ts`) and centers it so chrome and screens stay phone-sized.
 
 ---
 
@@ -73,7 +73,7 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 | `/home` | `(app)/home.tsx` | **Preps hub:** glass **BlurView** header + floating glass tab dock; tabs **Ready** / **Preping** / **Archived**; **Pem mark** + **Record** (in dock) → **`/dump`**; prep cards → **`/prep/[id]`** (detail) |
 | `/prep/[id]` | `(app)/prep/[id].tsx` | Full prep: options, research, or draft + **Copy** where relevant; **Close** → back |
 | `/dump` | `(app)/dump.tsx` | Full-bleed gradient; **Try saying** + website-style example; bottom bar **keyboard** swaps to **text field + mic** (back to voice) + **Send**; **Done** / **Send** → **`/preping`**; **Close** → **`/home`** |
-| `/preping` | `(app)/preping.tsx` | After a dump: **We got it** + in-flight prep rows + reassurance; **Back to Preps** / header **back** → **`/home`** |
+| `/preping` | `(app)/preping.tsx` | After a dump: **We got it** + in-flight prep rows + reassurance; no app header — **Back to Preps** → **`/home`** |
 | `/settings` | `(app)/settings.tsx` | Profile (Clerk), appearance (light / dark / system), sign out; **Close** (`X`) runs **`router.back()`** or **`/home`** if there is no stack history |
 
 **Develop**

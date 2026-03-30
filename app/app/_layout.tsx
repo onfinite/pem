@@ -1,6 +1,7 @@
 import SplashScreenView from "@/components/views/SplashScreenView";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { pemFontSources } from "@/constants/fonts";
+import { MAX_APP_CONTENT_WIDTH } from "@/constants/layout";
 import { pemAmber } from "@/constants/theme";
 import { ClerkProvider } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
@@ -76,7 +77,9 @@ function RootLayoutInner() {
           ]}
         >
           <StatusBar style={statusStyle} />
-          <Slot />
+          <View style={styles.contentColumn}>
+            <Slot />
+          </View>
         </Animated.View>
       ) : null}
 
@@ -109,6 +112,13 @@ const styles = StyleSheet.create({
   },
   layer: {
     flex: 1,
+  },
+  contentColumn: {
+    flex: 1,
+    width: "100%",
+    maxWidth: MAX_APP_CONTENT_WIDTH,
+    alignSelf: "center",
+    minWidth: 0,
   },
   splashOverlay: {
     ...StyleSheet.absoluteFillObject,
