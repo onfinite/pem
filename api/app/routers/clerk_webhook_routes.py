@@ -102,13 +102,6 @@ async def clerk_webhook(request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Invalid payload shape")
 
-    event_type = payload.get("type")
-    logger.info(
-        "clerk_webhook_received",
-        event_type=event_type,
-        svix_id=svix_id,
-    )
-
     try:
         await run_in_threadpool(_process_clerk_event, payload)
     except ValueError as e:
