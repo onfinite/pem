@@ -90,6 +90,7 @@ Lint: `npm run lint`. More Expo notes live in `app/README.md`.
 
 - **Python** ≥ 3.13, **FastAPI**, **SQLModel**, **Alembic** (PostgreSQL)
 - **Redis**, **arq** (async jobs), **structlog**, **slowapi** (rate limits), **Sentry**
+- **Clerk:** session JWT verification (**JWKS** + `python-jose`) and **`user.created` / `user.deleted`** webhooks (**Svix**); optional env vars in `api/app/core/config.py` (`clerk_webhook_secret`, `clerk_jwks_url`, `clerk_jwt_issuer`)
 
 **Develop**
 
@@ -99,7 +100,7 @@ uv sync
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Configure a **`.env`** in `api/` (fields are defined in `api/app/core/config.py`). At minimum you will need values for `database_url`, `database_url_sync`, `redis_url`, `openai_api_key`, and `sentry_sdk_dsn` (plus any others required by settings).
+Configure a **`.env`** in `api/` (fields are defined in `api/app/core/config.py`). At minimum you will need values for `database_url`, `database_url_sync`, `redis_url`, `openai_api_key`, and `sentry_sdk_dsn` (plus any others required by settings). For Clerk-backed routes and webhooks, also set **`clerk_jwks_url`** (Clerk Frontend API JWKS URL, ending in `/.well-known/jwks.json`), **`clerk_jwt_issuer`** (must match the JWT `iss` claim for your Clerk instance), and **`clerk_webhook_secret`** (Svix signing secret from the Clerk dashboard webhook endpoint).
 
 Database migrations: **Alembic** under `api/migrations/`.
 

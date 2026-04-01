@@ -12,7 +12,18 @@ alwaysApply: false
 
 **App factory:** `app/main.py` builds **FastAPI** with optional docs in non-prod, **`lifespan`** for startup/shutdown, middleware order (correlation ID, security headers, request size, CORS), **slowapi** on `app.state.limiter`, and **`include_router(router)`** from `app.routers`.
 
-**Config:** **`app/core/config.py`** — `pydantic-settings` **`Settings`** from env (`.env`): `database_url`, `database_url_sync`, `redis_url`, `env`, CORS, rate limit, etc. **Never hardcode secrets**—always env-driven.
+**Config:** **`app/core/config.py`** — `pydantic-settings` **`Settings`** from env (`.env`): `database_url`, `database_url_sync`, `redis_url`, `env`, CORS, rate limit, optional **Clerk** (`clerk_webhook_secret`, `clerk_jwks_url`, `clerk_jwt_issuer`), etc. **Never hardcode secrets**—always env-driven.
+
+**Clerk auth & webhooks:** **`app/deps/auth.py`** — `get_current_user` (HTTP Bearer → DB `User` via `sub`); **`app/core/clerk_jwt.py`** — JWKS fetch + RS256 verify; **`app/routers/clerk_webhook_routes.py`** — `POST /webhooks/clerk` (Svix signature); **`app/services/user_service.py`** — upsert/delete by `clerk_id`. Protected routes use `Depends(get_current_user)`; do not trust client-supplied user ids.
+
+**File naming (searchability):** Prefer consistent prefixes/suffixes so agents and humans can grep the tree quickly.
+
+| Area | Pattern | Examples |
+|------|---------|----------|
+| **SQLModel tables** | `*_model.py` in **`app/models/`** | `user_model.py`, `prep_model.py` |
+| **Routers** | `*_routes.py` in **`app/routers/`**; set **`APIRouter(prefix="...")`** when the area has a URL prefix | `user_routes` → `/users`, `clerk_webhook_routes` → `/webhooks/clerk` |
+| **Services** | `*_service.py` in **`app/services/`** — persistence and domain logic called from routers/deps | `user_service.py` |
+| **Middleware** | **`app/middlewares/`** — one concern per module; **`*_middleware.py`** when it is Starlette middleware | `correlation_middleware.py`, `request_size_limit.py` |
 
 **Security (first-class):** Treat security as a default requirement, not a later pass.
 
@@ -28,7 +39,7 @@ alwaysApply: false
 
 **Data:** **`SQLModel`** models in `app/models/`; sessions via **`get_session`** in **`app/core/database.py`**. Schema changes: **Alembic** under **`api/migrations/`**.
 
-**Routers & domain logic:** **`app/routers/`** — one router module per area (`APIRouter` + `include_router` from **`app/routers/__init__.py`**). **Keep routers thin**—validation and HTTP glue in the route; heavier logic in **services** or dedicated modules as the API grows (this repo uses **`routers/`** + **`models/`** + **`core/`** rather than a separate `modules/` tree—extend that pattern). **Dependency injection** via FastAPI **`Depends()`**—avoid hidden globals for DB sessions and settings.
+**Routers & domain logic:** **`app/routers/`** — one router module per area (`*_routes.py`, `APIRouter` + `include_router` from **`app/routers/__init__.py`**). **Keep routers thin**—validation and HTTP glue in the route; heavier logic in **`app/services/*_service.py`**. **Dependency injection** via FastAPI **`Depends()`**—avoid hidden globals for DB sessions and settings.
 
 **Workers / jobs:** Background work goes through **arq** (or the project’s existing job pattern)—keep job entrypoints consistent with **`structlog`** and shared config.
 

@@ -1,6 +1,12 @@
-from sqlmodel import SQLModel, Field, Column, JSON
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Any
+
+from sqlalchemy import Column, JSON
+from sqlmodel import Field, SQLModel
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Prep(SQLModel, table=True):
@@ -8,9 +14,9 @@ class Prep(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     dump_id: int = Field(foreign_key="dump.id", index=True)
     title: str
-    result: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    result: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(
-        default_factory=datetime.now(timezone.utc),
-        sa_column_kwargs={"onupdate": datetime.now(timezone.utc)},
+        default_factory=_utc_now,
+        sa_column_kwargs={"onupdate": _utc_now},
     )

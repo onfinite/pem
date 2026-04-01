@@ -32,7 +32,7 @@ alwaysApply: true
 | Area | Stack |
 |------|--------|
 | Mobile | **Expo ~54**, **React 19**, **React Native**, **expo-router** (file-based routes), **TypeScript** (strict), **New Architecture** + **React Compiler** (see `app/app.json` experiments) |
-| API | **Python ≥3.13**, **FastAPI**, **SQLModel** (SQLAlchemy), **Alembic** migrations, **PostgreSQL** (`asyncpg` / sync URL in settings), **Redis**, **arq** (async jobs), **structlog**, **slowapi** (rate limits), **Sentry** |
+| API | **Python ≥3.13**, **FastAPI**, **SQLModel** (SQLAlchemy), **Alembic** migrations, **PostgreSQL** (`asyncpg` / sync URL in settings), **Redis**, **arq** (async jobs), **structlog**, **slowapi** (rate limits), **Sentry**, **Clerk** (JWT via **python-jose** + JWKS, webhooks via **svix**) |
 
 **Conventions:** Prefer small, focused changes; match existing naming (`Pem*` UI primitives, `app.` Python package). Run `expo lint` in `app/` and follow existing ESLint/Expo config when editing TS.
 

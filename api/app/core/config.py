@@ -1,8 +1,10 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     env: str = "dev"
     debug: bool = False
@@ -15,9 +17,10 @@ class Settings(BaseSettings):
     openai_api_key: str
     sentry_sdk_dsn: str
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Clerk (JWT + `user.*` webhooks)
+    clerk_webhook_secret: str | None = None
+    clerk_jwks_url: str | None = None
+    clerk_jwt_issuer: str | None = None
 
 
 settings = Settings()
