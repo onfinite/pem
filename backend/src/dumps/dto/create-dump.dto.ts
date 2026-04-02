@@ -7,7 +7,7 @@ export class CreateDumpDto {
   })
   @IsString()
   @MinLength(1)
-  @MaxLength(50_000)
+  @MaxLength(16_000)
   transcript!: string;
 
   @ApiPropertyOptional({

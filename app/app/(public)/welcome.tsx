@@ -34,7 +34,7 @@ export default function WelcomeScreen() {
           Pem&apos;s got it.
         </PemText>
         <PemText variant="bodyMuted" style={styles.heroBody}>
-          Dump voice or text. Pem researches, drafts, and finds your options while you live your
+          Dump what’s on your mind in text. Pem researches, drafts, and finds your options while you live your
           life. Come back when your preps are ready — you act in seconds.
         </PemText>
         <View style={styles.authBlock}>

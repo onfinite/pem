@@ -11,10 +11,12 @@ import { eq } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 import OpenAI, { toFile } from 'openai';
 
-import { ClassifyAgent } from '../agents/classify.agent';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
-import { dumpsTable, prepsTable, type UserRow } from '../database/schemas';
+import { dumpsTable, type UserRow } from '../database/schemas';
+
+/** Max transcript length (chars); aligned with CreateDumpDto and client. */
+export const DUMP_TRANSCRIPT_MAX_CHARS = 16_000;
 
 @Injectable()
 export class DumpsService {
@@ -23,15 +25,14 @@ export class DumpsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly config: ConfigService,
-    private readonly classify: ClassifyAgent,
-    @InjectQueue('prep') private readonly prepQueue: Queue,
+    @InjectQueue('dump') private readonly dumpQueue: Queue,
   ) {}
 
   async createDump(
     user: UserRow,
     transcript: string,
     audioUrl?: string | null,
-  ): Promise<{ dumpId: string; prepIds: string[] }> {
+  ): Promise<{ status: string; dumpId: string; prepIds: string[] }> {
     const [dump] = await this.db
       .insert(dumpsTable)
       .values({
@@ -41,37 +42,18 @@ export class DumpsService {
       })
       .returning();
 
-    const thoughts = await this.classify.classifyTranscript(dump.transcript);
-    const prepIds: string[] = [];
-
-    for (const t of thoughts) {
-      const [prep] = await this.db
-        .insert(prepsTable)
-        .values({
-          userId: user.id,
-          dumpId: dump.id,
-          title: t.title,
-          prepType: t.prepType,
-          status: 'prepping',
-        })
-        .returning();
-
-      await this.prepQueue.add(
-        'process',
-        { prepId: prep.id },
-        {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 2000 },
-          removeOnComplete: true,
-        },
-      );
-      prepIds.push(prep.id);
-    }
-
-    this.log.log(
-      `dump ${dump.id} created with ${prepIds.length} prep job(s) for user ${user.id}`,
+    await this.dumpQueue.add(
+      'split',
+      { dumpId: dump.id },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: true,
+      },
     );
-    return { dumpId: dump.id, prepIds };
+
+    this.log.log(`dump ${dump.id} queued for split for user ${user.id}`);
+    return { status: 'got it', dumpId: dump.id, prepIds: [] };
   }
 
   async createDumpFromAudio(
@@ -103,7 +85,7 @@ export class DumpsService {
       throw new BadRequestException('Could not transcribe audio');
     }
 
-    const trimmed = transcript.trim();
+    const trimmed = transcript.trim().slice(0, DUMP_TRANSCRIPT_MAX_CHARS);
     if (!trimmed) {
       throw new BadRequestException('Transcription was empty');
     }

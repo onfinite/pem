@@ -9,7 +9,12 @@ export type AppConfig = {
   };
   cors: { origins: string[] };
   tavily: { apiKey: string | undefined };
-  openai: { apiKey: string | undefined; model: string };
+  openai: {
+    apiKey: string | undefined;
+    model: string;
+    /** Main prep agent (tool loop). */
+    agentModel: string;
+  };
   redisUrl: string | undefined;
   /** Max tool/steps for agentic flows (classification uses structured output, not steps). */
   agentMaxSteps: number;
@@ -43,6 +48,7 @@ export default (): AppConfig => {
     openai: {
       apiKey: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      agentModel: process.env.OPENAI_AGENT_MODEL ?? 'gpt-4o',
     },
     redisUrl: process.env.REDIS_URL,
     agentMaxSteps: Number.parseInt(process.env.AGENT_MAX_STEPS ?? '8', 10),

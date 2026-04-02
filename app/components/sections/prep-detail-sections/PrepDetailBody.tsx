@@ -4,16 +4,18 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import * as Clipboard from "expo-clipboard";
 import { openExternalUrl } from "@/lib/openExternalUrl";
-import { Copy, ExternalLink, FileText } from "lucide-react-native";
+import { Copy, ExternalLink, FileText, Send } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { Prep } from "../home-sections/homePrepData";
+import DraftComposeSheet from "./DraftComposeSheet";
 
 type Props = { prep: Prep };
 
 export default function PrepDetailBody({ prep }: Props) {
-  const { colors } = useTheme();
+  const { colors, resolved } = useTheme();
   const [copied, setCopied] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const copyDraft = useCallback(async () => {
     if (!prep.draftText) return;
@@ -97,24 +99,46 @@ export default function PrepDetailBody({ prep }: Props) {
         <View style={[styles.draftShell, { backgroundColor: colors.secondarySurface, borderColor: colors.borderMuted }]}>
           <View style={styles.draftToolbar}>
             <PemText style={[styles.draftLabel, { color: colors.textPrimary }]}>Draft</PemText>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Copy draft to clipboard"
-              onPress={copyDraft}
-              style={({ pressed }) => [
-                styles.copyBtn,
-                { backgroundColor: colors.cardBackground, opacity: pressed ? 0.88 : 1 },
-              ]}
-            >
-              <Copy size={18} stroke={colors.textSecondary} strokeWidth={2.25} />
-              <PemText style={[styles.copyLabel, { color: colors.textPrimary }]}>
-                {copied ? "Copied" : "Copy"}
-              </PemText>
-            </Pressable>
+            <View style={styles.draftActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open draft in email app"
+                onPress={() => setComposeOpen(true)}
+                style={({ pressed }) => [
+                  styles.copyBtn,
+                  { backgroundColor: colors.cardBackground, opacity: pressed ? 0.88 : 1 },
+                ]}
+              >
+                <Send size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
+                <PemText style={[styles.copyLabel, { color: colors.textPrimary }]}>Open in…</PemText>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Copy draft to clipboard"
+                onPress={copyDraft}
+                style={({ pressed }) => [
+                  styles.copyBtn,
+                  { backgroundColor: colors.cardBackground, opacity: pressed ? 0.88 : 1 },
+                ]}
+              >
+                <Copy size={18} stroke={colors.textSecondary} strokeWidth={2.25} />
+                <PemText style={[styles.copyLabel, { color: colors.textPrimary }]}>
+                  {copied ? "Copied" : "Copy"}
+                </PemText>
+              </Pressable>
+            </View>
           </View>
           <PemText selectable style={[styles.draftText, { color: colors.textPrimary }]}>
             {prep.draftText}
           </PemText>
+          <DraftComposeSheet
+            visible={composeOpen}
+            onClose={() => setComposeOpen(false)}
+            subject={prep.draftSubject ?? null}
+            body={prep.draftText}
+            colors={colors}
+            resolved={resolved}
+          />
         </View>
       ) : null}
 
@@ -205,6 +229,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: space[2],
+  },
+  draftActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: space[2],
   },
   draftLabel: {
     fontFamily: fontFamily.sans.semibold,

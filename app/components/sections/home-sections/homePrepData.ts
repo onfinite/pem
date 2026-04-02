@@ -71,8 +71,12 @@ export type Prep = {
   body?: string;
   /** Paste-ready text for draft preps. */
   draftText?: string;
+  /** Email subject from API when render type is draft. */
+  draftSubject?: string | null;
   /** Set when preps are loaded from the API (not demo seeds). */
-  status?: "prepping" | "ready" | "archived";
+  status?: "prepping" | "ready" | "archived" | "failed";
+  /** Present for API-backed preps; used to scope the post-dump “Pem’s got it” list. */
+  dumpId?: string;
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [
@@ -118,9 +122,9 @@ Thank you,
     viewLabel: "Read research",
     kind: "deep_research",
     detailIntro: "Sources cross-checked; this is a synthesis, not a single blog take.",
-    body: `No direct competitor combines voice capture with parallel “prep” agents the way you described. Closest tools are generic AI chats (no prep cards) or task apps (no research fan-out).
+    body: `No direct competitor combines quick text capture with parallel “prep” agents the way you described. Closest tools are generic AI chats (no prep cards) or task apps (no research fan-out).
 
-What looks real: onboarding busy professionals who already dump voice notes elsewhere — acquisition is the risk, not the idea.
+What looks real: onboarding busy professionals who already jot thoughts in notes apps — acquisition is the risk, not the idea.
 
 Next validation: 5 interviews on “where do thoughts go today?” and willingness to pay for prep cards vs. another subscription.`,
   },

@@ -23,7 +23,7 @@ export default function HomeReadyEmpty() {
       </View>
       <PemText style={[styles.emptyTitle, { color: colors.textPrimary }]}>No preps yet</PemText>
       <PemText style={[styles.emptyBody, { color: colors.textSecondary }]}>
-        Dump what&apos;s on your mind — voice or text. Pem turns it into preps you open here.
+        Dump what&apos;s on your mind in text. Pem turns it into preps you open here.
       </PemText>
       <PemButton variant="primary" size="lg" onPress={() => router.push("/dump")}>
         Dump something

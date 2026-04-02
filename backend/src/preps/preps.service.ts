@@ -1,22 +1,111 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm';
+import type { Queue } from 'bullmq';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
   prepRunLogsTable,
   prepsTable,
+  type PrepRow,
   type PrepStatus,
 } from '../database/schemas';
+import { PrepEventsService } from '../events/prep-events.service';
+import { StepsService } from '../steps/steps.service';
+
+function encodePrepCursor(createdAt: Date, id: string): string {
+  return Buffer.from(
+    JSON.stringify({ c: createdAt.toISOString(), i: id }),
+    'utf8',
+  ).toString('base64url');
+}
+
+function decodePrepCursor(raw: string): { c: Date; i: string } | null {
+  try {
+    const j = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
+      c?: string;
+      i?: string;
+    };
+    if (typeof j?.c !== 'string' || typeof j?.i !== 'string') return null;
+    const d = new Date(j.c);
+    if (Number.isNaN(d.getTime())) return null;
+    return { c: d, i: j.i };
+  } catch {
+    return null;
+  }
+}
 
 @Injectable()
 export class PrepsService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly steps: StepsService,
+    private readonly prepEvents: PrepEventsService,
+    @InjectQueue('prep') private readonly prepQueue: Queue,
+  ) {}
+
+  /**
+   * Paginated list: `status=prepping` includes **failed** (same hub bucket).
+   * Optional `dumpId` scopes to one dump (e.g. post-dump screen).
+   */
+  async listForUserPaginated(
+    userId: string,
+    opts: {
+      status?: PrepStatus;
+      dumpId?: string;
+      limit: number;
+      cursor?: string | null;
+    },
+  ): Promise<{ rows: PrepRow[]; nextCursor: string | null }> {
+    const lim = Math.min(Math.max(opts.limit, 1), 50);
+    const conditions: SQL[] = [eq(prepsTable.userId, userId)];
+
+    if (opts.dumpId) {
+      conditions.push(eq(prepsTable.dumpId, opts.dumpId));
+    }
+
+    if (opts.status === 'prepping') {
+      conditions.push(inArray(prepsTable.status, ['prepping', 'failed']));
+    } else if (opts.status) {
+      conditions.push(eq(prepsTable.status, opts.status));
+    }
+
+    if (opts.cursor) {
+      const cur = decodePrepCursor(opts.cursor);
+      if (!cur) {
+        throw new BadRequestException('Invalid cursor');
+      }
+      conditions.push(
+        or(
+          lt(prepsTable.createdAt, cur.c),
+          and(eq(prepsTable.createdAt, cur.c), lt(prepsTable.id, cur.i)),
+        )!,
+      );
+    }
+
+    const rows = await this.db
+      .select()
+      .from(prepsTable)
+      .where(and(...conditions))
+      .orderBy(desc(prepsTable.createdAt), desc(prepsTable.id))
+      .limit(lim + 1);
+
+    const hasMore = rows.length > lim;
+    const page = hasMore ? rows.slice(0, lim) : rows;
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last && last.createdAt
+        ? encodePrepCursor(last.createdAt, last.id)
+        : null;
+
+    return { rows: page, nextCursor };
+  }
 
   async listForUser(userId: string, status?: PrepStatus) {
     if (status) {
@@ -57,13 +146,69 @@ export class PrepsService {
       .orderBy(asc(prepRunLogsTable.createdAt));
   }
 
+  async listAgentStepsForPrep(prepId: string, userId: string) {
+    await this.getByIdForUser(prepId, userId);
+    return this.steps.listForPrep(prepId);
+  }
+
+  async retry(prepId: string, userId: string) {
+    const prep = await this.getByIdForUser(prepId, userId);
+    if (prep.status !== 'failed') {
+      throw new BadRequestException('Only failed preps can be retried');
+    }
+    await this.prepEvents.incrementPending(prep.dumpId);
+    await this.steps.deleteForPrep(prepId);
+    const [updated] = await this.db
+      .update(prepsTable)
+      .set({
+        status: 'prepping',
+        errorMessage: null,
+        result: null,
+        summary: null,
+        readyAt: null,
+      })
+      .where(eq(prepsTable.id, prepId))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException('Prep not found');
+    }
+    await this.prepQueue.add(
+      'process',
+      { prepId },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: true,
+      },
+    );
+    await this.prepEvents.publish(prep.dumpId, {
+      type: 'prep.created',
+      dumpId: prep.dumpId,
+      prep: {
+        id: updated.id,
+        thought: updated.thought || updated.title,
+        status: updated.status,
+        render_type: updated.renderType,
+        summary: updated.summary,
+        result: updated.result,
+      },
+    });
+    return updated;
+  }
+
   async archive(prepId: string, userId: string) {
     const prep = await this.getByIdForUser(prepId, userId);
     if (prep.status === 'archived') {
       return prep;
     }
-    if (prep.status !== 'ready' && prep.status !== 'prepping') {
-      throw new BadRequestException('Only active preps (prepping or ready) can be archived');
+    if (
+      prep.status !== 'ready' &&
+      prep.status !== 'prepping' &&
+      prep.status !== 'failed'
+    ) {
+      throw new BadRequestException(
+        'Only active preps (prepping, ready, or failed) can be archived',
+      );
     }
     const now = new Date();
     const [updated] = await this.db

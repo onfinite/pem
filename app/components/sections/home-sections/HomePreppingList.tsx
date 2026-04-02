@@ -1,20 +1,26 @@
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
+import PemButton from "@/components/ui/PemButton";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme, type ThemeSemantic } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
+import { useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { prepKindTagColor } from "./homePrepData";
 
-function PreppingRow({
+export function PreppingRow({
   prep,
   colors,
   resolved,
+  onRetry,
 }: {
   prep: Prep;
   colors: ThemeSemantic;
   resolved: "light" | "dark";
+  onRetry: (id: string) => Promise<void>;
 }) {
+  const [retrying, setRetrying] = useState(false);
+  const failed = prep.status === "failed";
   const subColor = prepKindTagColor(prep.kind, resolved);
   const Icon = prep.Icon;
   return (
@@ -46,19 +52,48 @@ function PreppingRow({
         </PemText>
       </View>
       <View style={styles.preppingSpinner}>
-        <ActivityIndicator size="small" color={colors.placeholder} />
+        {failed ? (
+          retrying ? (
+            <ActivityIndicator size="small" color={colors.pemAmber} />
+          ) : (
+            <PemButton
+              size="sm"
+              variant="secondary"
+              onPress={() => {
+                setRetrying(true);
+                void onRetry(prep.id).finally(() => setRetrying(false));
+              }}
+            >
+              Retry
+            </PemButton>
+          )
+        ) : (
+          <ActivityIndicator size="small" color={colors.placeholder} />
+        )}
       </View>
     </View>
   );
 }
 
-export default function HomePreppingList() {
+type Props = {
+  /** When set (e.g. post-dump flow), show only these rows instead of all hub in-flight preps. */
+  preps?: Prep[];
+};
+
+export default function HomePreppingList({ preps: prepsOverride }: Props) {
   const { colors, resolved } = useTheme();
-  const { preppingPreps } = usePrepHub();
+  const { preppingPreps, retryPrep } = usePrepHub();
+  const list = prepsOverride ?? preppingPreps;
   return (
     <View style={styles.preppingList}>
-      {preppingPreps.map((prep) => (
-        <PreppingRow key={prep.id} prep={prep} colors={colors} resolved={resolved} />
+      {list.map((prep) => (
+        <PreppingRow
+          key={prep.id}
+          prep={prep}
+          colors={colors}
+          resolved={resolved}
+          onRetry={retryPrep}
+        />
       ))}
     </View>
   );
@@ -101,7 +136,7 @@ const styles = StyleSheet.create({
     lineHeight: lh(fontSize.md, lineHeight.snug),
   },
   preppingSpinner: {
-    width: 28,
+    minWidth: 72,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -2,6 +2,7 @@ import PrepDetailActivity from "@/components/sections/prep-detail-sections/PrepD
 import PrepDetailBody from "@/components/sections/prep-detail-sections/PrepDetailBody";
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import { prepKindTagColor } from "@/components/sections/home-sections/homePrepData";
+import PemButton from "@/components/ui/PemButton";
 import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
@@ -17,12 +18,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function PrepDetailScreen() {
   const raw = useLocalSearchParams<{ id: string | string[] }>().id;
   const id = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
-  const { getPrep, fetchPrepById, readyPreps, preppingPreps, archivePrep, refresh } = usePrepHub();
+  const { getPrep, fetchPrepById, readyPreps, preppingPreps, archivePrep, retryPrep, refresh } =
+    usePrepHub();
   const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
 
   const [prep, setPrep] = useState<Prep | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const syncFromHub = useCallback(() => {
     if (id === undefined) return;
@@ -94,6 +97,7 @@ export default function PrepDetailScreen() {
     prep.status !== "archived" &&
     (prep.status === "ready" ||
       prep.status === "prepping" ||
+      prep.status === "failed" ||
       (!prep.status &&
         (readyPreps.some((p) => p.id === prep.id) ||
           preppingPreps.some((p) => p.id === prep.id))));
@@ -104,6 +108,19 @@ export default function PrepDetailScreen() {
       router.back();
     } catch {
       /* hub refresh will surface errors on next poll */
+    }
+  };
+
+  const onRetry = async () => {
+    setRetrying(true);
+    try {
+      await retryPrep(prep.id);
+      const next = await fetchPrepById(prep.id);
+      if (next) setPrep(next);
+    } catch {
+      /* apiFetch already throws readable messages (e.g. 429) */
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -160,6 +177,13 @@ export default function PrepDetailScreen() {
         </PemText>
         <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
         <PemMarkdown>{prep.summary}</PemMarkdown>
+        {prep.status === "failed" ? (
+          retrying ? (
+            <ActivityIndicator style={{ alignSelf: "flex-start" }} color={colors.pemAmber} />
+          ) : (
+            <PemButton onPress={() => void onRetry()}>Retry</PemButton>
+          )
+        ) : null}
         <PrepDetailActivity prepId={prep.id} />
         <PrepDetailBody prep={prep} />
       </ScrollView>

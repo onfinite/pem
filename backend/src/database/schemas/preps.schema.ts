@@ -10,11 +10,26 @@ import {
 import { dumpsTable } from './dumps.schema';
 import { usersTable } from './users.schema';
 
+/** Legacy / UI hint — derived from `render_type` when set. */
 export const PREP_TYPES = ['search', 'research', 'options', 'draft'] as const;
 export type PrepType = (typeof PREP_TYPES)[number];
 
-export const PREP_STATUSES = ['prepping', 'ready', 'archived'] as const;
+export const PREP_STATUSES = [
+  'prepping',
+  'ready',
+  'archived',
+  'failed',
+] as const;
 export type PrepStatus = (typeof PREP_STATUSES)[number];
+
+export const PREP_RENDER_TYPES = [
+  'search',
+  'research',
+  'options',
+  'draft',
+  'compound',
+] as const;
+export type PrepRenderType = (typeof PREP_RENDER_TYPES)[number];
 
 export const prepsTable = pgTable(
   'preps',
@@ -26,8 +41,15 @@ export const prepsTable = pgTable(
     dumpId: uuid('dump_id')
       .notNull()
       .references(() => dumpsTable.id, { onDelete: 'cascade' }),
+    /** Short card label — kept for backward compatibility; prefer `thought`. */
     title: text('title').notNull(),
+    /** One extracted actionable line from the dump (agentic flow). */
+    thought: text('thought').notNull().default(''),
+    /** Enriched context merged from dump + profile at prep creation. */
+    context: json('context').$type<Record<string, unknown>>(),
     prepType: text('prep_type').notNull(),
+    /** Set after the agent finishes; drives UI rendering. */
+    renderType: text('render_type'),
     status: text('status').notNull().default('prepping'),
     summary: text('summary'),
     result: json('result').$type<Record<string, unknown>>(),

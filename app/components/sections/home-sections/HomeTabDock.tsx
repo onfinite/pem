@@ -115,7 +115,7 @@ export default function HomeTabDock({ tab, onTab, glassBorder }: Props) {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Dump — voice or text"
+            accessibilityLabel="Dump — text"
             onPress={() => router.push("/dump")}
             style={({ pressed }) => [styles.dumpColumn, pressed && { opacity: 0.94 }]}
           >

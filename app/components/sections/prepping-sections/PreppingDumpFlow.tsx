@@ -4,15 +4,35 @@ import { PREPPING_FLOW_MAX_WIDTH } from "@/constants/layout";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
-import { useFocusEffect } from "expo-router";
+import { useDumpPrepStream } from "@/hooks/useDumpPrepStream";
+import { apiPrepToPrep } from "@/lib/pemApi";
+import { useAuth } from "@clerk/expo";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Check } from "lucide-react-native";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
+import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-/** Post-dump acknowledgement + same in-flight rows as the hub Prepping tab; CTA is the screen footer. */
+/** Post-dump acknowledgement + in-flight rows for this dump only (hub Prepping tab shows all). */
 export default function PreppingDumpFlow() {
   const { colors } = useTheme();
-  const { preppingPreps, loading, refresh } = usePrepHub();
+  const { getToken } = useAuth();
+  const { dumpId: dumpIdParam } = useLocalSearchParams<{ dumpId?: string | string[] }>();
+  const dumpId = useMemo(() => {
+    const d = dumpIdParam;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d) && d[0]) return d[0];
+    return undefined;
+  }, [dumpIdParam]);
+
+  const { loading, refresh, upsertPrepRow } = usePrepHub();
+  const { streamDone, dumpPreps: dumpRows, loadingDumpPreps } = useDumpPrepStream(
+    dumpId,
+    getToken,
+    upsertPrepRow,
+  );
+
+  const dumpPreps = useMemo<Prep[]>(() => dumpRows.map(apiPrepToPrep), [dumpRows]);
 
   useFocusEffect(
     useCallback(() => {
@@ -20,15 +40,19 @@ export default function PreppingDumpFlow() {
     }, [refresh]),
   );
 
-  const n = preppingPreps.length;
-  const sub =
-    loading && n === 0
+  const n = dumpPreps.length;
+  const waitingForDumpPreps = Boolean(dumpId) && n === 0 && !streamDone;
+  const showEmptyLoading = n === 0 && (loading || waitingForDumpPreps);
+
+  const sub = showEmptyLoading
+    ? loading || loadingDumpPreps
       ? "Loading your preps…"
-      : n === 0
-        ? "Nothing in flight yet — pull to refresh from Home, or wait a moment."
-        : n === 1
-          ? "1 prep in progress — it’ll land in Ready when you can act on it."
-          : `${n} preps in progress — they’ll land in Ready when you can act on them.`;
+      : "Pem’s on it — your prep cards will show up here in a moment."
+    : n === 0
+      ? "Nothing in flight yet — pull to refresh from Home, or wait a moment."
+      : n === 1
+        ? "1 prep in progress — it’ll land in Ready when you can act on it."
+        : `${n} preps in progress — they’ll land in Ready when you can act on them.`;
 
   return (
     <View style={styles.root}>
@@ -46,10 +70,10 @@ export default function PreppingDumpFlow() {
         <PemText variant="bodyMuted" style={[styles.listLabel, { color: colors.textSecondary }]}>
           {n === 0 ? "In flight" : `In flight (${n})`}
         </PemText>
-        {loading && n === 0 ? (
+        {showEmptyLoading ? (
           <ActivityIndicator style={{ marginVertical: space[4] }} color={colors.pemAmber} />
         ) : (
-          <HomePreppingList />
+          <HomePreppingList preps={dumpPreps} />
         )}
       </View>
     </View>

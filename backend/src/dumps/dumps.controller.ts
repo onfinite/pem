@@ -57,15 +57,17 @@ export class DumpsController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create dump — classify, enqueue prep jobs, return immediately',
+    summary:
+      'Create dump — queue split job, return immediately (preps appear via SSE)',
   })
   @ApiCreatedResponse({
-    description: 'dumpId + prepIds; workers process preps async',
+    description:
+      '{ status, dumpId, prepIds: [] } — split + prep jobs run async',
   })
   async create(
     @CurrentUser() user: UserRow,
     @Body() body: CreateDumpDto,
-  ): Promise<{ dumpId: string; prepIds: string[] }> {
+  ): Promise<{ status: string; dumpId: string; prepIds: string[] }> {
     return this.dumps.createDump(user, body.transcript, body.audioUrl);
   }
 

@@ -10,7 +10,7 @@ import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { useClerk, useUser } from "@clerk/expo";
 import { router } from "expo-router";
-import { Check, Monitor, Moon, Sun, UserRound, X } from "lucide-react-native";
+import { Check, ChevronRight, Monitor, Moon, Sparkles, Sun, UserRound, X } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -209,6 +209,52 @@ export default function SettingsScreen() {
         </View>
 
         <PemText variant="label" style={styles.sectionLabel}>
+          Pem memory
+        </PemText>
+        <PemText variant="caption" style={styles.sectionHint}>
+          Facts Pem saves when prepping so answers fit you—not shared with others.
+        </PemText>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="What Pem knows about you"
+          onPress={() => router.push("/settings/profile")}
+          style={({ pressed }) => [pressed && { opacity: 0.92 }]}
+        >
+          <View
+            style={[
+              styles.card,
+              styles.memoryCard,
+              {
+                backgroundColor: colors.cardBackground,
+                borderColor: colors.borderMuted,
+              },
+              Platform.select({
+                ios: {
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: resolved === "dark" ? 0.18 : 0.05,
+                  shadowRadius: 8,
+                },
+                android: { elevation: 2 },
+              }),
+            ]}
+          >
+            <View style={[styles.memoryIconWell, { backgroundColor: colors.brandMutedSurface }]}>
+              <Sparkles size={22} stroke={colors.pemAmber} strokeWidth={2} />
+            </View>
+            <View style={styles.memoryText}>
+              <PemText variant="body" style={{ color: colors.textPrimary }}>
+                What Pem knows about you
+              </PemText>
+              <PemText variant="caption" style={{ color: colors.textSecondary }}>
+                View saved details
+              </PemText>
+            </View>
+            <ChevronRight size={22} stroke={colors.textSecondary} strokeWidth={2} />
+          </View>
+        </Pressable>
+
+        <PemText variant="label" style={styles.sectionLabel}>
           Appearance
         </PemText>
         <PemText variant="caption" style={styles.sectionHint}>
@@ -334,6 +380,24 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     padding: space[5],
+  },
+  memoryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[4],
+    paddingVertical: space[4],
+  },
+  memoryIconWell: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  memoryText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   profileRow: {
     flexDirection: "row",

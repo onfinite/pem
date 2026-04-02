@@ -19,6 +19,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       inject: [ConfigService],
     }),
     BullModule.registerQueue({ name: 'prep' }),
+    BullModule.registerQueue({ name: 'dump' }),
   ],
   exports: [BullModule],
 })

@@ -1,0 +1,656 @@
+---
+description: Pem — Agentic flow implementation brief. Read before writing any agent, worker, or prep-related code.
+globs: **/*
+alwaysApply: true
+---
+
+# Pem — Agentic Flow Brief
+
+## Scope for Now
+
+Text only. No voice. No Whisper. No audio handling.
+User types their dump. That is the only input method right now.
+Voice is a future feature — do not build any voice infrastructure yet.
+
+---
+
+## The Core Philosophy
+
+Pem is agentic. The agent decides its own steps.
+
+We do not pre-define "this dump is a research prep" or "this dump is a draft prep."
+We give the agent a goal, a user context, and a set of tools.
+The agent figures out what steps to take to make the result useful.
+
+This is the shift:
+
+```
+❌ Old thinking: classify → pick type → run one agent
+✅ Real agentic: understand goal → plan steps → run tools → synthesize
+```
+
+---
+
+## The Full Agentic Flow
+
+```
+USER SUBMITS DUMP (text)
+        ↓
+SPLIT — extract individual thoughts from the dump
+        ↓
+For each thought, independently and in parallel:
+        ↓
+  ENRICH — merge dump context + user profile
+        ↓
+  AGENT RUNS — uses tools in any order, any combination
+        ↓
+  QUALITY CHECK — is this result actually useful?
+        ↓
+  SYNTHESIZE — one clean result
+        ↓
+  SAVE PREP — status: ready
+        ↓
+  UPDATE PROFILE — save anything new learned about user
+        ↓
+  NOTIFY USER — push notification
+        ↓
+USER OPENS PREP CARD
+```
+
+---
+
+## Step 1 — Split
+
+One LLM call. Fast. Cheap. Use gpt-4o-mini.
+
+Takes the raw dump text and extracts individual actionable thoughts.
+
+Input:
+
+```
+"I need to cancel my 24/7 fitness membership, also want to sell
+my car, and need to email my landlord about the leak"
+```
+
+Output:
+
+```json
+[
+  { "thought": "cancel 24/7 Fitness membership" },
+  { "thought": "sell my car" },
+  { "thought": "email landlord about the leak" }
+]
+```
+
+Each thought becomes an independent prep. They run in parallel from this point.
+
+---
+
+## Step 2 — Enrich
+
+Before the agent runs, attach context to the thought.
+
+Pull from two sources:
+
+1. The dump itself — any facts the user mentioned inline
+2. The user profile table — what Pem already knows about this user
+
+Merge them. Dump context wins if there's a conflict.
+
+```
+thought: "sell my car"
+dump context: {}
+profile: { car: "2019 Honda Civic", location: "East Bay CA" }
+merged: { car: "2019 Honda Civic", location: "East Bay CA" }
+```
+
+```
+thought: "cancel 24/7 Fitness"
+dump context: { gym: "24/7 Fitness" }
+profile: { name: "Akee" }
+merged: { gym: "24/7 Fitness", name: "Akee" }
+```
+
+Pass the enriched thought + context into the agent.
+
+**Implementation:** Prep `context` JSON includes `user: { name, email }` from the **`users`** row (Clerk-synced) plus `profile: { key: value }` from **`user_profile`**. On each prep run, the runner **refreshes** `user` and `profile` so retries use current data. Facts stored as **timed JSON** (`kind: "timed"`) are **exposed to the agent as a one-line string** (“Now: … Previously: …”); plain-text facts pass through unchanged. Drafts and emails should use **name** for greetings/sign-offs and **profile** facts for specifics; never invent a name when missing.
+
+---
+
+## Step 3 — Agent Execution
+
+This is the core. Use Vercel AI SDK `generateText` with `maxSteps`.
+
+The agent runs a loop:
+
+- Thinks about what it needs
+- Calls a tool
+- Gets the result
+- Decides the next step
+- Repeats until it has everything
+- Synthesizes a final result
+
+```typescript
+const result = await generateText({
+  model: openai('gpt-4o'),
+  system: PEM_AGENT_SYSTEM_PROMPT,
+  prompt: buildPrompt(thought, context),
+  tools: {
+    search: searchTool,
+    fetch: fetchTool,
+    remember: rememberTool,
+    save: saveTool,
+    draft: draftTool,
+    clarify: clarifyTool,
+  },
+  maxSteps: 10,
+  onStepFinish: async (step) => {
+    await logAgentStep(prepId, step) // log every step to DB
+  },
+})
+```
+
+---
+
+## The Agent System Prompt
+
+```
+You are Pem's prep agent. Your job is to take one thought from
+a user's brain dump and turn it into something they can act on
+immediately — in seconds, not hours.
+
+User context: {context}
+User's thought: {thought}
+
+Available tools:
+- search(query) — search the web via Tavily
+- fetch(url) — retrieve a specific webpage for details
+- remember(key) — read a fact from the user's profile
+- save(key, value) — write a new fact to the user's profile
+- draft(goal, context, tone) — write an email or message
+- clarify(question) — ask the user one question before proceeding
+
+How to work:
+- Use as many tool calls as needed — don't stop until the result
+  is genuinely useful and complete
+- If you need information not in the context → search for it
+- If the result requires writing something → always produce a draft
+- If the result requires finding real options → find real ones with
+  prices and links, max 3
+- If critical info is missing and unguessable → use clarify once,
+  then proceed with what you get
+- Save anything new you learn about the user to their profile
+- Never make up prices, URLs, or facts — only use what you found
+
+Your final response must be a clean, structured result the user
+can act on. Not a summary of what you did — the actual useful output.
+```
+
+---
+
+## The Six Tools
+
+### search
+
+Calls Tavily API. Returns top results with titles, snippets, URLs.
+Use for: facts, policies, prices, comparisons, current info.
+
+### fetch
+
+Fetches a specific URL and returns readable content.
+Use for: when a search result looks relevant and you need the full page.
+Example: search finds a gym's cancellation page → fetch it for exact policy.
+
+### remember
+
+Reads one key from the user_profile table for this user.
+Use for: checking what Pem already knows before searching.
+Always call remember first before searching for things the profile might have.
+
+```
+remember("car")        → "2019 Honda Civic"
+remember("location")   → "East Bay CA"
+remember("name")       → "Akee"
+remember("budget")     → "$60-100 typical"
+```
+
+### save
+
+Writes one key-value pair to user_profile.
+Use when **the user states** something durable about themselves in the thought or dump (vehicle they own or plan to sell, home, job, city, budget)—not only when you “discover” a fact via search. Also use for new facts learned from tools.
+
+```
+save("gym", "24/7 Fitness")
+save("landlord_email", "landlord@example.com")
+save("vehicle", "2025 Toyota Grand Highlander — selling soon")
+save("car", "2019 Honda Civic, 60k miles")
+```
+
+### draft
+
+Generates a ready-to-review email or message.
+Returns: { subject, body, tone }
+Use for: any prep where the end action involves sending something.
+
+### clarify
+
+Sends the user one question before proceeding.
+Pauses the job. Waits for reply. Resumes with the answer.
+Use sparingly — only when truly critical info is missing and unguessable.
+One question max. Never a list of questions.
+
+```
+clarify("What's the make and year of the car you want to sell?")
+clarify("Who is this email to — your landlord directly or building management?")
+```
+
+---
+
+## Agent Step Logging
+
+Every tool call and its result gets logged to the agent_steps table.
+This is how Pem shows "what I did" on the prep detail screen.
+It's also useful for debugging.
+
+Log on every `onStepFinish` callback from Vercel AI SDK.
+
+---
+
+## Database Tables
+
+### users
+
+Synced from Clerk webhook on user.created.
+
+| Column     | Type      | Notes                          |
+| ---------- | --------- | ------------------------------ |
+| id         | uuid      | primary key                    |
+| clerk_id   | text      | unique, from Clerk             |
+| email      | text      |                                |
+| name       | text      | nullable                       |
+| push_token | text      | Expo push token, nullable      |
+| created_at | timestamp |                                |
+
+### dumps
+
+One row per text submission from the user.
+
+| Column     | Type      | Notes                    |
+| ---------- | --------- | ------------------------ |
+| id         | uuid      | primary key              |
+| user_id    | uuid      | FK → users               |
+| raw_text   | text      | exactly what user typed  |
+| created_at | timestamp |                          |
+
+### preps
+
+One row per thought extracted from a dump.
+
+| Column       | Type      | Notes                                                |
+| ------------ | --------- | ---------------------------------------------------- |
+| id           | uuid      | primary key                                          |
+| user_id      | uuid      | FK → users                                           |
+| dump_id      | uuid      | FK → dumps                                           |
+| thought      | text      | the specific thought being prepped                     |
+| context      | jsonb     | enriched context at time of creation                 |
+| status       | text      | prepping / ready / archived / failed                 |
+| summary      | text      | short preview shown on card                            |
+| result       | jsonb     | full structured result                               |
+| render_type  | text      | search / research / options / draft / compound       |
+| created_at   | timestamp |                                                      |
+| ready_at     | timestamp | nullable                                             |
+| archived_at  | timestamp | nullable                                             |
+
+### user_profile
+
+Key-value store. One row per fact per user.
+This is how Pem remembers things about the user over time.
+
+| Column     | Type      | Notes                                      |
+| ---------- | --------- | ------------------------------------------ |
+| id         | uuid      | primary key                                |
+| user_id    | uuid      | FK → users                                 |
+| key        | text      | fact name e.g. "car", "location", "name"   |
+| value      | text      | fact value e.g. "2019 Honda Civic"           |
+| source     | text      | which dump_id or prep_id this came from      |
+| created_at | timestamp |                                            |
+| updated_at | timestamp | updated on upsert                          |
+
+Upsert on (user_id, key). Latest value wins.
+
+### agent_steps
+
+One row per tool call the agent made during a prep.
+Used for the "what Pem did" log on the detail screen.
+
+| Column      | Type      | Notes                                              |
+| ----------- | --------- | -------------------------------------------------- |
+| id          | uuid      | primary key                                        |
+| prep_id     | uuid      | FK → preps                                         |
+| step_number | int       | order of this step                                 |
+| tool_name   | text      | search / fetch / remember / save / draft / clarify |
+| tool_input  | jsonb     | what the agent passed to the tool                    |
+| tool_output | jsonb     | what the tool returned                             |
+| thinking    | text      | agent's reasoning before this step (if available)    |
+| created_at  | timestamp |                                                    |
+
+---
+
+## Result Shapes
+
+The `result` jsonb on preps holds different shapes.
+The `render_type` tells the frontend how to render it.
+
+**render_type: research**
+
+```json
+{
+  "summary": "string",
+  "keyPoints": ["string"],
+  "sources": ["url"]
+}
+```
+
+**render_type: options**
+
+All four fields are required in stored JSON; use `""` for `url` or `why` when unknown.
+
+```json
+{
+  "options": [
+    { "name": "string", "price": "string", "url": "string", "why": "string" }
+  ]
+}
+```
+
+**render_type: draft**
+
+```json
+{
+  "subject": "string or null",
+  "body": "string",
+  "tone": "string"
+}
+```
+
+**render_type: compound**
+
+Structured output uses a simple section shape (`type` + `body` string) so the schema is valid for OpenAI; put markdown or prose in `body`.
+
+```json
+{
+  "sections": [
+    {
+      "type": "research",
+      "body": "markdown summary + bullets + sources"
+    },
+    {
+      "type": "draft",
+      "body": "paste-ready message (subject line can go in the first line if needed)"
+    }
+  ]
+}
+```
+
+**render_type: search**
+
+```json
+{
+  "answer": "string",
+  "sources": ["url"]
+}
+```
+
+The agent does not set render_type. After the agent finishes,
+a simple classifier looks at the result shape and sets it.
+
+---
+
+## API Endpoints
+
+### Public
+
+```
+POST /webhooks/clerk          Clerk webhook — user.created / user.deleted
+```
+
+### Protected (Clerk JWT required)
+
+```
+PATCH /users/me/push-token    Save Expo push token
+
+POST  /dumps                  Submit text dump → split → queue jobs → return immediately
+GET   /dumps                  List user's dumps
+
+GET   /preps                  List user's preps (?status=prepping|ready|archived)
+GET   /preps/:id              Single prep with full result + agent steps
+PATCH /preps/:id/archive      User acted — archive
+
+GET   /preps/:id/steps        Agent step log for this prep (for detail screen)
+
+POST  /preps/:id/clarify      User replies to a clarify question → resumes job
+```
+
+---
+
+## NestJS Module Structure
+
+```
+src/
+  app.module.ts
+
+  auth/
+    clerk.guard.ts
+    current-user.decorator.ts
+
+  webhooks/
+    webhooks.controller.ts
+    webhooks.module.ts
+
+  users/
+    users.service.ts
+    users.repository.ts
+    users.module.ts
+
+  dumps/
+    dumps.controller.ts       POST /dumps — split + queue
+    dumps.service.ts          splitting logic
+    dumps.module.ts
+
+  preps/
+    preps.controller.ts
+    preps.service.ts
+    preps.repository.ts
+    preps.module.ts
+
+  workers/
+    prep.worker.ts            BullMQ processor — runs the agent per thought
+    workers.module.ts
+
+  agent/
+    agent.service.ts          core generateText loop with tools
+    agent.prompt.ts           system prompt
+    tools/
+      search.tool.ts          Tavily search
+      fetch.tool.ts           URL fetcher
+      remember.tool.ts        read user_profile
+      save.tool.ts            write user_profile
+      draft.tool.ts           LLM draft generation
+      clarify.tool.ts         pause + notify user
+    agent.module.ts
+
+  profile/
+    profile.service.ts        read/write user_profile table
+    profile.repository.ts
+    profile.module.ts
+
+  steps/
+    steps.service.ts          log agent steps
+    steps.repository.ts
+    steps.module.ts
+
+  push/
+    push.service.ts           Expo push notifications
+    push.module.ts
+
+  db/
+    schema.ts                 Drizzle schema — all tables
+    db.module.ts
+```
+
+---
+
+## POST /dumps — What It Does
+
+```
+1. Validate user is authenticated
+2. Save raw text to dumps table
+3. Call split agent → get array of thoughts
+4. For each thought:
+   a. Create prep row (status: prepping)
+   b. Enrich with user profile context
+   c. Add BullMQ job { prepId, thought, context }
+5. Return immediately
+   { status: "got it", count: N, dumpId: "..." }
+```
+
+Never await the agents. Return as soon as jobs are queued.
+
+---
+
+## BullMQ Worker — What It Does
+
+```
+1. Pick up job { prepId, thought, context }
+2. Run agent (generateText with tools, maxSteps: 10)
+3. Log every step via onStepFinish
+4. On agent complete:
+   a. Determine render_type from result shape
+   b. Generate summary (one sentence for card preview)
+   c. Update prep: status → ready, result, summary, render_type, ready_at
+   d. Update user_profile with anything agent saved
+   e. Send push notification
+5. On error:
+   a. Update prep: status → failed
+   b. Log error
+   c. BullMQ retries up to 3 times
+```
+
+---
+
+## The Clarify Flow
+
+When the agent calls the clarify tool:
+
+```
+1. Agent calls clarify("What car are you selling?")
+2. Tool pauses the job (BullMQ job moves to delayed state)
+3. Push notification sent: "Quick question before I start..."
+4. User sees clarify prompt in app
+5. User replies via POST /preps/:id/clarify
+6. Job resumes with the answer added to context
+7. Agent continues from where it left off
+```
+
+One question max per prep. If unanswered after 24 hours → proceed with assumptions.
+
+---
+
+## Profile — How Memory Works
+
+The user_profile table is a simple key-value store.
+The agent reads from it via remember() and writes to it via save().
+It grows silently with every prep — the user never fills a form.
+
+**What gets saved:**
+
+```
+name, location, job, car, family members and their interests,
+typical budget ranges, recurring contacts, preferred services,
+anything specific mentioned that would help future preps
+```
+
+**How remember() works:**
+Reads from user_profile where user_id = current user AND key = requested key.
+Returns the value or null.
+
+**How save() works:**
+Upserts into user_profile (user_id, key) → sets value, source, updated_at.
+
+**Profile is shown to user in settings:**
+Users can see and delete any fact Pem has saved about them.
+This is the trust/privacy layer.
+
+---
+
+## Build Order
+
+Build in this sequence. Each step must work before the next.
+
+```
+1. DB schema — all five tables via Drizzle
+2. Clerk webhook → user created in DB
+3. Auth guard — JWT verification
+4. POST /dumps → split → return immediately (no agent yet, just log thoughts)
+5. BullMQ worker setup — job queued and picked up
+6. remember() and save() tools — profile read/write working
+7. search() tool — Tavily connected
+8. Agent loop — generateText with search + remember + save
+9. Step logging — every tool call saved to agent_steps
+10. draft() tool — generates email/message
+11. fetch() tool — URL fetching
+12. clarify() tool — pause/resume flow
+13. render_type classifier — set after agent finishes
+14. Push notification on ready
+15. GET /preps — cards returned to frontend
+16. GET /preps/:id — full result + steps
+17. PATCH /preps/:id/archive
+18. POST /preps/:id/clarify — user reply resumes job
+```
+
+---
+
+## LLM Routing
+
+```
+Split agent              → gpt-4o-mini   (fast, cheap, simple extraction)
+Prep agent               → gpt-4o        (the main agent — reasoning, tool use)
+Draft tool               → gpt-4o        (better writing voice)
+Render type classifier   → gpt-4o-mini   (simple classification after agent done)
+Summary generator        → gpt-4o-mini   (one sentence for card preview)
+```
+
+---
+
+## Rules
+
+- Text only for now. No voice. No audio. No Whisper.
+- Return from POST /dumps immediately — never await agents.
+- One thought = one BullMQ job = one prep row = one card.
+- Agent decides its own steps — never hardcode routing logic.
+- Call remember() before searching when the profile might already have the fact.
+- Call save() when the user states a durable fact about themselves (vehicle, job, etc.) and when you learn something new from tools.
+- Log every agent step to agent_steps via onStepFinish.
+- Max 3 options if result includes options.
+- Max 1 clarify call per prep.
+- Prep status only moves forward: prepping → ready → archived.
+- Failed preps stay as failed — never shown as ready.
+- Pem never sends, buys, or acts. It only prepares.
+- render_type is set after agent finishes — not before.
+- Profile is user-visible and user-deletable in settings.
+
+---
+
+## Environment Variables
+
+```
+CLERK_SECRET_KEY
+CLERK_WEBHOOK_SECRET
+DATABASE_URL              Neon connection string
+REDIS_URL                 Railway Redis
+OPENAI_API_KEY            gpt-4o-mini + future Whisper
+# ANTHROPIC_API_KEY   # add later for claude-sonnet at prod
+TAVILY_API_KEY
+NODE_ENV
+PORT
+```

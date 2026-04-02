@@ -1,0 +1,569 @@
+---
+description: Pem — Core loop engineering brief. Real-time prep updates, frontend caching, product data quality, and Vercel AI SDK patterns. Read alongside pem-agent.mdc.
+globs: **/*
+alwaysApply: true
+---
+
+# Pem — Core Loop Engineering
+
+## Vercel AI SDK — generateObject is Deprecated
+
+`generateObject` and `streamObject` are removed in AI SDK 6.
+Never use them. Use `generateText` with `output` instead.
+
+```typescript
+// ❌ DEPRECATED — do not use
+import { generateObject } from 'ai'
+const result = await generateObject({
+  model: openai('gpt-4o-mini'),
+  schema: mySchema,
+  prompt: 'extract thoughts',
+})
+
+// ✅ CORRECT — use this everywhere
+import { generateText, Output } from 'ai'
+const result = await generateText({
+  model: openai('gpt-4o-mini'),
+  output: Output.object({ schema: mySchema }),
+  prompt: 'extract thoughts',
+})
+// access result the same way
+result.object // fully typed from Zod schema
+```
+
+For arrays:
+
+```typescript
+output: Output.array({ schema: thoughtSchema })
+result.object // typed array
+```
+
+For enums / choices:
+
+```typescript
+output: Output.choice({ choices: ['search', 'research', 'options', 'draft'] })
+result.object // one of the choices
+```
+
+For the agentic loop with tools + structured output at the end:
+
+```typescript
+const result = await generateText({
+  model: openai('gpt-4o'),
+  system: AGENT_SYSTEM_PROMPT,
+  prompt: thought,
+  tools: { search, fetch, remember, save, draft, clarify },
+  maxSteps: 10,
+  output: Output.object({ schema: PrepResultSchema }), // structured at the end
+  onStepFinish: async (step) => {
+    await logStep(prepId, step)
+  },
+})
+result.object // the final structured prep result
+```
+
+---
+
+## Real-Time Prep Updates — How to Do It Right
+
+The problem: user dumps, sees confirmation screen, preps are being created
+and processed async. Frontend needs to show them appearing and updating
+without making the user wait or see a blank screen.
+
+### The Approach: SSE (Server-Sent Events)
+
+Use SSE — not WebSockets, not long polling.
+
+Why SSE over the others:
+
+| | SSE | Long Polling | WebSockets |
+|-|-----|-------------|------------|
+| Complexity | Low | Medium | High |
+| One-way push | ✓ | ✓ | overkill |
+| HTTP/2 native | ✓ | ✗ | ✗ |
+| NestJS support | First class | First class | Needs gateway |
+| Right for Pem | ✓ | ✗ | ✗ |
+
+Pem only needs server → client push. SSE is exactly that.
+WebSockets are for two-way real-time (chat). Pem doesn't need that.
+Long polling hammers the server and feels janky.
+
+### SSE Endpoint
+
+```
+GET /preps/stream?dumpId=xxx
+```
+
+Client connects immediately after dump is submitted.
+Server streams events as preps are created and updated.
+
+Event types:
+
+```
+event: prep.created    — new prep row exists (status: prepping)
+event: prep.ready      — prep completed (status: ready, includes result)
+event: prep.failed     — prep failed
+event: stream.done     — all preps for this dump are settled
+```
+
+Each event payload:
+
+```json
+{
+  "type": "prep.created",
+  "prep": {
+    "id": "uuid",
+    "thought": "cancel gym membership",
+    "status": "prepping",
+    "render_type": null,
+    "summary": null,
+    "result": null
+  }
+}
+```
+
+### NestJS SSE Implementation
+
+```typescript
+import { Sse, MessageEvent } from '@nestjs/common'
+import { Observable, Subject } from 'rxjs'
+
+@Sse('stream')
+streamPreps(
+  @Query('dumpId') dumpId: string,
+  @CurrentUser() user: User,
+): Observable<MessageEvent> {
+  return this.prepsService.streamForDump(dumpId, user.id)
+}
+```
+
+The BullMQ worker emits to a per-dump Subject when each prep updates.
+The SSE endpoint subscribes to that Subject.
+When all preps are settled, emit `stream.done` and complete.
+
+### React Native — EventSource
+
+React Native doesn't have native EventSource. Use `react-native-sse`:
+
+```typescript
+import EventSource from 'react-native-sse'
+
+const es = new EventSource(
+  `${API_URL}/preps/stream?dumpId=${dumpId}`,
+  { headers: { Authorization: `Bearer ${token}` } }
+)
+
+es.addEventListener('prep.created', (e) => {
+  const prep = JSON.parse(e.data)
+  dispatch(addPrep(prep)) // show card immediately in prepping state
+})
+
+es.addEventListener('prep.ready', (e) => {
+  const prep = JSON.parse(e.data)
+  dispatch(updatePrep(prep)) // card transitions to ready
+})
+
+es.addEventListener('stream.done', () => {
+  es.close()
+})
+```
+
+---
+
+## Frontend State & Caching
+
+### The Problem
+
+App opens → fetches preps → brief empty state → data loads.
+Feels broken. User loses trust.
+
+### The Solution: Optimistic Cache + Background Sync
+
+Three layers:
+
+**Layer 1 — Persist last known preps to AsyncStorage**
+On every successful fetch, write preps to AsyncStorage keyed by user.
+On app open, immediately render from cache. No loading state.
+Then fetch fresh data in background and reconcile.
+
+```typescript
+// on fetch success
+await AsyncStorage.setItem(`preps:${userId}`, JSON.stringify(preps))
+
+// on app open — load cache first
+const cached = await AsyncStorage.getItem(`preps:${userId}`)
+if (cached) {
+  dispatch(setPreps(JSON.parse(cached))) // instant render
+}
+// then fetch fresh in background
+fetchPreps() // reconciles when done
+```
+
+**Layer 2 — Optimistic prep creation**
+When user submits dump, immediately show skeleton cards before server responds.
+Each skeleton represents "something is prepping."
+Replace skeletons with real prep cards as SSE events arrive.
+
+```typescript
+// immediately after dump submit
+dispatch(addSkeletons(thoughtCount)) // show N skeleton cards
+
+// as SSE events arrive
+es.addEventListener('prep.created', (e) => {
+  dispatch(replaceSkeletonWithPrep(e.data))
+})
+```
+
+**Layer 3 — Background refresh**
+When app comes to foreground → silently refetch preps.
+Merge with local state. Don't show loading state.
+
+```typescript
+useEffect(() => {
+  const sub = AppState.addEventListener('change', (state) => {
+    if (state === 'active') {
+      dispatch(fetchPrepsInBackground())
+    }
+  })
+  return () => sub.remove()
+}, [])
+```
+
+### Loading States — When to Show What
+
+```
+App opens, has cache      → render cache immediately, no spinner
+App opens, no cache       → show skeleton cards (not empty state)
+User submits dump         → confirmation screen + skeleton prep cards
+Prep is prepping          → card with spinner, muted colors
+Prep is ready             → card animates in, amber accents
+Prep fails                → card shows retry option
+Background sync           → silent, no UI change
+```
+
+Never show an empty list if the user has ever had preps.
+Always show something — skeleton, cached, or real.
+
+---
+
+## The Confirmation Screen — "Pem's Got It"
+
+Shown immediately after dump is submitted.
+Should show preps appearing in real time as they are created.
+
+### What Happens Step by Step
+
+```
+1. User submits dump text
+2. POST /dumps returns immediately:
+   { status: "got it", dumpId: "xxx", estimatedCount: 3 }
+3. Frontend shows confirmation screen
+4. Frontend connects SSE: GET /preps/stream?dumpId=xxx
+5. As "prep.created" events arrive → prep cards appear with spinner
+6. As "prep.ready" events arrive → cards update with result
+7. "stream.done" received → "Back to Preps" button pulses
+8. User taps → goes to Ready tab, sees all preps
+```
+
+### Confirmation Screen Layout
+
+```
+✓  (amber checkmark circle)
+
+Pem's got it.
+
+Pem is on it — search, drafts, and options.
+Nothing's final until you open a prep.
+
+─── IN FLIGHT ──────────────────
+
+[ prep card — appearing with animation ]
+[ prep card — appearing with animation ]
+[ prep card — appearing with animation ]
+
+[ Back to Preps ] ← enabled when stream.done fires
+```
+
+Prep cards on this screen are simplified — just icon + title + spinner.
+No result detail. That's on the Ready screen.
+
+Animation: each card slides up and fades in as `prep.created` fires.
+When `prep.ready` fires → spinner swaps to green checkmark with subtle bounce.
+
+---
+
+## Product Options — Quality Standards
+
+When the agent produces an options result, it must feel like a real recommendation
+from someone who actually researched it. Not a list of Amazon links.
+
+### What a Real Options Result Looks Like
+
+```json
+{
+  "options": [
+    {
+      "name": "Herb Garden Starter Kit by Back to the Roots",
+      "price": "$54.99",
+      "store": "Amazon",
+      "url": "https://amazon.com/dp/B07...",
+      "image_url": "https://...",
+      "why": "Top rated, self-watering, great for beginners — fits your $60 budget",
+      "rating": "4.6 ★ (2,847 reviews)",
+      "delivery": "Free delivery, arrives in 2 days"
+    }
+  ]
+}
+```
+
+Every field must be real. No made-up prices. No made-up URLs. No generic descriptions.
+
+### How the Options Agent Gets There
+
+The agent must do real work to find these:
+
+```
+Step 1 → search("herb garden kit gift under $60")
+  → get product names, stores, approximate prices
+
+Step 2 → fetch(product_page_url)
+  → get exact price, real product name, real image, real rating, real delivery
+
+Step 3 → repeat for 3 candidates
+
+Step 4 → rank by fit (budget, context, rating)
+
+Step 5 → return exactly 3 — best fit first
+```
+
+The fetch step is mandatory for options. Search results have stale prices.
+Fetch the actual product page to get current accurate data.
+
+### Options Agent Rules
+
+- Exact product name — not a category. "Herb Garden Kit" is wrong.
+  "Herb Garden Starter Kit by Back to the Roots" is right.
+- Real price from the actual page — not estimated.
+- Real purchase URL — not a search results page.
+- Store name shown — Amazon, Target, Etsy, etc.
+- `why` field is specific to the user's context — not generic.
+  "Great for beginners" is wrong. "Fits your $60 budget and she gardens outdoors" is right.
+- Max 3 options. Always exactly 3 if possible.
+- If fewer than 3 real options found → return what you have, note it.
+- Never return Amazon search URLs. Only direct product URLs.
+
+### SerpApi for Product Search (optional upgrade)
+
+For more structured product data, use SerpApi Google Shopping:
+
+```
+GET https://serpapi.com/search
+  engine=google_shopping
+  q=herb garden kit gift
+  gl=us
+```
+
+Returns: title, price, purchase_link, rating, store — structured.
+More reliable than scraping. $50/month.
+
+For MVP: Tavily + fetch is enough. Upgrade to SerpApi when product
+data quality becomes a user complaint.
+
+---
+
+## Code Quality Standards
+
+Every file in Pem follows these standards. Non-negotiable.
+
+### Structure
+
+```typescript
+/**
+ * PrepWorker — BullMQ processor for individual prep jobs.
+ *
+ * Picks up prep jobs from the queue, runs the agentic loop,
+ * and saves the result. Each job is one thought from a dump.
+ *
+ * Flow: enrich context → run agent → quality check → save → notify
+ */
+@Processor('preps')
+export class PrepWorker {
+  constructor(
+    private readonly agentService: AgentService,
+    private readonly prepsRepo: PrepsRepository,
+    private readonly pushService: PushService,
+    private readonly stepsService: StepsService,
+  ) {}
+
+  /**
+   * Process a single prep job.
+   * Called by BullMQ when a job is dequeued.
+   */
+  @Process('run-prep')
+  async handle(job: Job<PrepJob>): Promise<void> {
+    ...
+  }
+}
+```
+
+### Rules for All Code
+
+- Every class has a JSDoc comment explaining what it does and why
+- Every public method has a JSDoc comment
+- Every file has a single clear responsibility
+- No inline magic strings — use constants or enums
+- No any types — strict TypeScript everywhere
+- Errors are typed — never `catch (e: any)`
+- All async operations are awaited — no floating promises
+- Repository pattern — DB queries never in controllers or services directly
+- Services never import other services directly — use dependency injection
+- Environment variables accessed through a typed config service, never `process.env` directly
+
+### Naming Conventions
+
+```
+Controllers  → PrepsController
+Services     → PrepsService
+Repositories → PrepsRepository
+Workers      → PrepWorker
+Agents       → SearchAgent, DraftAgent, ClassifyAgent
+Tools        → SearchTool, FetchTool (as tool() instances)
+DTOs         → CreateDumpDto, ArchivePrepDto
+Schemas      → PrepResultSchema, ThoughtSchema (Zod)
+Types        → PrepStatus, PrepRenderType (TypeScript enums)
+```
+
+### Error Handling Pattern
+
+```typescript
+// Every agent and worker catches specifically, never broadly
+try {
+  const result = await this.agentService.run(thought, context)
+  await this.prepsRepo.markReady(prepId, result)
+} catch (error) {
+  if (error instanceof TavilyRateLimitError) {
+    // retry after delay — let BullMQ handle it
+    throw error
+  }
+  if (error instanceof AgentOutputError) {
+    // bad output — mark failed, don't retry
+    await this.prepsRepo.markFailed(prepId, error.message)
+    return
+  }
+  // unknown — log and rethrow for BullMQ retry
+  this.logger.error('PrepWorker.handle failed', { prepId, error })
+  throw error
+}
+```
+
+### Logging Pattern
+
+Use NestJS Logger. Structured, consistent.
+
+```typescript
+private readonly logger = new Logger(PrepWorker.name)
+
+this.logger.log('Starting prep', { prepId, thought, stepCount: 0 })
+this.logger.log('Step complete', { prepId, tool: step.toolName, stepNumber })
+this.logger.log('Prep ready', { prepId, renderType, durationMs })
+this.logger.error('Prep failed', { prepId, error: error.message })
+```
+
+---
+
+## Prep Status — Full Lifecycle
+
+```
+created (prepping)
+    ↓
+agent running (prepping — steps logged)
+    ↓
+  ┌─ agent needs input → clarifying (prepping — waiting for user reply)
+  │       ↓ user replies
+  └─────────────────────┘
+    ↓
+quality check passes → ready
+    ↓
+user acts → archived
+
+at any point:
+    → failed (logged, stays visible to user with retry option)
+```
+
+---
+
+## SSE — Backend Architecture Detail
+
+The BullMQ worker and the SSE endpoint need to communicate.
+They run in separate contexts (worker process vs HTTP process).
+
+Use Redis pub/sub as the bridge:
+
+```
+BullMQ worker finishes prep
+    ↓
+Publish to Redis channel: `prep-events:${dumpId}`
+    ↓
+SSE service subscribes to that channel
+    ↓
+Pushes event to connected client
+```
+
+```typescript
+// in worker — after prep is ready
+await this.redis.publish(
+  `prep-events:${dumpId}`,
+  JSON.stringify({ type: 'prep.ready', prep: readyPrep })
+)
+
+// in SSE service
+const subject = new Subject<MessageEvent>()
+this.redis.subscribe(`prep-events:${dumpId}`, (message) => {
+  subject.next({ data: message })
+})
+return subject.asObservable()
+```
+
+This works even if worker and HTTP server are separate Railway services.
+
+---
+
+## Build Checklist — Core Loop
+
+The core loop is not done until all of these pass:
+
+```
+□ POST /dumps returns in < 200ms regardless of how many thoughts
+□ SSE connection established before first prep.created event
+□ Prep cards appear on confirmation screen as they are created
+□ Prep cards transition from prepping → ready without full refresh
+□ App open with cached data shows instantly — no empty state flash
+□ Skeleton cards show when no cache exists
+□ Background sync on app foreground is silent
+□ Options results have real names, real prices, real URLs
+□ Agent steps are all logged to agent_steps table
+□ Failed preps show retry option — not a blank card
+□ Push notification fires when all preps for a dump are ready
+□ stream.done fires after last prep settles
+□ SSE connection closes after stream.done
+□ Clarify flow pauses job, resumes on user reply
+□ Profile is updated after every prep with new facts learned
+```
+
+---
+
+## Packages to Install
+
+```bash
+# SSE on frontend
+npm install react-native-sse
+
+# Caching
+npm install @react-native-async-storage/async-storage
+
+# Vercel AI SDK (make sure you're on v6+)
+npm install ai @ai-sdk/openai
+
+# NestJS SSE is built in — no extra package needed
+# Uses @nestjs/common Sse decorator + rxjs Observable
+```

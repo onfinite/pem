@@ -6,8 +6,11 @@ export type ApiPrep = {
   id: string;
   dump_id: string;
   title: string;
+  thought?: string;
   prep_type: string;
-  status: "prepping" | "ready" | "archived";
+  render_type?: string | null;
+  context?: Record<string, unknown> | null;
+  status: "prepping" | "ready" | "archived" | "failed";
   summary: string | null;
   result: Record<string, unknown> | null;
   error_message: string | null;
@@ -43,6 +46,9 @@ export async function apiFetch<T>(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    if (res.status === 429) {
+      throw new Error("Too many requests. Try again in a moment.");
+    }
     throw new Error(text || `HTTP ${res.status}`);
   }
   if (res.status === 204) {
@@ -61,6 +67,8 @@ function prepTypeToKind(prepType: string): PrepKind {
       return "options";
     case "draft":
       return "draft";
+    case "compound":
+      return "deep_research";
     default:
       return "web";
   }
@@ -84,6 +92,8 @@ function tagForPrepType(prepType: string): string {
       return "Options";
     case "draft":
       return "Draft";
+    case "compound":
+      return "Prep";
     default:
       return "Prep";
   }
@@ -106,13 +116,20 @@ function viewLabelForKind(kind: PrepKind): string {
   }
 }
 
-function extractBodyAndDraft(row: ApiPrep): { body?: string; draftText?: string; detailIntro?: string } {
+function extractBodyAndDraft(row: ApiPrep): {
+  body?: string;
+  draftText?: string;
+  detailIntro?: string;
+  draftSubject?: string | null;
+} {
   const r = row.result;
   if (!r || row.status === "prepping") {
     return {};
   }
 
-  if (row.prep_type === "draft") {
+  const renderOrPrep = row.render_type ?? row.prep_type;
+
+  if (renderOrPrep === "draft") {
     const body = typeof r.body === "string" ? r.body : "";
     const subject = r.subject === null || typeof r.subject === "string" ? r.subject : null;
     const tone = typeof r.tone === "string" ? r.tone : "";
@@ -121,11 +138,12 @@ function extractBodyAndDraft(row: ApiPrep): { body?: string; draftText?: string;
       undefined;
     return {
       draftText: body,
+      draftSubject: subject,
       detailIntro,
     };
   }
 
-  if (row.prep_type === "options") {
+  if (renderOrPrep === "options") {
     // Structured options (+ why/url) render in the detail UI; avoid duplicating as a flat body.
     return {};
   }
@@ -148,7 +166,8 @@ function extractBodyAndDraft(row: ApiPrep): { body?: string; draftText?: string;
 }
 
 function extractOptions(row: ApiPrep): Prep["options"] {
-  if (row.prep_type !== "options" || !row.result || !Array.isArray(row.result.options)) {
+  const pt = row.render_type ?? row.prep_type;
+  if (pt !== "options" || !row.result || !Array.isArray(row.result.options)) {
     return undefined;
   }
   return row.result.options
@@ -171,22 +190,33 @@ function extractOptions(row: ApiPrep): Prep["options"] {
 
 /** Maps API prep row to hub `Prep` for lists and detail. */
 export function apiPrepToPrep(row: ApiPrep): Prep {
-  const kind = prepTypeToKind(row.prep_type);
+  const pt = row.render_type ?? row.prep_type;
+  const kind = prepTypeToKind(pt);
   const Icon = iconForKind(kind);
-  const { body, draftText, detailIntro } = extractBodyAndDraft(row);
+  const { body, draftText, detailIntro, draftSubject } = extractBodyAndDraft(row);
   const options = extractOptions(row);
 
   const summary =
     row.summary?.trim() ||
     (row.status === "prepping"
       ? row.error_message?.trim() || "Pem's on it…"
-      : row.error_message?.trim() || "—");
+      : row.status === "failed"
+        ? row.error_message?.trim() || "Something went wrong"
+        : row.error_message?.trim() || "—");
+
+  const title = row.thought?.trim() || row.title;
 
   return {
     id: row.id,
+    dumpId: row.dump_id,
     Icon,
-    tag: row.status === "prepping" ? "Prepping" : tagForPrepType(row.prep_type),
-    title: row.title,
+    tag:
+      row.status === "prepping"
+        ? "Prepping"
+        : row.status === "failed"
+          ? "Failed"
+          : tagForPrepType(pt),
+    title,
     summary,
     viewLabel: viewLabelForKind(kind),
     kind,
@@ -194,61 +224,26 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     options,
     body: body || undefined,
     draftText,
+    draftSubject,
     status: row.status,
   };
 }
 
+export type CreateDumpResponse = {
+  status: string;
+  dumpId: string;
+  prepIds: string[];
+};
+
 export async function createDump(
   getToken: () => Promise<string | null>,
   transcript: string,
-): Promise<{ dumpId: string; prepIds: string[] }> {
+): Promise<CreateDumpResponse> {
   return apiFetch("/dumps", {
     method: "POST",
     getToken,
     body: JSON.stringify({ transcript }),
   });
-}
-
-/** Voice dump: multipart audio → server Whisper → same pipeline as text. */
-export async function createDumpWithAudio(
-  getToken: () => Promise<string | null>,
-  localUri: string,
-): Promise<{ dumpId: string; prepIds: string[] }> {
-  const token = await getToken();
-  const form = new FormData();
-  form.append("audio", {
-    uri: localUri,
-    name: "dump.m4a",
-    type: "audio/m4a",
-  } as unknown as Blob);
-
-  const headers = new Headers();
-  headers.set("Accept", "application/json");
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  let res: Response;
-  try {
-    res = await fetch(`${getApiBaseUrl()}/dumps/audio`, {
-      method: "POST",
-      headers,
-      body: form,
-    });
-  } catch (e) {
-    const base = getApiBaseUrl();
-    const hint =
-      __DEV__ && (e instanceof TypeError || String(e).includes("Network request failed"))
-        ? ` Check API is running at ${base}.`
-        : "";
-    throw new Error((e instanceof Error ? e.message : String(e)) + hint);
-  }
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return (await res.json()) as { dumpId: string; prepIds: string[] };
 }
 
 export async function listPreps(
@@ -257,6 +252,31 @@ export async function listPreps(
 ): Promise<ApiPrep[]> {
   const q = status ? `?status=${encodeURIComponent(status)}` : "";
   return apiFetch(`/preps${q}`, { method: "GET", getToken });
+}
+
+export type ListPrepsPageResponse = {
+  items: ApiPrep[];
+  next_cursor: string | null;
+};
+
+export type ListPrepsPageParams = {
+  status?: "ready" | "prepping" | "archived" | "failed";
+  limit: number;
+  cursor?: string | null;
+  /** Scope to one dump (post-dump screen); use with limit. */
+  dumpId?: string;
+};
+
+export async function listPrepsPage(
+  getToken: () => Promise<string | null>,
+  params: ListPrepsPageParams,
+): Promise<ListPrepsPageResponse> {
+  const q = new URLSearchParams();
+  q.set("limit", String(params.limit));
+  if (params.status) q.set("status", params.status);
+  if (params.cursor) q.set("cursor", params.cursor);
+  if (params.dumpId) q.set("dumpId", params.dumpId);
+  return apiFetch(`/preps?${q.toString()}`, { method: "GET", getToken });
 }
 
 export async function getPrepById(
@@ -273,6 +293,13 @@ export async function archivePrepApi(
   return apiFetch(`/preps/${encodeURIComponent(id)}/archive`, { method: "PATCH", getToken });
 }
 
+export async function retryPrepApi(
+  getToken: () => Promise<string | null>,
+  id: string,
+): Promise<ApiPrep> {
+  return apiFetch(`/preps/${encodeURIComponent(id)}/retry`, { method: "POST", getToken });
+}
+
 export type ApiPrepLog = {
   id: string;
   step: string;
@@ -286,4 +313,75 @@ export async function getPrepLogs(
   id: string,
 ): Promise<ApiPrepLog[]> {
   return apiFetch(`/preps/${encodeURIComponent(id)}/logs`, { method: "GET", getToken });
+}
+
+export type ApiProfileFact = {
+  id: string;
+  key: string;
+  value: string;
+  source: string | null;
+  updated_at: string;
+};
+
+export type ApiUserProfileFacts = {
+  facts: ApiProfileFact[];
+};
+
+export async function getUserProfileFacts(
+  getToken: () => Promise<string | null>,
+): Promise<ApiUserProfileFacts> {
+  return apiFetch("/users/me/profile", { method: "GET", getToken });
+}
+
+export type ApiUserProfileFactsPage = {
+  facts: ApiProfileFact[];
+  next_cursor: string | null;
+};
+
+export async function getUserProfileFactsPage(
+  getToken: () => Promise<string | null>,
+  opts: { limit: number; cursor?: string | null },
+): Promise<ApiUserProfileFactsPage> {
+  const params = new URLSearchParams();
+  params.set("limit", String(opts.limit));
+  if (opts.cursor) {
+    params.set("cursor", opts.cursor);
+  }
+  const qs = params.toString();
+  return apiFetch(`/users/me/profile?${qs}`, { method: "GET", getToken });
+}
+
+export async function createProfileFact(
+  getToken: () => Promise<string | null>,
+  key: string,
+  value: string,
+): Promise<ApiProfileFact> {
+  const { fact } = await apiFetch<{ fact: ApiProfileFact }>("/users/me/profile", {
+    method: "POST",
+    getToken,
+    body: JSON.stringify({ key, value }),
+  });
+  return fact;
+}
+
+export async function updateProfileFact(
+  getToken: () => Promise<string | null>,
+  id: string,
+  patch: { key?: string; value?: string },
+): Promise<ApiProfileFact> {
+  const { fact } = await apiFetch<{ fact: ApiProfileFact }>(
+    `/users/me/profile/${encodeURIComponent(id)}`,
+    { method: "PATCH", getToken, body: JSON.stringify(patch) },
+  );
+  return fact;
+}
+
+export async function deleteProfileFact(
+  getToken: () => Promise<string | null>,
+  id: string,
+): Promise<void> {
+  await apiFetch(`/users/me/profile/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    getToken,
+  });
 }

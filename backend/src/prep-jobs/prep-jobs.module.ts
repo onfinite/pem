@@ -6,5 +6,6 @@ import { PrepProcessor } from './prep.processor';
 @Module({
   imports: [AgentsModule],
   providers: [PrepProcessor],
+  exports: [PrepProcessor],
 })
 export class PrepJobsModule {}
