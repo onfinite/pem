@@ -8,6 +8,12 @@ export type AppConfig = {
     jwtIssuer: string | undefined;
   };
   cors: { origins: string[] };
+  tavily: { apiKey: string | undefined };
+  openai: { apiKey: string | undefined };
+  sentry: { dsn: string | undefined };
+  defaultRateLimit: string | undefined;
+  maxRequestSize: string | undefined;
+  redisUrl: string | undefined;
 };
 
 export default (): AppConfig => {
@@ -32,5 +38,17 @@ export default (): AppConfig => {
       jwtIssuer: process.env.CLERK_JWT_ISSUER,
     },
     cors: { origins },
+    tavily: {
+      apiKey: process.env.TAVILY_API_KEY,
+    },
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY,
+    },
+    sentry: {
+      dsn: process.env.SENTRY_SDK_DSN,
+    },
+    defaultRateLimit: process.env.DEFAULT_RATE_LIMIT,
+    maxRequestSize: process.env.MAX_REQUEST_SIZE,
+    redisUrl: process.env.REDIS_URL,
   };
 };
