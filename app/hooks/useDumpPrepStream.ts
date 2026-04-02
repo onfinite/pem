@@ -12,6 +12,8 @@ type StreamPayload = {
     render_type?: string | null;
     summary?: string | null;
     result?: Record<string, unknown> | null;
+    /** ISO — from API; required for stable DESC order vs fake “now”. */
+    created_at?: string;
   };
   dumpId?: string;
 };
@@ -21,7 +23,7 @@ function sortPrepsByCreatedAtDesc(rows: ApiPrep[]): ApiPrep[] {
     const ta = Date.parse(a.created_at);
     const tb = Date.parse(b.created_at);
     if (tb !== ta) return tb - ta;
-    return a.id.localeCompare(b.id);
+    return b.id.localeCompare(a.id);
   });
 }
 
@@ -29,6 +31,10 @@ function partialToApiPrep(p: NonNullable<StreamPayload["prep"]>, dumpId: string)
   const thought = p.thought ?? "";
   const st = p.status ?? "prepping";
   const rt = p.render_type ?? "search";
+  const created =
+    typeof p.created_at === "string" && p.created_at.length > 0
+      ? p.created_at
+      : new Date().toISOString();
   return {
     id: p.id,
     dump_id: dumpId,
@@ -40,7 +46,8 @@ function partialToApiPrep(p: NonNullable<StreamPayload["prep"]>, dumpId: string)
     summary: p.summary ?? null,
     result: p.result ?? null,
     error_message: null,
-    created_at: new Date().toISOString(),
+    opened_at: null,
+    created_at: created,
     ready_at: st === "ready" ? new Date().toISOString() : null,
     archived_at: null,
   };
@@ -54,29 +61,47 @@ export function useDumpPrepStream(
   dumpId: string | undefined,
   getToken: () => Promise<string | null>,
   upsertPrepRow: (row: ApiPrep) => void,
-): { streamDone: boolean; dumpPreps: ApiPrep[]; loadingDumpPreps: boolean } {
+): {
+  streamDone: boolean;
+  dumpPreps: ApiPrep[];
+  loadingDumpPreps: boolean;
+  refetchDumpPreps: () => Promise<void>;
+} {
   const [streamDone, setStreamDone] = useState(false);
   const [dumpScopedRows, setDumpScopedRows] = useState<ApiPrep[]>([]);
   const [loadingDumpPreps, setLoadingDumpPreps] = useState(false);
   const esRef = useRef<InstanceType<typeof EventSource> | null>(null);
+  /** Clerk’s getToken changes identity often; putting it in effect deps caused refetch + SSE reconnect loops. */
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+
+  const refetchDumpPreps = useCallback(() => {
+    if (!dumpId) {
+      setDumpScopedRows([]);
+      return Promise.resolve();
+    }
+    setLoadingDumpPreps(true);
+    return listPrepsPage(getTokenRef.current, {
+      dumpId,
+      status: "prepping",
+      limit: 100,
+    })
+      .then((r) => setDumpScopedRows(sortPrepsByCreatedAtDesc(r.items)))
+      .catch(() => {
+        setDumpScopedRows([]);
+      })
+      .finally(() => {
+        setLoadingDumpPreps(false);
+      });
+  }, [dumpId]);
 
   useEffect(() => {
     if (!dumpId) {
       setDumpScopedRows([]);
       return;
     }
-    setLoadingDumpPreps(true);
-    void listPrepsPage(getToken, {
-      dumpId,
-      status: "prepping",
-      limit: 100,
-    })
-      .then((r) => setDumpScopedRows(r.items))
-      .catch(() => {
-        setDumpScopedRows([]);
-      })
-      .finally(() => setLoadingDumpPreps(false));
-  }, [dumpId, getToken]);
+    void refetchDumpPreps();
+  }, [dumpId, refetchDumpPreps]);
 
   const mergeDumpScoped = useCallback(
     (row: ApiPrep) => {
@@ -122,6 +147,9 @@ export function useDumpPrepStream(
     [upsertPrepRow, mergeDumpScoped],
   );
 
+  const onDataRef = useRef(onData);
+  onDataRef.current = onData;
+
   useEffect(() => {
     if (!dumpId) return;
 
@@ -130,7 +158,7 @@ export function useDumpPrepStream(
 
     void (async () => {
       try {
-        const token = await getToken();
+        const token = await getTokenRef.current();
         if (!token || cancelled) return;
 
         const url = `${getApiBaseUrl()}/preps/stream?dumpId=${encodeURIComponent(dumpId)}`;
@@ -145,7 +173,7 @@ export function useDumpPrepStream(
         const listener: (event: { data?: string | null }) => void = (event) => {
           const d = event.data;
           if (typeof d === "string" && d.length > 0) {
-            onData(d, dumpId);
+            onDataRef.current(d, dumpId);
           }
         };
 
@@ -161,7 +189,7 @@ export function useDumpPrepStream(
       esRef.current?.close();
       esRef.current = null;
     };
-  }, [dumpId, getToken, onData]);
+  }, [dumpId]);
 
-  return { streamDone, dumpPreps: dumpScopedRows, loadingDumpPreps };
+  return { streamDone, dumpPreps: dumpScopedRows, loadingDumpPreps, refetchDumpPreps };
 }

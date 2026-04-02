@@ -143,6 +143,16 @@ export class PrepsController {
     return this.serializePrep(p);
   }
 
+  @Patch(':id/opened')
+  @ApiOperation({ summary: 'Mark prep as read (first open)' })
+  async markOpened(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const p = await this.preps.markOpened(id, user.id);
+    return this.serializePrep(p);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Single prep with full result' })
   async getOne(
@@ -180,6 +190,7 @@ export class PrepsController {
       created_at: p.createdAt?.toISOString?.() ?? p.createdAt,
       ready_at: p.readyAt?.toISOString?.() ?? p.readyAt,
       archived_at: p.archivedAt?.toISOString?.() ?? p.archivedAt,
+      opened_at: p.openedAt?.toISOString?.() ?? p.openedAt ?? null,
     };
   }
 }

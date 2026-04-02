@@ -1,181 +1,248 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, lt, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
-import { userProfileTable, type UserProfileRow } from '../database/schemas';
+import {
+  memoryFactsTable,
+  type MemoryFactRow,
+  type MemoryStatus,
+} from '../database/schemas';
 
-function encodeProfileCursor(updatedAt: Date, id: string): string {
+function encodeMemoryCursor(learnedAt: Date, id: string): string {
   return Buffer.from(
-    JSON.stringify({ u: updatedAt.toISOString(), i: id }),
+    JSON.stringify({ l: learnedAt.toISOString(), i: id }),
     'utf8',
   ).toString('base64url');
 }
 
-/** Parse cursor from `GET /users/me/profile?cursor=` */
-export function decodeProfileCursor(raw: string): {
-  updatedAt: Date;
+/** Cursor for `GET /users/me/profile?cursor=` (newest `learned_at` first). */
+export function decodeMemoryCursor(raw: string): {
+  learnedAt: Date;
   id: string;
 } | null {
   try {
     const j = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
-      u?: string;
+      l?: string;
       i?: string;
+      u?: string;
     };
-    if (typeof j?.u !== 'string' || typeof j?.i !== 'string') return null;
-    const d = new Date(j.u);
+    const iso = j.l ?? j.u;
+    if (typeof iso !== 'string' || typeof j?.i !== 'string') return null;
+    const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return null;
-    return { updatedAt: d, id: j.i };
+    return { learnedAt: d, id: j.i };
   } catch {
     return null;
   }
+}
+
+/** @deprecated Use decodeMemoryCursor */
+export function decodeProfileCursor(raw: string): {
+  updatedAt: Date;
+  id: string;
+} | null {
+  const d = decodeMemoryCursor(raw);
+  if (!d) return null;
+  return { updatedAt: d.learnedAt, id: d.id };
 }
 
 @Injectable()
 export class ProfileRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
-  /** All profile rows for settings / transparency UI. */
-  async listByUser(userId: string): Promise<UserProfileRow[]> {
-    return this.db
-      .select()
-      .from(userProfileTable)
-      .where(eq(userProfileTable.userId, userId))
-      .orderBy(asc(userProfileTable.key));
+  statusCondition(filter: 'active' | 'historical' | 'all'): SQL | undefined {
+    if (filter === 'all') return undefined;
+    return eq(memoryFactsTable.status, filter);
   }
 
-  /**
-   * Newest-updated first (then id) for paginated “What Pem knows”.
-   * `cursor` is the last row from the previous page: (updatedAt, id) descending.
-   */
+  async listByUser(
+    userId: string,
+    status: 'active' | 'historical' | 'all' = 'all',
+  ): Promise<MemoryFactRow[]> {
+    const cond = this.statusCondition(status);
+    const base = this.db
+      .select()
+      .from(memoryFactsTable)
+      .where(
+        cond
+          ? and(eq(memoryFactsTable.userId, userId), cond)
+          : eq(memoryFactsTable.userId, userId),
+      );
+    if (status === 'all') {
+      return base.orderBy(desc(memoryFactsTable.learnedAt));
+    }
+    return base.orderBy(desc(memoryFactsTable.learnedAt));
+  }
+
   async listByUserPaginated(
     userId: string,
     limit: number,
-    cursor: { updatedAt: Date; id: string } | null,
-  ): Promise<{ rows: UserProfileRow[]; nextCursor: string | null }> {
+    cursor: { learnedAt: Date; id: string } | null,
+    status: 'active' | 'historical' | 'all' = 'all',
+  ): Promise<{ rows: MemoryFactRow[]; nextCursor: string | null }> {
     const lim = Math.min(Math.max(limit, 1), 50);
-    const conditions: SQL[] = [eq(userProfileTable.userId, userId)];
+    const parts: SQL[] = [eq(memoryFactsTable.userId, userId)];
+    const st = this.statusCondition(status);
+    if (st) parts.push(st);
     if (cursor) {
-      conditions.push(
+      parts.push(
         or(
-          lt(userProfileTable.updatedAt, cursor.updatedAt),
+          lt(memoryFactsTable.learnedAt, cursor.learnedAt),
           and(
-            eq(userProfileTable.updatedAt, cursor.updatedAt),
-            lt(userProfileTable.id, cursor.id),
+            eq(memoryFactsTable.learnedAt, cursor.learnedAt),
+            lt(memoryFactsTable.id, cursor.id),
           ),
         )!,
       );
     }
     const rows = await this.db
       .select()
-      .from(userProfileTable)
-      .where(and(...conditions))
-      .orderBy(desc(userProfileTable.updatedAt), desc(userProfileTable.id))
+      .from(memoryFactsTable)
+      .where(and(...parts))
+      .orderBy(desc(memoryFactsTable.learnedAt), desc(memoryFactsTable.id))
       .limit(lim + 1);
     const hasMore = rows.length > lim;
     const page = hasMore ? rows.slice(0, lim) : rows;
     const last = page[page.length - 1];
     const nextCursor =
-      hasMore && last && last.updatedAt
-        ? encodeProfileCursor(last.updatedAt, last.id)
-        : null;
+      hasMore && last ? encodeMemoryCursor(last.learnedAt, last.id) : null;
     return { rows: page, nextCursor };
   }
 
-  async getMap(userId: string): Promise<Record<string, string>> {
+  /** Active facts only → one string per key (latest wins). */
+  async getActiveMap(userId: string): Promise<Record<string, string>> {
     const rows = await this.db
       .select()
-      .from(userProfileTable)
-      .where(eq(userProfileTable.userId, userId));
+      .from(memoryFactsTable)
+      .where(
+        and(
+          eq(memoryFactsTable.userId, userId),
+          eq(memoryFactsTable.status, 'active'),
+        ),
+      )
+      .orderBy(desc(memoryFactsTable.learnedAt));
     const map: Record<string, string> = {};
     for (const r of rows) {
-      map[r.key] = r.value;
+      if (!(r.memoryKey in map)) {
+        map[r.memoryKey] = r.note;
+      }
     }
     return map;
   }
 
-  async get(userId: string, key: string): Promise<string | null> {
+  async getActiveByMemoryKey(
+    userId: string,
+    memoryKey: string,
+  ): Promise<MemoryFactRow | undefined> {
     const rows = await this.db
       .select()
-      .from(userProfileTable)
+      .from(memoryFactsTable)
       .where(
-        and(eq(userProfileTable.userId, userId), eq(userProfileTable.key, key)),
+        and(
+          eq(memoryFactsTable.userId, userId),
+          eq(memoryFactsTable.memoryKey, memoryKey),
+          eq(memoryFactsTable.status, 'active'),
+        ),
       )
+      .orderBy(desc(memoryFactsTable.learnedAt))
       .limit(1);
-    return rows[0]?.value ?? null;
+    return rows[0];
   }
 
-  async upsert(
+  async markHistoricalForMemoryKey(
     userId: string,
-    key: string,
-    value: string,
-    source: string | null,
+    memoryKey: string,
   ): Promise<void> {
-    const now = new Date();
     await this.db
-      .insert(userProfileTable)
+      .update(memoryFactsTable)
+      .set({ status: 'historical' })
+      .where(
+        and(
+          eq(memoryFactsTable.userId, userId),
+          eq(memoryFactsTable.memoryKey, memoryKey),
+          eq(memoryFactsTable.status, 'active'),
+        ),
+      );
+  }
+
+  async insertFact(row: {
+    userId: string;
+    memoryKey: string;
+    note: string;
+    learnedAt?: Date;
+    sourceDumpId: string | null;
+    sourcePrepId: string | null;
+    status: MemoryStatus;
+    provenance: string | null;
+  }): Promise<MemoryFactRow> {
+    const [created] = await this.db
+      .insert(memoryFactsTable)
       .values({
-        userId,
-        key,
-        value,
-        source,
-        createdAt: now,
-        updatedAt: now,
+        userId: row.userId,
+        memoryKey: row.memoryKey,
+        note: row.note,
+        learnedAt: row.learnedAt ?? new Date(),
+        sourceDumpId: row.sourceDumpId,
+        sourcePrepId: row.sourcePrepId,
+        status: row.status,
+        provenance: row.provenance,
       })
-      .onConflictDoUpdate({
-        target: [userProfileTable.userId, userProfileTable.key],
-        set: {
-          value,
-          source,
-          updatedAt: now,
-        },
-      });
+      .returning();
+    if (!created) {
+      throw new Error('insert memory_facts failed');
+    }
+    return created;
   }
 
   async findByIdForUser(
     userId: string,
     id: string,
-  ): Promise<UserProfileRow | undefined> {
+  ): Promise<MemoryFactRow | undefined> {
     const rows = await this.db
       .select()
-      .from(userProfileTable)
+      .from(memoryFactsTable)
       .where(
-        and(eq(userProfileTable.userId, userId), eq(userProfileTable.id, id)),
+        and(eq(memoryFactsTable.userId, userId), eq(memoryFactsTable.id, id)),
       )
       .limit(1);
     return rows[0];
   }
 
-  async findByUserAndKey(
-    userId: string,
-    key: string,
-  ): Promise<UserProfileRow | undefined> {
+  async countActiveWithKey(userId: string, memoryKey: string): Promise<number> {
     const rows = await this.db
-      .select()
-      .from(userProfileTable)
+      .select({ id: memoryFactsTable.id })
+      .from(memoryFactsTable)
       .where(
-        and(eq(userProfileTable.userId, userId), eq(userProfileTable.key, key)),
-      )
-      .limit(1);
-    return rows[0];
+        and(
+          eq(memoryFactsTable.userId, userId),
+          eq(memoryFactsTable.memoryKey, memoryKey),
+          eq(memoryFactsTable.status, 'active'),
+        ),
+      );
+    return rows.length;
   }
 
   async updateById(
     userId: string,
     id: string,
-    patch: { key: string; value: string; source: string | null },
-  ): Promise<UserProfileRow | undefined> {
-    const now = new Date();
+    patch: {
+      memoryKey?: string;
+      note?: string;
+      status?: MemoryStatus;
+    },
+  ): Promise<MemoryFactRow | undefined> {
     const [row] = await this.db
-      .update(userProfileTable)
+      .update(memoryFactsTable)
       .set({
-        key: patch.key,
-        value: patch.value,
-        source: patch.source,
-        updatedAt: now,
+        ...(patch.memoryKey !== undefined
+          ? { memoryKey: patch.memoryKey }
+          : {}),
+        ...(patch.note !== undefined ? { note: patch.note } : {}),
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
       })
       .where(
-        and(eq(userProfileTable.userId, userId), eq(userProfileTable.id, id)),
+        and(eq(memoryFactsTable.userId, userId), eq(memoryFactsTable.id, id)),
       )
       .returning();
     return row;
@@ -183,11 +250,24 @@ export class ProfileRepository {
 
   async deleteById(userId: string, id: string): Promise<boolean> {
     const rows = await this.db
-      .delete(userProfileTable)
+      .delete(memoryFactsTable)
       .where(
-        and(eq(userProfileTable.userId, userId), eq(userProfileTable.id, id)),
+        and(eq(memoryFactsTable.userId, userId), eq(memoryFactsTable.id, id)),
       )
       .returning();
     return rows.length > 0;
+  }
+
+  async listActiveNotesForPrompt(userId: string): Promise<MemoryFactRow[]> {
+    return this.db
+      .select()
+      .from(memoryFactsTable)
+      .where(
+        and(
+          eq(memoryFactsTable.userId, userId),
+          eq(memoryFactsTable.status, 'active'),
+        ),
+      )
+      .orderBy(desc(memoryFactsTable.learnedAt));
   }
 }

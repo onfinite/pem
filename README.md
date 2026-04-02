@@ -47,7 +47,7 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 | **Auth** | OAuth on `/welcome` (Google, Apple) — no separate auth routes | Clerk `useSSO` |
 | **App (signed-in)** | **`/home`** = preps hub; **Stack** pushes **dump**, **prepping**, **settings** | **Stack** (`(app)/`) |
 
-**Stack vs tabs for Pem:** Signed-in users land on **`/home`**. **Dump** (dock) → **`/dump`** → **`/prepping`** (acknowledgement + in-flight prep rows + **Back to Preps**) → **`/home`**. **Settings** (fixed in **`HomeTopBar`**) on the same stack.
+**Stack vs tabs for Pem:** Signed-in users land on **`/home`**. **Dump** (dock) → **`/dump`** → **`/prepping`** (acknowledgement + in-flight prep rows + **View in Preps**) → **`/home`**. **Settings** (fixed in **`HomeTopBar`**) on the same stack.
 
 **Splash and fonts** stay in the **root** `_layout.tsx` once (global cold start). **ClerkProvider** wraps routes that need auth; use **signed-in vs signed-out** redirects to send users to `(public)` vs `(app)` without duplicating splash inside each group. On **wide viewports** (tablet, web), the root layout **caps content width** (`MAX_APP_CONTENT_WIDTH` in `app/constants/layout.ts`) and centers it so chrome and screens stay phone-sized.
 
@@ -61,9 +61,10 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 - **Icons:** `lucide-react-native` (stroke-based icons; requires **`react-native-svg`**, installed alongside)
 - **Gradients:** `expo-linear-gradient` (e.g. full-screen capture on **`/dump`**)
 - **Blur / glass:** `expo-blur` (`BlurView`) — use when you want frosted chrome; **`/home`** uses a solid **`HomeTopBar`** + dock
+- **Haptics:** `expo-haptics` — soft impact / selection via `app/lib/pemHaptics.ts` (send, dump, open prep; not motor “buzz”; no-op on web)
 - **Theme:** `contexts/ThemeContext.tsx` — **light / dark / system**, persisted with **`@react-native-async-storage/async-storage`**. `useTheme()` supplies semantic colors (see `ThemeSemantic`); root `StatusBar` follows resolved scheme.
 - **Clerk** (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in `app/.env`) — root layout: splash + fonts, then `ClerkProvider` + `<Slot />`. Sign-in is **OAuth only** on `/welcome` (**Google** + **Apple**) via `useSSO` from `@clerk/expo` with **`expo-auth-session`** + **`expo-web-browser`**. In the [Clerk dashboard](https://dashboard.clerk.com), enable **Google** and **Apple** SSO providers and add the redirect URL your app uses (see Clerk’s Expo / OAuth docs).
-- **API** — set **`EXPO_PUBLIC_API_URL`** to the NestJS base URL (no trailing slash), e.g. `http://127.0.0.1:8000` with the backend running locally. In development, if this points at loopback but Metro is on a **LAN IP** (physical device), the app resolves the API to **`http://<metro-host>:8000`** automatically. Physical devices otherwise need your machine’s LAN IP or a deployed API URL. The hub and dump flow use **`POST /dumps`** (transcript max **16k** characters; queues split + prep jobs; returns `{ status, dumpId }`), **`GET /preps`** (optional **`?limit=`** / **`cursor=`** / **`status=`**; **`dumpId=`** scopes one dump; **`status=prepping`** includes failed), **`GET /preps/stream?dumpId=`** (SSE for live prep updates), **`GET /preps/:id`**, **`GET /preps/:id/steps`**, **`PATCH /preps/:id/archive`**, **`POST /preps/:id/retry`** (failed preps only), **`GET/POST /users/me/profile`** (optional **`?limit=`** / **`cursor=`** on GET for newest-first pagination; omit both for full list sorted by key), **`PATCH/DELETE /users/me/profile/:id`** (facts Pem saves for personalization; user edits in Settings). Optional facts may store **timed JSON** in `value` (`kind: "timed"`, `current` + dated `previous` segments) when the user enables time history; other keys stay plain text. Same Clerk session token as other routes. Preps are cached in **`AsyncStorage`** for instant hub load, then refreshed; the **What Pem knows** first page uses key **`profileFacts:v2:${userId}`** the same way, then refreshed.
+- **API** — set **`EXPO_PUBLIC_API_URL`** to the NestJS base URL (no trailing slash), e.g. `http://127.0.0.1:8000` with the backend running locally. In development, if this points at loopback but Metro is on a **LAN IP** (physical device), the app resolves the API to **`http://<metro-host>:8000`** automatically. Physical devices otherwise need your machine’s LAN IP or a deployed API URL. The hub and dump flow use **`POST /dumps`** (transcript max **16k** characters; queues split + prep jobs; returns `{ status, dumpId }`), **`GET /preps`** (optional **`?limit=`** / **`cursor=`** / **`status=`**; **`dumpId=`** scopes one dump; **`status=prepping`** includes failed), **`GET /preps/stream?dumpId=`** (SSE for live prep updates), **`GET /preps/:id`**, **`GET /preps/:id/steps`**, **`PATCH /preps/:id/archive`**, **`POST /preps/:id/retry`** (failed preps only), **`GET/POST /users/me/profile`** (optional **`?limit=`** / **`cursor=`** / **`status=active|historical|all`** on GET), **`PATCH/DELETE /users/me/profile/:id`** — **memory facts** (`memory_key`, `note`, `learned_at`, `status`, optional source ids). **`PATCH /preps/:id/opened`** marks a ready prep as read (`opened_at`). Same Clerk session token as other routes. Preps are cached in **`AsyncStorage`** for instant hub load, then refreshed; **What Pem knows** uses **`profileFacts:v3:${userId}:${tab}`** per Active/Historical tab. Apply DB migration **`backend/drizzle/0004_memory_facts_opened_at.sql`** (replaces **`user_profile`** with **`memory_facts`**, adds **`preps.opened_at`**).
 
 **Routes (file-based under `app/app/`):**
 
@@ -72,9 +73,9 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 | `/` | `index.tsx` | Redirects to `/home` if signed in, else `/welcome` |
 | `/welcome` | `(public)/welcome.tsx` | Centered marketing + **Continue with Google** / **Continue with Apple** |
 | `/home` | `(app)/home.tsx` | **Preps hub:** fixed **`HomeTopBar`** (title · **Settings**) + tab dock (**Ready** / **Prepping** / **Archived**); **Dump** → **`/dump`**; prep cards → **`/prep/[id]`** (detail) |
-| `/prep/[id]` | `(app)/prep/[id].tsx` | Full prep: options, research, or draft — draft preps have **Open in…** (Mail, Gmail, Outlook, Yahoo) to launch compose with subject/body prefilled, plus **Copy**; **Close** → back |
+| `/prep/[id]` | `(app)/prep/[id].tsx` | Full prep: options, research, or draft — draft preps have **Share** (system share sheet: Mail, Messages, Copy, etc.) plus **Copy**; **Close** → back |
 | `/dump` | `(app)/dump.tsx` | Full-bleed gradient; headline + example + **multiline text field** + **Send** → **`/prepping`**; **Close** → **`/home`** |
-| `/prepping` | `(app)/prepping.tsx` | After a dump: **Pem’s got it** + **In flight** rows (same demo as hub) + reassurance (scrolls); **Back to Preps** pinned at bottom — **`/home`** |
+| `/prepping` | `(app)/prepping.tsx` | After a dump: **Pem’s got it** + **In flight** rows (same demo as hub) + reassurance (scrolls); **View in Preps** pinned at bottom — **`/home`** |
 | `/settings` | `(app)/settings/index.tsx` | Profile (Clerk), **Pem memory** → **`/settings/profile`**, appearance, sign out; **Close** (`X`) runs **`router.back()`** or **`/home`** if there is no stack history |
 | `/settings/profile` | `(app)/settings/profile.tsx` | What Pem knows: paginated list (scroll for more), cached first page for fast return, add, edit, delete profile facts (API above); pull to refresh |
 
@@ -86,7 +87,7 @@ npm install
 npm start
 ```
 
-Lint: `npm run lint`. More Expo notes live in `app/README.md`.
+Lint: `npm run lint`. Unit tests (prep result → UI body mapping): `npm test`. **Home** hub lists and **Prepping** (post-dump) support **pull-to-refresh**; prep lists are **newest first** (`created_at` / `id` descending) end-to-end. More Expo notes live in `app/README.md`.
 
 ## `backend/` — HTTP API (NestJS + Drizzle)
 

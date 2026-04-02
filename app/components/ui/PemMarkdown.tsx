@@ -5,7 +5,7 @@ import Markdown from "react-native-markdown-display";
 import { useMemo } from "react";
 import type { StyleProp, TextStyle } from "react-native";
 
-type Variant = "body" | "card";
+type Variant = "body" | "card" | "companion";
 
 type Props = {
   children: string;
@@ -18,18 +18,20 @@ export default function PemMarkdown({ children, variant = "body", style }: Props
   const { colors } = useTheme();
 
   const markdownStyle = useMemo(() => {
+    const companion = variant === "companion";
+    const baseSize = variant === "card" ? fontSize.sm : companion ? fontSize.lg : fontSize.md;
     const baseBody: TextStyle = {
-      color: colors.textSecondary,
+      color: companion ? colors.textPrimary : colors.textSecondary,
       fontFamily: fontFamily.sans.regular,
-      fontSize: variant === "card" ? fontSize.sm : fontSize.md,
-      lineHeight: lh(
-        variant === "card" ? fontSize.sm : fontSize.md,
-        lineHeight.relaxed,
-      ),
+      fontSize: baseSize,
+      lineHeight: lh(baseSize, companion ? lineHeight.relaxed : lineHeight.relaxed),
     };
     return {
       body: { ...baseBody, ...(style as object) },
-      paragraph: { marginTop: 0, marginBottom: variant === "card" ? 4 : 8 },
+      paragraph: {
+        marginTop: 0,
+        marginBottom: variant === "card" ? 4 : companion ? 14 : 8,
+      },
       strong: {
         fontFamily: fontFamily.sans.semibold,
         color: colors.textPrimary,
@@ -39,9 +41,9 @@ export default function PemMarkdown({ children, variant = "body", style }: Props
         color: colors.pemAmber,
         textDecorationLine: "underline" as const,
       },
-      bullet_list: { marginBottom: 8 },
-      ordered_list: { marginBottom: 8 },
-      list_item: { marginBottom: 4 },
+      bullet_list: { marginBottom: companion ? 12 : 8 },
+      ordered_list: { marginBottom: companion ? 12 : 8 },
+      list_item: { marginBottom: companion ? 6 : 4 },
       heading1: {
         fontFamily: fontFamily.sans.semibold,
         fontSize: fontSize.xl,

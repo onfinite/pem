@@ -29,6 +29,13 @@
       "when": 1775088656900,
       "tag": "0003_agentic_core",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775088657000,
+      "tag": "0004_memory_facts_opened_at",
+      "breakpoints": true
     }
   ]
 }

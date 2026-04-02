@@ -66,7 +66,14 @@ export type Prep = {
   kind: PrepKind;
   /** Optional context shown at top of detail. */
   detailIntro?: string;
-  options?: { label: string; price: string; url?: string; why?: string }[];
+  options?: {
+    label: string;
+    price: string;
+    url?: string;
+    why?: string;
+    store?: string;
+    imageUrl?: string;
+  }[];
   /** Long findings / summary / comparison text. */
   body?: string;
   /** Paste-ready text for draft preps. */
@@ -77,6 +84,8 @@ export type Prep = {
   status?: "prepping" | "ready" | "archived" | "failed";
   /** Present for API-backed preps; used to scope the post-dump “Pem’s got it” list. */
   dumpId?: string;
+  /** Ready prep not yet opened in detail (inbox-style). */
+  unread?: boolean;
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [

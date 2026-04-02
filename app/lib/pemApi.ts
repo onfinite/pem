@@ -1,4 +1,5 @@
 import type { Prep, PrepKind } from "@/components/sections/home-sections/homePrepData";
+import { extractPrepResultBody } from "@/lib/extractPrepResultBody";
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
 import { FileText, Gift, Mail, Scale, Search, type LucideIcon } from "lucide-react-native";
 
@@ -13,10 +14,13 @@ export type ApiPrep = {
   status: "prepping" | "ready" | "archived" | "failed";
   summary: string | null;
   result: Record<string, unknown> | null;
+  /** Omitted in API responses for failed preps (details are not shown in UI). */
   error_message: string | null;
   created_at: string;
   ready_at: string | null;
   archived_at: string | null;
+  /** Set when user opened detail; omitted/null = unread (ready tab). */
+  opened_at?: string | null;
 };
 
 export async function apiFetch<T>(
@@ -116,53 +120,9 @@ function viewLabelForKind(kind: PrepKind): string {
   }
 }
 
-function extractBodyAndDraft(row: ApiPrep): {
-  body?: string;
-  draftText?: string;
-  detailIntro?: string;
-  draftSubject?: string | null;
-} {
-  const r = row.result;
-  if (!r || row.status === "prepping") {
-    return {};
-  }
-
+function extractBodyAndDraft(row: ApiPrep): ReturnType<typeof extractPrepResultBody> {
   const renderOrPrep = row.render_type ?? row.prep_type;
-
-  if (renderOrPrep === "draft") {
-    const body = typeof r.body === "string" ? r.body : "";
-    const subject = r.subject === null || typeof r.subject === "string" ? r.subject : null;
-    const tone = typeof r.tone === "string" ? r.tone : "";
-    const detailIntro =
-      [subject ? `Subject: ${subject}` : null, tone ? `Tone: ${tone}` : null].filter(Boolean).join("\n") ||
-      undefined;
-    return {
-      draftText: body,
-      draftSubject: subject,
-      detailIntro,
-    };
-  }
-
-  if (renderOrPrep === "options") {
-    // Structured options (+ why/url) render in the detail UI; avoid duplicating as a flat body.
-    return {};
-  }
-
-  const summary = typeof r.summary === "string" ? r.summary : "";
-  const keyPoints = Array.isArray(r.keyPoints)
-    ? r.keyPoints.filter((x): x is string => typeof x === "string")
-    : [];
-  const sources = Array.isArray(r.sources)
-    ? r.sources.filter((x): x is string => typeof x === "string")
-    : [];
-  const parts = [summary];
-  if (keyPoints.length) {
-    parts.push("\n\nKey points:\n" + keyPoints.map((k) => `• ${k}`).join("\n"));
-  }
-  if (sources.length) {
-    parts.push("\n\nSources:\n" + sources.map((s) => `• ${s}`).join("\n"));
-  }
-  return { body: parts.join("") };
+  return extractPrepResultBody(row.result, renderOrPrep, row.status);
 }
 
 function extractOptions(row: ApiPrep): Prep["options"] {
@@ -178,11 +138,16 @@ function extractOptions(row: ApiPrep): Prep["options"] {
       const price = "price" in o && typeof o.price === "string" ? o.price : "";
       const url = "url" in o && typeof o.url === "string" ? o.url.trim() : "";
       const why = "why" in o && typeof o.why === "string" ? o.why : "";
+      const store = "store" in o && typeof o.store === "string" ? o.store : "";
+      const imageUrl =
+        "imageUrl" in o && typeof o.imageUrl === "string" ? o.imageUrl.trim() : "";
       return {
         label: name,
         price,
         url: url.length > 0 ? url : undefined,
         why: why.length > 0 ? why : undefined,
+        store: store.length > 0 ? store : undefined,
+        imageUrl: imageUrl.length > 0 ? imageUrl : undefined,
       };
     })
     .filter((o) => o.label.length > 0);
@@ -199,10 +164,10 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
   const summary =
     row.summary?.trim() ||
     (row.status === "prepping"
-      ? row.error_message?.trim() || "Pem's on it…"
+      ? "Pem is working on this."
       : row.status === "failed"
-        ? row.error_message?.trim() || "Something went wrong"
-        : row.error_message?.trim() || "—");
+        ? "Something went wrong. Tap to retry."
+        : "—");
 
   const title = row.thought?.trim() || row.title;
 
@@ -226,6 +191,8 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     draftText,
     draftSubject,
     status: row.status,
+    unread:
+      row.status === "ready" && (row.opened_at === null || row.opened_at === undefined),
   };
 }
 
@@ -300,27 +267,15 @@ export async function retryPrepApi(
   return apiFetch(`/preps/${encodeURIComponent(id)}/retry`, { method: "POST", getToken });
 }
 
-export type ApiPrepLog = {
-  id: string;
-  step: string;
-  message: string;
-  meta: Record<string, unknown> | null;
-  created_at: string;
-};
-
-export async function getPrepLogs(
-  getToken: () => Promise<string | null>,
-  id: string,
-): Promise<ApiPrepLog[]> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/logs`, { method: "GET", getToken });
-}
-
 export type ApiProfileFact = {
   id: string;
-  key: string;
-  value: string;
-  source: string | null;
-  updated_at: string;
+  memory_key: string;
+  note: string;
+  status: "active" | "historical";
+  learned_at: string;
+  source_prep_id: string | null;
+  source_dump_id: string | null;
+  provenance: string | null;
 };
 
 export type ApiUserProfileFacts = {
@@ -340,12 +295,15 @@ export type ApiUserProfileFactsPage = {
 
 export async function getUserProfileFactsPage(
   getToken: () => Promise<string | null>,
-  opts: { limit: number; cursor?: string | null },
+  opts: { limit: number; cursor?: string | null; status?: "active" | "historical" | "all" },
 ): Promise<ApiUserProfileFactsPage> {
   const params = new URLSearchParams();
   params.set("limit", String(opts.limit));
   if (opts.cursor) {
     params.set("cursor", opts.cursor);
+  }
+  if (opts.status && opts.status !== "all") {
+    params.set("status", opts.status);
   }
   const qs = params.toString();
   return apiFetch(`/users/me/profile?${qs}`, { method: "GET", getToken });
@@ -354,20 +312,30 @@ export async function getUserProfileFactsPage(
 export async function createProfileFact(
   getToken: () => Promise<string | null>,
   key: string,
-  value: string,
+  note: string,
 ): Promise<ApiProfileFact> {
   const { fact } = await apiFetch<{ fact: ApiProfileFact }>("/users/me/profile", {
     method: "POST",
     getToken,
-    body: JSON.stringify({ key, value }),
+    body: JSON.stringify({ key, note }),
   });
   return fact;
+}
+
+export async function markPrepOpened(
+  getToken: () => Promise<string | null>,
+  id: string,
+): Promise<ApiPrep> {
+  return apiFetch(`/preps/${encodeURIComponent(id)}/opened`, {
+    method: "PATCH",
+    getToken,
+  });
 }
 
 export async function updateProfileFact(
   getToken: () => Promise<string | null>,
   id: string,
-  patch: { key?: string; value?: string },
+  patch: { key?: string; note?: string },
 ): Promise<ApiProfileFact> {
   const { fact } = await apiFetch<{ fact: ApiProfileFact }>(
     `/users/me/profile/${encodeURIComponent(id)}`,

@@ -12,5 +12,6 @@ import { PrepsService } from './preps.service';
   imports: [DatabaseModule, UsersModule, StepsModule, PrepEventsModule],
   controllers: [PrepsController],
   providers: [PrepsService, PrepsStreamService],
+  exports: [PrepsService, PrepsStreamService],
 })
 export class PrepsModule {}

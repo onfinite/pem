@@ -17,9 +17,17 @@ import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
 import PemText from "@/components/ui/PemText";
+import { pemSelection } from "@/lib/pemHaptics";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, ListRenderItem, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  ListRenderItem,
+  RefreshControl,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function ArchivedTabEmpty() {
@@ -44,9 +52,30 @@ export default function HomeScreen() {
     hasMore,
     loadingMore,
     retryPrep,
+    refresh,
   } = usePrepHub();
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refresh({ skipCacheHydration: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh]);
+
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<PrepTab>("ready");
+  const pullRefreshEnabled = tab === "ready" || tab === "prepping";
+
+  const onHubTab = useCallback(
+    (t: PrepTab) => {
+      if (t === tab) return;
+      pemSelection();
+      setTab(t);
+    },
+    [tab],
+  );
   const glassBorder = glassChromeBorder(resolved);
 
   const tabDockBottomSpace =
@@ -151,6 +180,12 @@ export default function HomeScreen() {
         ]}
         ListHeaderComponent={
           <View style={{ gap: space[4], marginBottom: space[2] }}>
+            {pullRefreshEnabled && refreshing ? (
+              <ActivityIndicator
+                accessibilityLabel="Loading preps"
+                color={colors.pemAmber}
+              />
+            ) : null}
             <HomePageHead sub={pageHead.sub} />
           </View>
         }
@@ -160,10 +195,20 @@ export default function HomeScreen() {
         onEndReachedThreshold={0.3}
         ItemSeparatorComponent={() => <View style={{ height: space[4] }} />}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          pullRefreshEnabled ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onRefresh()}
+              tintColor={colors.pemAmber}
+              colors={[colors.pemAmber]}
+            />
+          ) : undefined
+        }
       />
 
       <HomeTopBar title={pageHead.title} glassBorder={glassBorder} />
-      <HomeTabDock tab={tab} onTab={setTab} glassBorder={glassBorder} />
+      <HomeTabDock tab={tab} onTab={onHubTab} glassBorder={glassBorder} />
     </View>
   );
 }

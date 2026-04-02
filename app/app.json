@@ -14,13 +14,7 @@
         "NSMicrophoneUsageDescription": "Pem uses the microphone to turn what you say into on-device text for your dump.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        },
-        "LSApplicationQueriesSchemes": [
-          "mailto",
-          "googlegmail",
-          "ms-outlook",
-          "ymail"
-        ]
+        }
       },
       "bundleIdentifier": "com.anonymous.pem"
     },

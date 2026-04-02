@@ -59,6 +59,8 @@ export const prepsTable = pgTable(
       .defaultNow(),
     readyAt: timestamp('ready_at', { withTimezone: true, mode: 'date' }),
     archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
+    /** First time user opened prep detail; null = unread (ready preps). */
+    openedAt: timestamp('opened_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     index('ix_preps_user_id').on(t.userId),

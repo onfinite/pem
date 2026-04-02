@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { PrepEventsModule } from '../events/prep-events.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
+import { PrepsModule } from '../preps/preps.module';
 import { ProfileModule } from '../profile/profile.module';
 import { PushModule } from '../push/push.module';
 import { StepsModule } from '../steps/steps.module';
@@ -15,6 +16,7 @@ import { SplitAgent } from './split.agent';
     IntegrationsModule,
     PushModule,
     ProfileModule,
+    PrepsModule,
     StepsModule,
     PrepEventsModule,
   ],

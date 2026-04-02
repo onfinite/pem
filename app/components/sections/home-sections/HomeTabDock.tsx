@@ -2,6 +2,7 @@ import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { amber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
+import { pemImpactLight } from "@/lib/pemHaptics";
 import { router } from "expo-router";
 import { Mic } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
@@ -116,7 +117,10 @@ export default function HomeTabDock({ tab, onTab, glassBorder }: Props) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Dump — text"
-            onPress={() => router.push("/dump")}
+            onPress={() => {
+              pemImpactLight();
+              router.push("/dump");
+            }}
             style={({ pressed }) => [styles.dumpColumn, pressed && { opacity: 0.94 }]}
           >
             {({ pressed }) => (

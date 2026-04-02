@@ -1,9 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, Output, stepCountIs, tool } from 'ai';
+import { generateText, Output, stepCountIs } from 'ai';
 import { and, eq } from 'drizzle-orm';
-import { z } from 'zod';
+
+import { createPrepAgentTools } from './agent-tools/prep-tools.factory';
+import { buildPrepAgentSystemPrompt } from './prompts/prep-agent.system';
+import { buildStructuredFormatterPrompt } from './prompts/prep-structured.prompt';
+import { structureSchema } from './schemas/prep-result.schema';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -18,74 +22,15 @@ import {
 import { PrepEventsService } from '../events/prep-events.service';
 import { TavilyService } from '../integrations/tavily.service';
 import { ProfileService } from '../profile/profile.service';
+import { PrepsService } from '../preps/preps.service';
 import { PushService } from '../push/push.service';
 import { StepsService } from '../steps/steps.service';
-
-/**
- * Prep `result` must be a concrete Zod shape (not `z.any()`): OpenAI structured outputs
- * require every property in the JSON Schema to declare a `type`.
- */
-const prepResultSchema = z.union([
-  z.object({
-    answer: z.string(),
-    sources: z.array(z.string()),
-  }),
-  z.object({
-    summary: z.string(),
-    keyPoints: z.array(z.string()),
-    sources: z.array(z.string()),
-  }),
-  z.object({
-    options: z
-      .array(
-        z.object({
-          name: z.string(),
-          price: z.string(),
-          url: z.string(),
-          why: z.string(),
-        }),
-      )
-      .max(3),
-  }),
-  z.object({
-    subject: z.string().nullable(),
-    body: z.string(),
-    tone: z.string(),
-  }),
-  z.object({
-    sections: z.array(
-      z.object({
-        type: z.string(),
-        body: z.string(),
-      }),
-    ),
-  }),
-]);
-
-const structureSchema = z.object({
-  summary: z.string(),
-  renderType: z.enum(['search', 'research', 'options', 'draft', 'compound']),
-  result: prepResultSchema,
-});
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 16_000);
-}
 
 function prepTypeFromRender(r: PrepRenderType): PrepType {
   if (r === 'compound') return 'research';
   return r;
 }
 
-/**
- * Runs the agentic prep loop for one thought: tools → structured result → persist → notify.
- */
 @Injectable()
 export class PrepRunnerService {
   private readonly log = new Logger(PrepRunnerService.name);
@@ -96,6 +41,7 @@ export class PrepRunnerService {
     private readonly tavily: TavilyService,
     private readonly push: PushService,
     private readonly profile: ProfileService,
+    private readonly preps: PrepsService,
     private readonly steps: StepsService,
     private readonly prepEvents: PrepEventsService,
   ) {}
@@ -149,7 +95,17 @@ export class PrepRunnerService {
         .from(usersTable)
         .where(eq(usersTable.id, userId))
         .limit(1);
-      const profileMap = await this.profile.getProfileMap(userId);
+
+      const [memorySection, relevantBlock, profileMap] = await Promise.all([
+        this.profile.buildMemoryPromptSection(userId),
+        this.preps.relevantPastPrepsBlock(
+          userId,
+          prep.thought || prep.title,
+          5,
+        ),
+        this.profile.getProfileMap(userId),
+      ]);
+
       const prior =
         prep.context && typeof prep.context === 'object' ? prep.context : {};
       const mergedContext: Record<string, unknown> = {
@@ -171,7 +127,11 @@ ${transcript}
 Thought to prep (this card):
 ${prep.thought || prep.title}
 
-Enriched context (JSON) — includes the user's name/email and profile facts Pem has saved; use these for drafts, greetings, and sign-offs:
+${memorySection}
+
+${relevantBlock ? `${relevantBlock}\n` : ''}
+
+Enriched context (JSON) — structured profile map for tools that still expect key/value:
 ${ctx}
 
 Use tools as needed. When finished, produce a clear final answer in plain language in your last message.`;
@@ -180,109 +140,24 @@ Use tools as needed. When finished, produce a clear final answer in plain langua
         model: agentModelId,
       });
 
-      const searchTool = tool({
-        description:
-          'Search the public web via Tavily for current facts, policies, products, prices',
-        inputSchema: z.object({ query: z.string() }),
-        execute: async ({ query }: { query: string }) => {
-          const hits = await this.tavily.search(query, 6);
-          return JSON.stringify(hits, null, 2);
-        },
+      const tools = createPrepAgentTools({
+        tavily: this.tavily,
+        profile: this.profile,
+        userId,
+        prepId,
+        dumpId,
+        agentModel,
+        userPrompt,
+        displayName,
       });
 
-      const fetchTool = tool({
-        description:
-          'Fetch a public web page URL and return readable text (use after search finds a relevant page)',
-        inputSchema: z.object({ url: z.string().url() }),
-        execute: async ({ url }: { url: string }) => {
-          const res = await fetch(url, {
-            headers: { 'User-Agent': 'PemBot/1.0' },
-            signal: AbortSignal.timeout(20_000),
-          });
-          if (!res.ok) {
-            return `HTTP ${res.status}`;
-          }
-          const html = await res.text();
-          return stripHtml(html);
-        },
-      });
-
-      const rememberTool = tool({
-        description:
-          'Read one profile key (snake_case, e.g. car, vehicle, location). Call before search when the profile might already have the answer.',
-        inputSchema: z.object({ key: z.string() }),
-        execute: async ({ key }: { key: string }) => {
-          const v = await this.profile.remember(userId, key);
-          return v ?? '(not set)';
-        },
-      });
-
-      const saveTool = tool({
-        description:
-          'Write one profile fact (key + value) for future preps. Required when the user states something durable about themselves in the thought or transcript: vehicle they own or plan to sell, home, job, city, budget, etc. Use short snake_case keys (e.g. vehicle, car) and a concise value with year/model if given. Also use when you learn a new durable fact from tool output.',
-        inputSchema: z.object({
-          key: z.string(),
-          value: z.string(),
-        }),
-        execute: async ({ key, value }: { key: string; value: string }) => {
-          await this.profile.save(userId, key, value, prepId);
-          return 'saved';
-        },
-      });
-
-      const draftTool = tool({
-        description:
-          'Generate a paste-ready email or message body (goal + tone). Use when the user needs to send something.',
-        inputSchema: z.object({
-          goal: z.string(),
-          tone: z.string(),
-        }),
-        execute: async ({ goal, tone }: { goal: string; tone: string }) => {
-          const who =
-            displayName ??
-            '(name not on file — use a neutral greeting and no fake name)';
-          const d = await generateText({
-            model: agentModel,
-            prompt: `Write a message the USER will paste and send as themselves.
-
-The user's display name for greetings and sign-offs: ${who}
-Use \`user\` and \`profile\` from the JSON context for specifics (location, role, preferences, etc.) when they improve the message. Do not invent a name if none is given.
-
-Goal: ${goal}
-Tone: ${tone}
-
-Context:
-${userPrompt}`,
-          });
-          return JSON.stringify({
-            body: d.text,
-            subject: null as string | null,
-            tone,
-          });
-        },
-      });
+      const system = buildPrepAgentSystemPrompt(memorySection, relevantBlock);
 
       const agentResult = await generateText({
         model: agentModel,
-        system: `You are Pem's prep agent. Turn one thought into something the user can act on immediately.
-
-Rules:
-- The enriched context JSON includes user.name, user.email, and profile (facts Pem has saved). Use them for drafts, emails, and regards: real name for greetings and sign-offs when appropriate, profile facts for tone and specifics. Never invent a name if user.name is missing.
-- If the user states a durable fact about themselves in this thought or the transcript (vehicle they own or want to sell, home, job, city, budget, constraints), call save() with a short snake_case key and a concise value—including year/make/model for cars. Do this even when the main task is search or research; it is not optional for stated possessions or situation.
-- Call remember() before searching when the profile might already hold the fact (e.g. remember("vehicle") before pricing a car they mentioned).
-- Use search() for current info; use fetch() on a specific result URL when you need exact wording, price, or policy.
-- Use save() when you learn a new durable fact from tool output too (not only when the user said it).
-- Use draft() when the outcome is a message to send.
-- Never invent prices, URLs, or citations — only use tool output.
-- If you need product options, find real products with search+fetch; max 3 options in the final result.`,
+        system,
         prompt: userPrompt,
-        tools: {
-          search: searchTool,
-          fetch: fetchTool,
-          remember: rememberTool,
-          save: saveTool,
-          draft: draftTool,
-        },
+        tools,
         stopWhen: stepCountIs(maxSteps),
         onStepFinish: async (event) => {
           const names =
@@ -313,24 +188,7 @@ Rules:
       const structured = await generateText({
         model: miniModel,
         output: Output.object({ schema: structureSchema }),
-        prompt: `You format prep results for a mobile UI.
-
-Agent output (raw):
-"""
-${agentText.slice(0, 24_000)}
-"""
-
-Return JSON matching the schema:
-- summary: one short line for the card preview
-- renderType: search | research | options | draft | compound
-- result: object matching the render type:
-  - search: { answer: string, sources: string[] }
-  - research: { summary: string, keyPoints: string[], sources: string[] }
-  - options: { options: Array<{ name, price, url, why }> } max 3 — use empty string for url or why when unknown
-  - draft: { subject: string|null, body: string, tone: string } — body should read as the user; use their name and profile from context for regards/sign-off when appropriate
-  - compound: { sections: Array<{ type: string, body: string }> }
-
-Use only information from the agent output. If something is unknown, omit or use empty strings.`,
+        prompt: buildStructuredFormatterPrompt(agentText),
       });
 
       const out = structured.output;
@@ -377,6 +235,7 @@ Use only information from the agent output. If something is unknown, omit or use
           render_type: saved.renderType,
           summary: saved.summary,
           result: saved.result,
+          created_at: saved.createdAt.toISOString(),
         },
       });
     } catch (e) {
@@ -403,16 +262,16 @@ Use only information from the agent output. If something is unknown, omit or use
   private async failPrep(
     prepId: string,
     dumpId: string,
-    message: string,
+    internalMessage: string,
   ): Promise<void> {
-    await this.appendLog(prepId, 'error', message.slice(0, 500), {});
+    await this.appendLog(prepId, 'error', internalMessage.slice(0, 500), {});
     await this.db
       .update(prepsTable)
       .set({
         status: 'failed',
-        summary: 'Something went wrong',
-        errorMessage: message.slice(0, 2000),
-        result: { error: true, message },
+        summary: 'Something went wrong. Tap to retry.',
+        errorMessage: null,
+        result: { error: true },
       })
       .where(and(eq(prepsTable.id, prepId), eq(prepsTable.status, 'prepping')));
 
@@ -432,6 +291,7 @@ Use only information from the agent output. If something is unknown, omit or use
           render_type: p.renderType,
           summary: p.summary,
           result: p.result,
+          created_at: p.createdAt.toISOString(),
         },
       });
     }

@@ -5,7 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  lt,
+  or,
+  type SQL,
+} from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import { DRIZZLE } from '../database/database.constants';
@@ -191,6 +201,7 @@ export class PrepsService {
         render_type: updated.renderType,
         summary: updated.summary,
         result: updated.result,
+        created_at: updated.createdAt.toISOString(),
       },
     });
     return updated;
@@ -219,6 +230,79 @@ export class PrepsService {
       })
       .where(eq(prepsTable.id, prepId))
       .returning();
+    return updated;
+  }
+
+  /** Keyword overlap with past ready/archived preps (MVP relevance). */
+  async relevantPastPrepsBlock(
+    userId: string,
+    thought: string,
+    limit = 5,
+  ): Promise<string> {
+    const tokens = thought
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w) => w.replace(/[^a-z0-9]/gi, ''))
+      .filter((w) => w.length > 2)
+      .slice(0, 12);
+    if (tokens.length === 0) {
+      return '';
+    }
+    const tokenClause = or(
+      ...tokens.map(
+        (t) =>
+          or(
+            ilike(prepsTable.thought, `%${t}%`),
+            ilike(prepsTable.summary, `%${t}%`),
+          )!,
+      ),
+    )!;
+    const rows = await this.db
+      .select({
+        id: prepsTable.id,
+        thought: prepsTable.thought,
+        summary: prepsTable.summary,
+        createdAt: prepsTable.createdAt,
+      })
+      .from(prepsTable)
+      .where(
+        and(
+          eq(prepsTable.userId, userId),
+          inArray(prepsTable.status, ['ready', 'archived']),
+          tokenClause,
+        ),
+      )
+      .orderBy(desc(prepsTable.createdAt))
+      .limit(limit);
+    if (rows.length === 0) {
+      return '';
+    }
+    const lines = rows.map((r) => {
+      const title = (r.thought || 'Prep').slice(0, 80);
+      const when = r.createdAt.toLocaleDateString(undefined, {
+        month: 'short',
+        year: 'numeric',
+      });
+      const sum = (r.summary || '').slice(0, 160);
+      return `- "${title}" (${when})${sum ? ` — ${sum}` : ''}`;
+    });
+    return `Relevant past preps:\n${lines.join('\n')}`;
+  }
+
+  async markOpened(prepId: string, userId: string): Promise<PrepRow> {
+    const prep = await this.getByIdForUser(prepId, userId);
+    if (prep.openedAt) {
+      return prep;
+    }
+    const now = new Date();
+    const [updated] = await this.db
+      .update(prepsTable)
+      .set({ openedAt: now })
+      .where(eq(prepsTable.id, prepId))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException('Prep not found');
+    }
     return updated;
   }
 }

@@ -1,18 +1,10 @@
-import TimedFactFields from "@/components/sections/settings-sections/TimedFactFields";
 import PemButton from "@/components/ui/PemButton";
 import PemText from "@/components/ui/PemText";
 import PemTextField from "@/components/ui/PemTextField";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import type { ApiProfileFact } from "@/lib/pemApi";
-import {
-  emptyTimedValue,
-  normalizeProfileKey,
-  parseTimedValue,
-  serializeTimedValue,
-  tryParseTimedForEdit,
-  type TimedProfileValue,
-} from "@/lib/profileTimed";
+import { normalizeProfileKey } from "@/lib/profileTimed";
 import { X } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -22,7 +14,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,7 +25,7 @@ type Props = {
   mode: Mode;
   fact: ApiProfileFact | null;
   onClose: () => void;
-  onSave: (payload: { id?: string; key: string; value: string }) => Promise<void>;
+  onSave: (payload: { id?: string; key: string; note: string }) => Promise<void>;
 };
 
 function displayKeyFromStored(key: string): string {
@@ -43,22 +34,11 @@ function displayKeyFromStored(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function sanitizeTimed(v: TimedProfileValue): TimedProfileValue {
-  return {
-    ...v,
-    previous: v.previous.filter(
-      (p) => p.value.trim() && p.from.trim() && p.to.trim(),
-    ),
-  };
-}
-
 export default function ProfileFactEditorModal({ visible, mode, fact, onClose, onSave }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [keyText, setKeyText] = useState("");
-  const [valueText, setValueText] = useState("");
-  const [timedState, setTimedState] = useState<TimedProfileValue>(() => emptyTimedValue());
-  const [useTimedHistory, setUseTimedHistory] = useState(false);
+  const [noteText, setNoteText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -68,43 +48,19 @@ export default function ProfileFactEditorModal({ visible, mode, fact, onClose, o
     }
     setError(null);
     if (mode === "edit" && fact) {
-      setKeyText(displayKeyFromStored(fact.key));
-      const parsed = tryParseTimedForEdit(fact.value);
-      if (parsed) {
-        setTimedState(parsed);
-        setUseTimedHistory(true);
-        setValueText("");
-      } else {
-        setUseTimedHistory(false);
-        setValueText(fact.value);
-        setTimedState(emptyTimedValue());
-      }
+      setKeyText(displayKeyFromStored(fact.memory_key));
+      setNoteText(fact.note);
     } else {
       setKeyText("");
-      setValueText("");
-      setTimedState(emptyTimedValue());
-      setUseTimedHistory(false);
+      setNoteText("");
     }
   }, [visible, mode, fact]);
-
-  const onToggleTimedHistory = useCallback(
-    (next: boolean) => {
-      if (next) {
-        setTimedState(parseTimedValue(valueText.trim()));
-      } else {
-        setValueText(timedState.current.trim());
-        setTimedState(emptyTimedValue());
-      }
-      setUseTimedHistory(next);
-    },
-    [valueText, timedState],
-  );
 
   const submit = useCallback(async () => {
     setError(null);
     const k = keyText.trim();
     if (!k) {
-      setError("Add a short label (e.g. Location or Work).");
+      setError("Add a short label (e.g. Location or Car budget).");
       return;
     }
     const nk = normalizeProfileKey(k);
@@ -112,33 +68,18 @@ export default function ProfileFactEditorModal({ visible, mode, fact, onClose, o
       setError("Use letters or numbers in the label.");
       return;
     }
+    const note = noteText.trim();
+    if (!note) {
+      setError("Add what Pem should remember (plain language).");
+      return;
+    }
     setSaving(true);
     try {
-      if (useTimedHistory) {
-        const sanitized = sanitizeTimed(timedState);
-        if (!sanitized.current.trim()) {
-          setError("Set the current value.");
-          setSaving(false);
-          return;
-        }
-        await onSave({
-          id: mode === "edit" && fact ? fact.id : undefined,
-          key: nk,
-          value: serializeTimedValue(sanitized),
-        });
-      } else {
-        const v = valueText.trim();
-        if (!v) {
-          setError("Add a value.");
-          setSaving(false);
-          return;
-        }
-        await onSave({
-          id: mode === "edit" && fact ? fact.id : undefined,
-          key: nk,
-          value: v,
-        });
-      }
+      await onSave({
+        id: mode === "edit" && fact ? fact.id : undefined,
+        key: nk,
+        note,
+      });
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -146,7 +87,7 @@ export default function ProfileFactEditorModal({ visible, mode, fact, onClose, o
     } finally {
       setSaving(false);
     }
-  }, [keyText, valueText, timedState, useTimedHistory, mode, fact, onSave, onClose]);
+  }, [keyText, noteText, mode, fact, onSave, onClose]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -181,57 +122,43 @@ export default function ProfileFactEditorModal({ visible, mode, fact, onClose, o
               </Pressable>
             </View>
             <PemText variant="caption" style={[styles.hint, { color: colors.textSecondary }]}>
-              {useTimedHistory
-                ? "Optional time history: current value plus dated past periods when something changed."
-                : "Short label (letters or spaces). Pem stores labels in a simple form (e.g. work_email)."}
+              Short topic label + a natural-language note. When something changes later, Pem keeps
+              history — you’ll see older entries under Historical.
             </PemText>
             <ScrollView
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.form}
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
             >
               <PemTextField
-                label="Label"
-                placeholder="e.g. Location"
+                label="Topic"
                 value={keyText}
                 onChangeText={setKeyText}
+                placeholder="e.g. Car, Location"
                 editable={!saving}
-                autoCapitalize="sentences"
-                error={null}
+                autoCapitalize="words"
               />
-              <View style={styles.toggleRow}>
-                <PemText style={[styles.toggleLabel, { color: colors.textPrimary }]}>
-                  Include time history
-                </PemText>
-                <Switch
-                  value={useTimedHistory}
-                  onValueChange={onToggleTimedHistory}
-                  disabled={saving}
-                  trackColor={{ false: colors.borderMuted, true: colors.pemAmber }}
-                  thumbColor={colors.cardBackground}
-                />
-              </View>
-              {useTimedHistory ? (
-                <TimedFactFields value={timedState} onChange={setTimedState} disabled={saving} />
-              ) : (
-                <PemTextField
-                  label="What to remember"
-                  placeholder="e.g. East Bay, usually free weekday evenings"
-                  value={valueText}
-                  onChangeText={setValueText}
-                  editable={!saving}
-                  multiline
-                  style={styles.valueInput}
-                  error={null}
-                />
-              )}
+              <PemTextField
+                label="What Pem should remember"
+                value={noteText}
+                onChangeText={setNoteText}
+                placeholder="Plain language — what a friend would recall about you."
+                multiline
+                editable={!saving}
+                style={styles.noteField}
+              />
               {error ? (
-                <PemText variant="caption" style={{ color: colors.error }}>
+                <PemText variant="caption" style={{ color: colors.textSecondary }}>
                   {error}
                 </PemText>
               ) : null}
-              <PemButton size="md" onPress={() => void submit().catch(() => {})} disabled={saving}>
-                {saving ? "Saving…" : mode === "add" ? "Save" : "Update"}
+              <PemButton
+                size="md"
+                onPress={() => void submit().catch(() => {})}
+                disabled={saving}
+                style={styles.saveBtn}
+              >
+                {saving ? "Saving…" : "Save"}
               </PemButton>
             </ScrollView>
           </View>
@@ -244,6 +171,7 @@ export default function ProfileFactEditorModal({ visible, mode, fact, onClose, o
 const styles = StyleSheet.create({
   modalFill: {
     flex: 1,
+    justifyContent: "flex-end",
   },
   flex: {
     flex: 1,
@@ -251,53 +179,47 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.4)",
   },
   sheet: {
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    borderWidth: 1,
-    paddingHorizontal: space[4],
-    paddingTop: space[4],
-    maxHeight: "92%",
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxHeight: "88%",
   },
   sheetHead: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: space[2],
+    paddingHorizontal: space[4],
+    paddingTop: space[4],
+    paddingBottom: space[2],
   },
   sheetTitle: {
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.xl,
     lineHeight: lh(fontSize.xl, lineHeight.snug),
-    flex: 1,
   },
   closeHit: {
     padding: space[2],
   },
   hint: {
-    marginBottom: space[4],
+    paddingHorizontal: space[4],
+    marginBottom: space[2],
     lineHeight: lh(fontSize.sm, lineHeight.relaxed),
   },
-  form: {
-    gap: space[4],
-    paddingBottom: space[6],
+  scroll: {
+    maxHeight: 420,
   },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  scrollContent: {
+    paddingHorizontal: space[4],
     gap: space[3],
+    paddingBottom: space[4],
   },
-  toggleLabel: {
-    flex: 1,
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.md,
-  },
-  valueInput: {
+  noteField: {
     minHeight: 120,
-    textAlignVertical: "top",
-    paddingTop: space[3],
+  },
+  saveBtn: {
+    marginTop: space[2],
   },
 });

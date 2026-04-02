@@ -4,10 +4,10 @@ import { PREPPING_FLOW_MAX_WIDTH } from "@/constants/layout";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
 import { router } from "expo-router";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** After a dump: scrollable body + pinned “Back to Preps” so long lists stay usable. */
+/** After a dump: scrollable body + pinned “View in Preps” so long lists stay usable. */
 export default function PreppingScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -18,21 +18,7 @@ export default function PreppingScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.pageBackground }]}>
-      <ScrollView
-        style={styles.scrollFlex}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: insets.top + space[4],
-            paddingBottom: space[6],
-            alignItems: "center",
-            width: "100%",
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        <PreppingDumpFlow />
-      </ScrollView>
+      <PreppingDumpFlow />
 
       <View
         style={[
@@ -46,7 +32,7 @@ export default function PreppingScreen() {
       >
         <View style={styles.footerInner}>
           <PemButton variant="primary" size="lg" onPress={goHome} style={styles.footerBtn}>
-            Back to Preps
+            View in Preps
           </PemButton>
         </View>
       </View>
@@ -57,13 +43,6 @@ export default function PreppingScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-  },
-  scrollFlex: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: space[5],
-    maxWidth: "100%",
   },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,

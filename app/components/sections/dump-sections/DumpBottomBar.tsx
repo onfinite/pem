@@ -1,4 +1,5 @@
 import { useTheme } from "@/contexts/ThemeContext";
+import { pemImpactLight } from "@/lib/pemHaptics";
 import { space } from "@/constants/typography";
 import { ArrowUp } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -29,7 +30,10 @@ export default function DumpBottomBar({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send dump to Pem"
-          onPress={onSend}
+          onPress={() => {
+            pemImpactLight();
+            onSend();
+          }}
           disabled={submitting || !canSend}
           style={({ pressed }) => [
             styles.sendCircle,

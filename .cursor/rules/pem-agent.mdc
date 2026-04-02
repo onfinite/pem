@@ -113,7 +113,7 @@ merged: { gym: "24/7 Fitness", name: "Akee" }
 
 Pass the enriched thought + context into the agent.
 
-**Implementation:** Prep `context` JSON includes `user: { name, email }` from the **`users`** row (Clerk-synced) plus `profile: { key: value }` from **`user_profile`**. On each prep run, the runner **refreshes** `user` and `profile` so retries use current data. Facts stored as **timed JSON** (`kind: "timed"`) are **exposed to the agent as a one-line string** (“Now: … Previously: …”); plain-text facts pass through unchanged. Drafts and emails should use **name** for greetings/sign-offs and **profile** facts for specifics; never invent a name when missing.
+**Implementation:** Prep `context` JSON includes `user: { name, email }` plus `profile: { memory_key: note }` built from **active** **`memory_facts`** rows (notes may still contain legacy timed JSON → one-line for the map). The runner also injects a **natural-language memory block** and **relevant past preps** (keyword match MVP) into the agent prompt. Drafts and emails should use **name** and memory for specifics; never invent a name when missing.
 
 ---
 
@@ -300,23 +300,25 @@ One row per thought extracted from a dump.
 | created_at   | timestamp |                                                      |
 | ready_at     | timestamp | nullable                                             |
 | archived_at  | timestamp | nullable                                             |
+| opened_at    | timestamp | nullable — set when user opens detail (unread if null when ready) |
 
-### user_profile
+### memory_facts
 
-Key-value store. One row per fact per user.
-This is how Pem remembers things about the user over time.
+Natural-language memory with history. Multiple rows per user; **`status`** `active` \| `historical`.
 
-| Column     | Type      | Notes                                      |
-| ---------- | --------- | ------------------------------------------ |
-| id         | uuid      | primary key                                |
-| user_id    | uuid      | FK → users                                 |
-| key        | text      | fact name e.g. "car", "location", "name"   |
-| value      | text      | fact value e.g. "2019 Honda Civic"           |
-| source     | text      | which dump_id or prep_id this came from      |
-| created_at | timestamp |                                            |
-| updated_at | timestamp | updated on upsert                          |
+| Column           | Type      | Notes                                        |
+| ---------------- | --------- | -------------------------------------------- |
+| id               | uuid      | primary key                                  |
+| user_id          | uuid      | FK → users                                   |
+| memory_key       | text      | normalized snake_case topic                   |
+| note             | text      | what Pem remembers (plain language)         |
+| learned_at       | timestamp | when this row became current                 |
+| source_dump_id   | uuid      | optional FK                                  |
+| source_prep_id   | uuid      | optional FK                                  |
+| status           | text      | active = current; historical = superseded    |
+| provenance       | text      | e.g. agent, user, migration                  |
 
-Upsert on (user_id, key). Latest value wins.
+Agent **save** supersedes: mark prior **active** rows for that `memory_key` historical, insert new **active** row.
 
 ### agent_steps
 
@@ -358,7 +360,7 @@ All four fields are required in stored JSON; use `""` for `url` or `why` when un
 ```json
 {
   "options": [
-    { "name": "string", "price": "string", "url": "string", "why": "string" }
+    { "name": "string", "price": "string", "url": "string", "store": "string", "why": "string", "imageUrl": "string" }
   ]
 }
 ```

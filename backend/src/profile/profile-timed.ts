@@ -1,5 +1,5 @@
 /**
- * Optional **time-aware** profile values (any key). Stored as JSON in `user_profile.value`
+ * Legacy: timed JSON blobs inside migrated `memory_facts.note` strings (optional).
  * when the user (or app) chooses history + dates. Most facts stay a plain string.
  */
 
@@ -60,7 +60,9 @@ export function storedValueIsTimedJson(raw: string): boolean {
  * Parses `kind: 'timed'` JSON that does not pass strict validation (e.g. empty
  * `current`). Used for agent-facing text and display only.
  */
-export function parseLooseTimedForDisplay(raw: string): TimedProfileValue | null {
+export function parseLooseTimedForDisplay(
+  raw: string,
+): TimedProfileValue | null {
   const t = raw.trim();
   if (!t.startsWith('{')) return null;
   try {

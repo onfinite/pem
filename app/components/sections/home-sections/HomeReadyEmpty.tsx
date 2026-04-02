@@ -1,3 +1,4 @@
+import { pemImpactLight } from "@/lib/pemHaptics";
 import PemButton from "@/components/ui/PemButton";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -25,7 +26,14 @@ export default function HomeReadyEmpty() {
       <PemText style={[styles.emptyBody, { color: colors.textSecondary }]}>
         Dump what&apos;s on your mind in text. Pem turns it into preps you open here.
       </PemText>
-      <PemButton variant="primary" size="lg" onPress={() => router.push("/dump")}>
+      <PemButton
+        variant="primary"
+        size="lg"
+        onPress={() => {
+          pemImpactLight();
+          router.push("/dump");
+        }}
+      >
         Dump something
       </PemButton>
     </View>

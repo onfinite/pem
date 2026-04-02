@@ -18,11 +18,11 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import type { UserRow } from '../database/schemas';
-import type { UserProfileRow } from '../database/schemas';
+import type { MemoryFactRow, UserRow } from '../database/schemas';
 import { ProfileService } from '../profile/profile.service';
 import {
   CreateProfileFactDto,
@@ -65,16 +65,20 @@ export class UsersController {
 
   @Get('me/profile')
   @UseGuards(ClerkAuthGuard)
+  @SkipThrottle()
   @ApiBearerAuth('clerk')
   @ApiOperation({
     summary:
-      'Facts Pem has saved for you. Use ?limit=&cursor= for pagination (newest first).',
+      'Memory facts (natural language). ?limit=&cursor= paginates by learned_at. ?status=active|historical|all',
   })
   async getProfileFacts(
     @CurrentUser() user: UserRow,
     @Query('limit') limitRaw?: string,
     @Query('cursor') cursor?: string,
+    @Query('status') statusRaw?: string,
   ) {
+    const status =
+      statusRaw === 'active' || statusRaw === 'historical' ? statusRaw : 'all';
     const hasLimit =
       limitRaw !== undefined &&
       limitRaw !== '' &&
@@ -85,13 +89,14 @@ export class UsersController {
         user.id,
         limit,
         cursor || undefined,
+        status,
       );
       return {
         facts: rows.map((r) => this.serializeFact(r)),
         next_cursor: nextCursor,
       };
     }
-    const rows = await this.profile.listFacts(user.id);
+    const rows = await this.profile.listFacts(user.id, status);
     return {
       facts: rows.map((r) => this.serializeFact(r)),
     };
@@ -105,11 +110,7 @@ export class UsersController {
     @CurrentUser() user: UserRow,
     @Body() body: CreateProfileFactDto,
   ) {
-    const row = await this.profile.createUserFact(
-      user.id,
-      body.key,
-      body.value,
-    );
+    const row = await this.profile.createUserFact(user.id, body.key, body.note);
     return { fact: this.serializeFact(row) };
   }
 
@@ -122,12 +123,12 @@ export class UsersController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: UpdateProfileFactDto,
   ) {
-    if (body.key === undefined && body.value === undefined) {
-      throw new BadRequestException('Provide at least key or value to update');
+    if (body.key === undefined && body.note === undefined) {
+      throw new BadRequestException('Provide at least key or note to update');
     }
     const row = await this.profile.updateUserFact(user.id, id, {
       key: body.key,
-      value: body.value,
+      note: body.note,
     });
     return { fact: this.serializeFact(row) };
   }
@@ -156,13 +157,16 @@ export class UsersController {
     return { ok: true };
   }
 
-  private serializeFact(r: UserProfileRow) {
+  private serializeFact(r: MemoryFactRow) {
     return {
       id: r.id,
-      key: r.key,
-      value: r.value,
-      source: r.source,
-      updated_at: r.updatedAt?.toISOString?.() ?? r.updatedAt,
+      memory_key: r.memoryKey,
+      note: r.note,
+      status: r.status,
+      learned_at: r.learnedAt?.toISOString?.() ?? r.learnedAt,
+      source_prep_id: r.sourcePrepId,
+      source_dump_id: r.sourceDumpId,
+      provenance: r.provenance,
     };
   }
 }

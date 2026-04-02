@@ -4,16 +4,16 @@ import { IsOptional, IsString, MaxLength } from 'class-validator';
 export class CreateProfileFactDto {
   @ApiProperty({
     example: 'Location',
-    description: 'Short label (normalized to snake_case)',
+    description: 'Short label (normalized to snake_case memory_key)',
   })
   @IsString()
   @MaxLength(200)
   key!: string;
 
-  @ApiProperty({ example: 'East Bay, CA' })
+  @ApiProperty({ example: 'Based in the East Bay, CA' })
   @IsString()
-  @MaxLength(8000)
-  value!: string;
+  @MaxLength(16_000)
+  note!: string;
 }
 
 export class UpdateProfileFactDto {
@@ -26,6 +26,6 @@ export class UpdateProfileFactDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MaxLength(8000)
-  value?: string;
+  @MaxLength(16_000)
+  note?: string;
 }

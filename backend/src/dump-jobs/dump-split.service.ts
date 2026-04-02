@@ -105,6 +105,7 @@ export class DumpSplitService {
       render_type: p.renderType,
       summary: p.summary,
       result: p.result,
+      created_at: p.createdAt.toISOString(),
     };
   }
 }

@@ -21,7 +21,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
 import { router } from "expo-router";
 import { Pencil, Sparkles, Trash2, X } from "lucide-react-native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -69,7 +69,8 @@ function FactRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const sub = formatUpdatedAt(fact.updated_at);
+  const sub = formatUpdatedAt(fact.learned_at);
+  const mk = fact.memory_key;
   return (
     <View
       style={[
@@ -94,12 +95,13 @@ function FactRow({
           style={[styles.factKey, { color: colors.textSecondary }]}
           numberOfLines={2}
         >
-          {formatFactKey(fact.key)}
+          {formatFactKey(mk)}
+          {fact.status === "historical" ? " · Historical" : ""}
         </PemText>
         <View style={styles.factActions}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Edit ${formatFactKey(fact.key)}`}
+            accessibilityLabel={`Edit ${formatFactKey(mk)}`}
             onPress={onEdit}
             hitSlop={8}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.75 : 1 }]}
@@ -108,7 +110,7 @@ function FactRow({
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Delete ${formatFactKey(fact.key)}`}
+            accessibilityLabel={`Delete ${formatFactKey(mk)}`}
             onPress={onDelete}
             hitSlop={8}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.75 : 1 }]}
@@ -118,19 +120,27 @@ function FactRow({
         </View>
       </View>
       <PemText selectable style={[styles.factValue, { color: colors.textPrimary }]}>
-        {formatProfileValueForDisplay(fact.value)}
+        {formatProfileValueForDisplay(fact.note)}
       </PemText>
       {sub ? (
         <PemText variant="caption" style={[styles.factMeta, { color: colors.textSecondary }]}>
-          Updated {sub}
+          Learned {sub}
         </PemText>
       ) : null}
     </View>
   );
 }
 
-function profileFactsCacheKey(userId: string | undefined) {
-  return userId ? `profileFacts:v2:${userId}` : null;
+function profileFactsCacheKey(userId: string | undefined, tab: "active" | "historical") {
+  return userId ? `profileFacts:v3:${userId}:${tab}` : null;
+}
+
+function formatProfileFactsError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/429|too many requests|rate limit/i.test(msg)) {
+    return "You’re refreshing a bit fast. Give it a second and try again.";
+  }
+  return msg;
 }
 
 export default function SettingsProfileScreen() {
@@ -154,44 +164,74 @@ export default function SettingsProfileScreen() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<"add" | "edit">("add");
   const [editorFact, setEditorFact] = useState<ApiProfileFact | null>(null);
+  const [memoryTab, setMemoryTab] = useState<"active" | "historical">("active");
+
+  const memoryTabRef = useRef(memoryTab);
+  memoryTabRef.current = memoryTab;
+
+  const refreshLockRef = useRef<{ key: string; promise: Promise<void> } | null>(
+    null,
+  );
 
   const persistFirstPage = useCallback(
-    async (pageFacts: ApiProfileFact[], cursor: string | null) => {
-      const key = profileFactsCacheKey(userId ?? undefined);
+    async (
+      pageFacts: ApiProfileFact[],
+      cursor: string | null,
+      forTab: "active" | "historical",
+    ) => {
+      const key = profileFactsCacheKey(userId ?? undefined, forTab);
       if (!key) return;
       await AsyncStorage.setItem(
         key,
-        JSON.stringify({ v: 2, facts: pageFacts, next_cursor: cursor }),
+        JSON.stringify({ v: 3, facts: pageFacts, next_cursor: cursor }),
       );
     },
     [userId],
   );
 
   const refreshFirstPage = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await getUserProfileFactsPage(getToken, {
-        limit: PROFILE_FACTS_PAGE_SIZE,
-      });
-      setFacts(data.facts);
-      setNextCursor(data.next_cursor);
-      try {
-        await persistFirstPage(data.facts, data.next_cursor);
-      } catch {
-        /* cache is best-effort */
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-    } finally {
-      try {
-        setLoading(false);
-        setRefreshing(false);
-      } catch {
-        /* avoid rejecting the async fn if setState throws */
-      }
+    const tab = memoryTab;
+    const lockKey = `${userId ?? ""}:${tab}`;
+
+    const existing = refreshLockRef.current;
+    if (existing && existing.key === lockKey) {
+      await existing.promise;
+      return;
     }
-  }, [getToken, persistFirstPage]);
+
+    const run = (async () => {
+      setError(null);
+      try {
+        const data = await getUserProfileFactsPage(getToken, {
+          limit: PROFILE_FACTS_PAGE_SIZE,
+          status: tab,
+        });
+        if (memoryTabRef.current !== tab) return;
+        setFacts(data.facts);
+        setNextCursor(data.next_cursor);
+        try {
+          await persistFirstPage(data.facts, data.next_cursor, tab);
+        } catch {
+          /* cache is best-effort */
+        }
+      } catch (e) {
+        if (memoryTabRef.current !== tab) return;
+        setError(formatProfileFactsError(e));
+      } finally {
+        if (memoryTabRef.current === tab) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        const cur = refreshLockRef.current;
+        if (cur?.key === lockKey) {
+          refreshLockRef.current = null;
+        }
+      }
+    })();
+
+    refreshLockRef.current = { key: lockKey, promise: run };
+    await run;
+  }, [getToken, persistFirstPage, userId, memoryTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -202,8 +242,10 @@ export default function SettingsProfileScreen() {
         setLoading(false);
         return;
       }
+      const tab = memoryTab;
+      let showedCache = false;
       try {
-        const key = profileFactsCacheKey(userId);
+        const key = profileFactsCacheKey(userId, tab);
         if (key) {
           const cached = await AsyncStorage.getItem(key);
           if (cached && !cancelled) {
@@ -213,10 +255,12 @@ export default function SettingsProfileScreen() {
                 facts?: ApiProfileFact[];
                 next_cursor?: string | null;
               };
-              if (parsed.v === 2 && Array.isArray(parsed.facts)) {
+              if (parsed.v === 3 && Array.isArray(parsed.facts)) {
+                if (memoryTabRef.current !== tab) return;
                 setFacts(parsed.facts);
                 setNextCursor(parsed.next_cursor ?? null);
                 setLoading(false);
+                showedCache = true;
               }
             } catch {
               /* ignore */
@@ -225,6 +269,12 @@ export default function SettingsProfileScreen() {
         }
       } catch {
         /* ignore */
+      }
+      if (cancelled || memoryTabRef.current !== tab) return;
+      if (!showedCache) {
+        setFacts([]);
+        setNextCursor(null);
+        setLoading(true);
       }
       await refreshFirstPage();
     }
@@ -235,9 +285,37 @@ export default function SettingsProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [userId, refreshFirstPage]);
+  }, [userId, refreshFirstPage, memoryTab]);
+
+  const selectMemoryTab = useCallback(
+    (tab: "active" | "historical") => {
+      if (tab === memoryTab) return;
+      setMemoryTab(tab);
+      setError(null);
+      setFacts([]);
+      setNextCursor(null);
+      setLoading(true);
+    },
+    [memoryTab],
+  );
+
+  const visibleFacts = useMemo(
+    () => facts.filter((f) => f.status === memoryTab),
+    [facts, memoryTab],
+  );
+
+  const endReachTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (endReachTimerRef.current) {
+        clearTimeout(endReachTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const loadMore = useCallback(async () => {
+    const tabAtStart = memoryTab;
     if (!nextCursor || loadMoreInFlightRef.current) return;
     loadMoreInFlightRef.current = true;
     setLoadingMore(true);
@@ -245,7 +323,9 @@ export default function SettingsProfileScreen() {
       const data = await getUserProfileFactsPage(getToken, {
         limit: PROFILE_FACTS_PAGE_SIZE,
         cursor: nextCursor,
+        status: tabAtStart,
       });
+      if (memoryTabRef.current !== tabAtStart) return;
       setFacts((prev) => {
         const seen = new Set(prev.map((f) => f.id));
         const extra = data.facts.filter((f) => !seen.has(f.id));
@@ -253,13 +333,13 @@ export default function SettingsProfileScreen() {
       });
       setNextCursor(data.next_cursor);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
+      if (memoryTabRef.current !== tabAtStart) return;
+      setError(formatProfileFactsError(e));
     } finally {
       loadMoreInFlightRef.current = false;
       setLoadingMore(false);
     }
-  }, [getToken, nextCursor]);
+  }, [getToken, nextCursor, memoryTab]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -268,6 +348,20 @@ export default function SettingsProfileScreen() {
       setRefreshing(false);
     });
   }, [refreshFirstPage]);
+
+  const retryLoad = useCallback(() => {
+    setLoading(true);
+    void refreshFirstPage();
+  }, [refreshFirstPage]);
+
+  const onEndReached = useCallback(() => {
+    if (!nextCursor) return;
+    if (endReachTimerRef.current) return;
+    endReachTimerRef.current = setTimeout(() => {
+      endReachTimerRef.current = null;
+      void loadMore().catch(() => {});
+    }, 400);
+  }, [loadMore, nextCursor]);
 
   const onClose = useCallback(() => {
     if (router.canGoBack()) {
@@ -291,7 +385,7 @@ export default function SettingsProfileScreen() {
 
   const confirmDelete = useCallback(
     (f: ApiProfileFact) => {
-      const label = formatFactKey(f.key);
+      const label = formatFactKey(f.memory_key);
       Alert.alert(
         "Remove this fact?",
         `“${label}” won’t be used for new preps. You can add it again anytime.`,
@@ -306,8 +400,7 @@ export default function SettingsProfileScreen() {
                   await deleteProfileFact(getToken, f.id);
                   await refreshFirstPage();
                 } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  Alert.alert("Couldn’t delete", msg.slice(0, 200));
+                  Alert.alert("Couldn’t delete", formatProfileFactsError(e).slice(0, 200));
                 }
               })();
             },
@@ -319,11 +412,11 @@ export default function SettingsProfileScreen() {
   );
 
   const handleEditorSave = useCallback(
-    async (payload: { id?: string; key: string; value: string }) => {
+    async (payload: { id?: string; key: string; note: string }) => {
       if (payload.id) {
-        await updateProfileFact(getToken, payload.id, { key: payload.key, value: payload.value });
+        await updateProfileFact(getToken, payload.id, { key: payload.key, note: payload.note });
       } else {
-        await createProfileFact(getToken, payload.key, payload.value);
+        await createProfileFact(getToken, payload.key, payload.note);
       }
       await refreshFirstPage();
     },
@@ -398,7 +491,7 @@ export default function SettingsProfileScreen() {
 
       <FlatList
         style={styles.scroll}
-        data={facts}
+        data={visibleFacts}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -409,8 +502,8 @@ export default function SettingsProfileScreen() {
             colors={[colors.pemAmber]}
           />
         }
-        onEndReached={() => void loadMore().catch(() => {})}
-        onEndReachedThreshold={0.25}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.4}
         contentContainerStyle={[
           styles.scrollContent,
           {
@@ -428,18 +521,72 @@ export default function SettingsProfileScreen() {
                 Saved for you
               </PemText>
               <PemText variant="body" style={[styles.heroSub, { color: colors.textSecondary }]}>
-                When Pem runs a prep, it can remember useful details—location, preferences, names—so the
-                next answer fits. Add or edit facts here anytime; Pem uses them like anything it learns on
-                its own.
+                Natural-language memory: what Pem knows about you, with history when things change.
               </PemText>
             </View>
 
-            {!loading ? (
+            <View style={styles.memoryTabsWrap}>
+              <View style={styles.memoryTabs}>
+                <Pressable
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: memoryTab === "active" }}
+                  onPress={() => selectMemoryTab("active")}
+                  style={[
+                    styles.memoryTab,
+                    {
+                      backgroundColor:
+                        memoryTab === "active" ? colors.brandMutedSurface : colors.secondarySurface,
+                      borderColor: colors.borderMuted,
+                    },
+                  ]}
+                >
+                  <PemText
+                    style={{
+                      color: memoryTab === "active" ? colors.textPrimary : colors.textSecondary,
+                      fontFamily:
+                        memoryTab === "active" ? fontFamily.sans.semibold : fontFamily.sans.medium,
+                    }}
+                  >
+                    Active
+                  </PemText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: memoryTab === "historical" }}
+                  onPress={() => selectMemoryTab("historical")}
+                  style={[
+                    styles.memoryTab,
+                    {
+                      backgroundColor:
+                        memoryTab === "historical"
+                          ? colors.brandMutedSurface
+                          : colors.secondarySurface,
+                      borderColor: colors.borderMuted,
+                    },
+                  ]}
+                >
+                  <PemText
+                    style={{
+                      color:
+                        memoryTab === "historical" ? colors.textPrimary : colors.textSecondary,
+                      fontFamily:
+                        memoryTab === "historical"
+                          ? fontFamily.sans.semibold
+                          : fontFamily.sans.medium,
+                    }}
+                  >
+                    Historical
+                  </PemText>
+                </Pressable>
+              </View>
+            </View>
+
+            {!loading && memoryTab === "active" ? (
               <PemButton size="md" onPress={openAdd} style={styles.addBtn}>
                 Add a fact
               </PemButton>
             ) : null}
-            {error && facts.length > 0 ? (
+            {error && visibleFacts.length > 0 ? (
               <PemText variant="body" style={[styles.errorText, { color: colors.textSecondary }]}>
                 {error}
               </PemText>
@@ -457,19 +604,26 @@ export default function SettingsProfileScreen() {
         )}
         ItemSeparatorComponent={() => <View style={{ height: space[3] }} />}
         ListEmptyComponent={
-          loading && facts.length === 0 ? (
+          loading && visibleFacts.length === 0 ? (
             <ActivityIndicator style={{ marginTop: space[8] }} color={colors.pemAmber} />
           ) : error ? (
-            <PemText variant="body" style={[styles.errorText, { color: colors.textSecondary }]}>
-              {error}
-            </PemText>
+            <View style={styles.emptyError}>
+              <PemText variant="body" style={[styles.errorText, { color: colors.textSecondary }]}>
+                {error}
+              </PemText>
+              <PemButton size="md" onPress={retryLoad} style={styles.retryBtn}>
+                Try again
+              </PemButton>
+            </View>
           ) : (
             <View style={styles.empty}>
               <PemText style={[styles.emptyTitle, { color: colors.textPrimary }]}>
                 Nothing here yet
               </PemText>
               <PemText variant="body" style={[styles.emptySub, { color: colors.textSecondary }]}>
-                Tap “Add a fact” to tell Pem something useful, or let it pick things up when you prep.
+                {memoryTab === "active"
+                  ? "Tap “Add a fact” to tell Pem something useful, or let it pick things up when you prep."
+                  : "When Pem replaces something it already knew, the older version appears here."}
               </PemText>
             </View>
           )
@@ -546,6 +700,28 @@ const styles = StyleSheet.create({
   headerIconSlot: {
     width: 28,
     height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  memoryTabsWrap: {
+    marginTop: space[2],
+    marginBottom: space[1],
+    paddingVertical: space[2],
+    paddingHorizontal: space[1],
+    alignSelf: "stretch",
+  },
+  memoryTabs: {
+    flexDirection: "row",
+    gap: space[3],
+    alignSelf: "stretch",
+  },
+  memoryTab: {
+    flex: 1,
+    minHeight: 48,
+    paddingVertical: space[3],
+    paddingHorizontal: space[4],
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -630,5 +806,14 @@ const styles = StyleSheet.create({
   errorText: {
     marginTop: space[4],
     textAlign: "center",
+  },
+  emptyError: {
+    paddingVertical: space[6],
+    gap: space[4],
+    alignItems: "center",
+  },
+  retryBtn: {
+    alignSelf: "center",
+    minWidth: 160,
   },
 });

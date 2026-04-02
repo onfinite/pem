@@ -1,6 +1,7 @@
 import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
+import { pemImpactLight } from "@/lib/pemHaptics";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { ChevronRight, type LucideIcon } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
@@ -69,10 +70,21 @@ export default function PrepHubCard({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${prep.title}. ${prep.summary}. Open`}
-      onPress={onOpenDetail}
+      onPress={() => {
+        pemImpactLight();
+        onOpenDetail();
+      }}
       style={({ pressed }) => [...cardChrome, pressed && { opacity: 0.94 }]}
     >
       <View style={styles.cardRow}>
+        {prep.unread ? (
+          <View
+            style={[styles.unreadDot, { backgroundColor: colors.pemAmber }]}
+            accessibilityLabel="Unread"
+          />
+        ) : (
+          <View style={styles.unreadSpacer} />
+        )}
         <IconWell
           Icon={prep.Icon}
           iconColor={colors.textSecondary}
@@ -109,8 +121,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: space[3],
     paddingVertical: space[4],
-    paddingLeft: space[4],
+    paddingLeft: space[3],
     paddingRight: space[3],
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
+    alignSelf: "center",
+  },
+  unreadSpacer: {
+    width: 8,
+    flexShrink: 0,
   },
   iconWell: {
     width: 36,

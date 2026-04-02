@@ -22,6 +22,9 @@ import {
 } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 
+/** Pass `skipCacheHydration` on pull-to-refresh so lists don’t flash stale disk cache before the API returns. */
+export type PrepHubRefreshOptions = { skipCacheHydration?: boolean };
+
 type PrepHubContextValue = {
   readyPreps: Prep[];
   preppingPreps: Prep[];
@@ -31,7 +34,7 @@ type PrepHubContextValue = {
   getPrep: (id: string) => Prep | undefined;
   fetchPrepById: (id: string) => Promise<Prep | null>;
   upsertPrepRow: (row: ApiPrep) => void;
-  refresh: () => Promise<void>;
+  refresh: (opts?: PrepHubRefreshOptions) => Promise<void>;
   loadMore: (tab: "ready" | "prepping" | "archived") => Promise<void>;
   hasMore: { ready: boolean; prepping: boolean; archived: boolean };
   loadingMore: { ready: boolean; prepping: boolean; archived: boolean };
@@ -45,13 +48,13 @@ function prepsCacheKey(userId: string | undefined) {
   return userId ? `preps:${userId}` : null;
 }
 
-/** Newest first; stable tie-breaker so refresh/SSE doesn’t reshuffle. */
+/** Newest first — matches API `ORDER BY created_at DESC, id DESC`. */
 function sortPrepsByCreatedAtDesc(rows: ApiPrep[]): ApiPrep[] {
   return [...rows].sort((a, b) => {
     const ta = Date.parse(a.created_at);
     const tb = Date.parse(b.created_at);
     if (tb !== ta) return tb - ta;
-    return a.id.localeCompare(b.id);
+    return b.id.localeCompare(a.id);
   });
 }
 
@@ -104,7 +107,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: PrepHubRefreshOptions) => {
     if (!isSignedIn) {
       setReadyRows([]);
       setPreppingRows([]);
@@ -116,7 +119,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       const key = prepsCacheKey(userId ?? undefined);
-      if (key) {
+      if (!opts?.skipCacheHydration && key) {
         const cached = await AsyncStorage.getItem(key);
         if (cached) {
           try {
@@ -127,9 +130,9 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
               archived?: ApiPrep[];
             };
             if (parsed.v === 2 && parsed.ready && parsed.prepping && parsed.archived) {
-              setReadyRows(parsed.ready);
-              setPreppingRows(parsed.prepping);
-              setArchivedRows(parsed.archived);
+              setReadyRows(sortPrepsByCreatedAtDesc(parsed.ready));
+              setPreppingRows(sortPrepsByCreatedAtDesc(parsed.prepping));
+              setArchivedRows(sortPrepsByCreatedAtDesc(parsed.archived));
               setLoading(false);
             }
           } catch {
@@ -151,9 +154,9 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
           limit: PREP_PAGE_SIZE,
         }),
       ]);
-      setReadyRows(r.items);
-      setPreppingRows(p.items);
-      setArchivedRows(a.items);
+      setReadyRows(sortPrepsByCreatedAtDesc(r.items));
+      setPreppingRows(sortPrepsByCreatedAtDesc(p.items));
+      setArchivedRows(sortPrepsByCreatedAtDesc(a.items));
       setCursors({
         ready: r.next_cursor,
         prepping: p.next_cursor,

@@ -261,7 +261,7 @@ Should show preps appearing in real time as they are created.
 4. Frontend connects SSE: GET /preps/stream?dumpId=xxx
 5. As "prep.created" events arrive → prep cards appear with spinner
 6. As "prep.ready" events arrive → cards update with result
-7. "stream.done" received → "Back to Preps" button pulses
+7. "stream.done" received → optional emphasis on **View in Preps** (if implemented)
 8. User taps → goes to Ready tab, sees all preps
 ```
 
@@ -281,7 +281,7 @@ Nothing's final until you open a prep.
 [ prep card — appearing with animation ]
 [ prep card — appearing with animation ]
 
-[ Back to Preps ] ← enabled when stream.done fires
+[ View in Preps ] ← goes to hub (`/home`); no repeated refresh on this screen
 ```
 
 Prep cards on this screen are simplified — just icon + title + spinner.

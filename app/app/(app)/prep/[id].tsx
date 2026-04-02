@@ -1,16 +1,17 @@
-import PrepDetailActivity from "@/components/sections/prep-detail-sections/PrepDetailActivity";
 import PrepDetailBody from "@/components/sections/prep-detail-sections/PrepDetailBody";
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
-import { prepKindTagColor } from "@/components/sections/home-sections/homePrepData";
 import PemButton from "@/components/ui/PemButton";
 import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
+import { prepKindCompanionLabel } from "@/lib/prepDetailLabels";
+import { apiPrepToPrep, markPrepOpened } from "@/lib/pemApi";
+import { useAuth } from "@clerk/expo";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Archive, X } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -18,9 +19,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function PrepDetailScreen() {
   const raw = useLocalSearchParams<{ id: string | string[] }>().id;
   const id = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
-  const { getPrep, fetchPrepById, readyPreps, preppingPreps, archivePrep, retryPrep, refresh } =
-    usePrepHub();
-  const { colors, resolved } = useTheme();
+  const {
+    getPrep,
+    fetchPrepById,
+    readyPreps,
+    preppingPreps,
+    archivePrep,
+    retryPrep,
+    refresh,
+    upsertPrepRow,
+  } = usePrepHub();
+  const { getToken } = useAuth();
+  const markedOpenForId = useRef<string | null>(null);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   const [prep, setPrep] = useState<Prep | undefined>(undefined);
@@ -51,6 +62,21 @@ export default function PrepDetailScreen() {
       router.replace("/home");
     }
   }, [id]);
+
+  useEffect(() => {
+    if (id === undefined || !prep || prep.status !== "ready") return;
+    if (markedOpenForId.current === id) return;
+    markedOpenForId.current = id;
+    void (async () => {
+      try {
+        const row = await markPrepOpened(getToken, id);
+        upsertPrepRow(row);
+        setPrep(apiPrepToPrep(row));
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [id, prep?.id, prep?.status, getToken, upsertPrepRow]); // eslint-disable-line react-hooks/exhaustive-deps -- mark opened once per prep id
 
   useEffect(() => {
     if (id === undefined) return;
@@ -172,11 +198,25 @@ export default function PrepDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <PemText style={[styles.tag, { color: prepKindTagColor(prep.kind, resolved) }]}>
-          {prep.tag}
-        </PemText>
-        <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
-        <PemMarkdown>{prep.summary}</PemMarkdown>
+        <View style={styles.hero}>
+          <View style={styles.heroPemRow}>
+            <PemText style={[styles.pemMark, { color: colors.pemAmber }]}>Pem</PemText>
+            <PemText style={[styles.heroDot, { color: colors.textSecondary }]}>·</PemText>
+            <PemText style={[styles.heroKind, { color: colors.textSecondary }]}>
+              {prepKindCompanionLabel(prep.kind)}
+            </PemText>
+          </View>
+          {prep.kind !== "deep_research" ? (
+            <>
+              <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
+              <PemMarkdown variant="body">{prep.summary}</PemMarkdown>
+            </>
+          ) : (
+            <PemText style={[styles.researchWelcome, { color: colors.textSecondary }]}>
+              Take your time — everything below is yours to use.
+            </PemText>
+          )}
+        </View>
         {prep.status === "failed" ? (
           retrying ? (
             <ActivityIndicator style={{ alignSelf: "flex-start" }} color={colors.pemAmber} />
@@ -184,7 +224,6 @@ export default function PrepDetailScreen() {
             <PemButton onPress={() => void onRetry()}>Retry</PemButton>
           )
         ) : null}
-        <PrepDetailActivity prepId={prep.id} />
         <PrepDetailBody prep={prep} />
       </ScrollView>
     </View>
@@ -214,14 +253,34 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   scroll: {
-    gap: space[4],
+    gap: space[5],
     paddingTop: space[1],
   },
-  tag: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.xs,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
+  hero: {
+    gap: space[3],
+  },
+  heroPemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    flexWrap: "wrap",
+  },
+  pemMark: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize.sm,
+    letterSpacing: 0.3,
+  },
+  heroDot: {
+    fontSize: fontSize.sm,
+  },
+  heroKind: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.sm,
+  },
+  researchWelcome: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.md,
+    lineHeight: lh(fontSize.md, lineHeight.relaxed),
   },
   title: {
     fontFamily: fontFamily.display.semibold,
