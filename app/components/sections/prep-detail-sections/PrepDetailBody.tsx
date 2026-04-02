@@ -1,8 +1,10 @@
+import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import * as Clipboard from "expo-clipboard";
-import { Copy, FileText } from "lucide-react-native";
+import { openExternalUrl } from "@/lib/openExternalUrl";
+import { Copy, ExternalLink, FileText } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { Prep } from "../home-sections/homePrepData";
@@ -22,19 +24,52 @@ export default function PrepDetailBody({ prep }: Props) {
 
   return (
     <View style={styles.block}>
+      {prep.status === "prepping" ? (
+        <PemText style={[styles.intro, { color: colors.textSecondary }]}>
+          Pem&apos;s still working on this prep. It will move to Ready when you can act on it.
+        </PemText>
+      ) : null}
+
       {prep.detailIntro ? (
         <PemText style={[styles.intro, { color: colors.textSecondary }]}>{prep.detailIntro}</PemText>
       ) : null}
 
       {prep.kind === "options" && prep.options ? (
         <View style={styles.gap}>
-          {prep.options.map((o) => (
+          {prep.options.map((o, i) => (
             <View
-              key={o.label}
-              style={[styles.optionRow, { backgroundColor: colors.pageBackground, borderColor: colors.borderMuted }]}
+              key={`${o.label}-${i}`}
+              style={[styles.optionCard, { backgroundColor: colors.pageBackground, borderColor: colors.borderMuted }]}
             >
-              <PemText style={[styles.optLabel, { color: colors.textPrimary }]}>{o.label}</PemText>
-              <PemText style={[styles.optPrice, { color: colors.textSecondary }]}>{o.price}</PemText>
+              <View style={styles.optionTop}>
+                <View style={styles.optionTextCol}>
+                  <PemText style={[styles.optLabel, { color: colors.textPrimary }]}>{o.label}</PemText>
+                  {o.why ? (
+                    <View style={styles.whyBlock}>
+                      <PemMarkdown>{o.why}</PemMarkdown>
+                    </View>
+                  ) : null}
+                </View>
+                {o.price ? (
+                  <PemText style={[styles.optPrice, { color: colors.textSecondary }]}>{o.price}</PemText>
+                ) : null}
+              </View>
+              {o.url ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open link for ${o.label}`}
+                  onPress={() => void openExternalUrl(o.url!)}
+                  style={({ pressed }) => [
+                    styles.linkRow,
+                    { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted },
+                  ]}
+                >
+                  <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
+                    {o.url.replace(/^https?:\/\//, "")}
+                  </PemText>
+                </Pressable>
+              ) : null}
             </View>
           ))}
         </View>
@@ -54,7 +89,7 @@ export default function PrepDetailBody({ prep }: Props) {
                     : "Summary"}
             </PemText>
           </View>
-          <PemText style={[styles.bodyText, { color: colors.textSecondary }]}>{prep.body}</PemText>
+          <PemMarkdown>{prep.body}</PemMarkdown>
         </View>
       ) : null}
 
@@ -99,15 +134,39 @@ const styles = StyleSheet.create({
   gap: {
     gap: space[2],
   },
-  optionRow: {
+  optionCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  optionTop: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: space[3],
     paddingVertical: space[3],
     paddingHorizontal: space[3],
-    borderRadius: radii.md,
-    borderWidth: 1,
+  },
+  optionTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: space[2],
+  },
+  whyBlock: {
+    marginTop: 2,
+  },
+  linkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  linkText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.sans.medium,
   },
   optLabel: {
     flex: 1,
@@ -135,11 +194,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     letterSpacing: 0.3,
     textTransform: "uppercase",
-  },
-  bodyText: {
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.relaxed),
-    fontFamily: fontFamily.sans.regular,
   },
   draftShell: {
     borderRadius: radii.lg,

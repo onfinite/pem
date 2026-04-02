@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 /** Response shape for `GET /users/me`. */
 export class UserMeDto {
   @ApiProperty()
-  id!: number;
+  id!: string;
 
   @ApiProperty()
   clerk_id!: string;
@@ -12,8 +12,8 @@ export class UserMeDto {
   email!: string | null;
 
   @ApiProperty({ type: String, nullable: true })
-  full_name!: string | null;
+  name!: string | null;
 
-  @ApiProperty()
-  is_active!: boolean;
+  @ApiProperty({ type: String, nullable: true })
+  push_token!: string | null;
 }

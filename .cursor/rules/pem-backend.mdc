@@ -9,7 +9,7 @@ globs: backend/**
 
 **Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** session JWTs (**`jose`** + remote JWKS, issuer check), **Svix** webhook verification for `POST /webhooks/clerk`, **`@nestjs/throttler`** (global; **`@SkipThrottle()`** on the Clerk webhook controller), **`@nestjs/swagger`** (OpenAPI UI at `/docs`, disabled when `ENV === 'prod'`), **`ValidationPipe`** with **`class-validator`** + **`class-transformer`**. **Config** via **`@nestjs/config`** and **`src/config/configuration.ts`** (loads `.env`).
 
-**Intent:** Pem’s HTTP API — PostgreSQL tables `user`, `dump`, `prep`. Keep request/response shapes stable for the mobile client; document changes in OpenAPI and **`README.md`**.
+**Intent:** Pem’s HTTP API — PostgreSQL tables **`users`**, **`dumps`**, **`preps`** (UUID PKs). **BullMQ** + **Redis** queues prep jobs; **Vercel AI SDK** + **OpenAI** for classification and agents; **Tavily** for search; **Expo** push when a prep is ready. Keep request/response shapes stable for the mobile client; document changes in OpenAPI and **`README.md`**.
 
 **Layout:**
 
@@ -19,8 +19,14 @@ globs: backend/**
 | `src/database/schemas/*.schema.ts` | One Drizzle table per file |
 | `drizzle/` | Generated SQL migrations + `meta/` (commit with the repo) |
 | `src/database/database.module.ts` | `pg` `Pool` + `DRIZZLE` provider |
-| `src/users/` | `UserService` (Clerk upsert/delete), `UsersController` — `GET /users/me` |
-| `src/auth/` | `ClerkAuthGuard`, `CurrentUser` decorator |
+| `src/users/` | `UserService` (Clerk upsert/delete), `UsersController` — `GET /users/me`, push token |
+| `src/dumps/` | `POST /dumps`, `GET /dumps` — classify + enqueue prep jobs |
+| `src/preps/` | `GET /preps`, `GET /preps/:id`, `PATCH /preps/:id/archive` |
+| `src/queue/`, `src/prep-jobs/` | BullMQ `prep` queue + worker processor |
+| `src/agents/` | Classify + prep runners (search / research / options / draft) |
+| `src/push/` | Expo push notifications |
+| `src/integrations/` | Tavily |
+| `src/auth/` | `ClerkAuthGuard` (JWT verify + **JIT** `users` upsert when missing), `CurrentUser`, `clerk-jwt-profile.ts` |
 | `src/webhooks/` | `POST /webhooks/clerk` — Svix verify; syncs DB on **`user.created`** / **`user.updated`**, deletes on **`user.deleted`**; other events **200 OK but no DB write** (see logs) |
 | `src/health/` | `GET /health` |
 | `src/main.ts` | Creates app, calls **`configureApp()`**, listens on `PORT` |

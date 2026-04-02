@@ -66,11 +66,13 @@ export type Prep = {
   kind: PrepKind;
   /** Optional context shown at top of detail. */
   detailIntro?: string;
-  options?: { label: string; price: string }[];
+  options?: { label: string; price: string; url?: string; why?: string }[];
   /** Long findings / summary / comparison text. */
   body?: string;
   /** Paste-ready text for draft preps. */
   draftText?: string;
+  /** Set when preps are loaded from the API (not demo seeds). */
+  status?: "prepping" | "ready" | "archived";
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [

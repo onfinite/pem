@@ -1,14 +1,34 @@
 import HomePreppingList from "@/components/sections/home-sections/HomePreppingList";
 import PemText from "@/components/ui/PemText";
 import { PREPPING_FLOW_MAX_WIDTH } from "@/constants/layout";
+import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
+import { useFocusEffect } from "expo-router";
 import { Check } from "lucide-react-native";
-import { StyleSheet, View } from "react-native";
+import { useCallback } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 /** Post-dump acknowledgement + same in-flight rows as the hub Prepping tab; CTA is the screen footer. */
 export default function PreppingDumpFlow() {
   const { colors } = useTheme();
+  const { preppingPreps, loading, refresh } = usePrepHub();
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
+
+  const n = preppingPreps.length;
+  const sub =
+    loading && n === 0
+      ? "Loading your preps…"
+      : n === 0
+        ? "Nothing in flight yet — pull to refresh from Home, or wait a moment."
+        : n === 1
+          ? "1 prep in progress — it’ll land in Ready when you can act on it."
+          : `${n} preps in progress — they’ll land in Ready when you can act on them.`;
 
   return (
     <View style={styles.root}>
@@ -18,15 +38,19 @@ export default function PreppingDumpFlow() {
         </View>
         <PemText style={[styles.headline, { color: colors.textPrimary }]}>Pem’s got it.</PemText>
         <PemText variant="body" style={[styles.sub, { color: colors.textSecondary }]}>
-          Pem&apos;s on it — search, drafts, and options. Nothing&apos;s final until you open a prep.
+          {sub}
         </PemText>
       </View>
 
       <View style={styles.listSection}>
         <PemText variant="bodyMuted" style={[styles.listLabel, { color: colors.textSecondary }]}>
-          In flight
+          {n === 0 ? "In flight" : `In flight (${n})`}
         </PemText>
-        <HomePreppingList />
+        {loading && n === 0 ? (
+          <ActivityIndicator style={{ marginVertical: space[4] }} color={colors.pemAmber} />
+        ) : (
+          <HomePreppingList />
+        )}
       </View>
     </View>
   );

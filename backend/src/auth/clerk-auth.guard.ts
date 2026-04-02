@@ -1,14 +1,14 @@
 import {
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
   Injectable,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
+import { clerkProfileFromJwtPayload } from './clerk-jwt-profile';
 import { UserService } from '../users/user.service';
 
 @Injectable()
@@ -50,24 +50,24 @@ export class ClerkAuthGuard implements CanActivate {
       );
     }
 
-    let sub: string;
+    let payload: JWTPayload;
     try {
-      const { payload } = await jwtVerify(token, jwks, { issuer });
-      const claim = payload.sub;
-      if (typeof claim !== 'string' || !claim) {
-        throw new UnauthorizedException('Invalid token');
-      }
-      sub = claim;
+      const verified = await jwtVerify(token, jwks, { issuer });
+      payload = verified.payload;
     } catch {
       throw new UnauthorizedException('Invalid token');
     }
 
-    const user = await this.users.findByClerkId(sub);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
+    const claim = payload.sub;
+    if (typeof claim !== 'string' || !claim) {
+      throw new UnauthorizedException('Invalid token');
     }
-    if (!user.isActive) {
-      throw new ForbiddenException('User inactive');
+    const sub = claim;
+
+    let user = await this.users.findByClerkId(sub);
+    if (!user) {
+      const { email, name } = clerkProfileFromJwtPayload(payload);
+      user = await this.users.upsertUserFromClerk(sub, email, name);
     }
     req.user = user;
     return true;

@@ -4,6 +4,8 @@ import { ArrowUp, Keyboard as KeyboardIcon, Mic, Pause } from "lucide-react-nati
 import type { RefObject } from "react";
 import { Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
 
+import type { VoiceSpeechStatus } from "@/hooks/useVoiceSpeechRecognition";
+
 type BottomMode = "voice" | "type";
 
 type Props = {
@@ -15,6 +17,10 @@ type Props = {
   canSend: boolean;
   sendActive: boolean;
   onPrimarySend: () => void;
+  submitting?: boolean;
+  /** Voice: center mic starts / pauses listening */
+  voiceStatus?: VoiceSpeechStatus;
+  onVoiceCenterPress?: () => void;
 };
 
 export default function DumpBottomBar({
@@ -26,9 +32,13 @@ export default function DumpBottomBar({
   canSend,
   sendActive,
   onPrimarySend,
+  submitting = false,
+  voiceStatus = "idle",
+  onVoiceCenterPress,
 }: Props) {
   const { colors, resolved } = useTheme();
   const ctrlSurface = resolved === "dark" ? colors.secondarySurface : colors.cardBackground;
+  const voiceListening = voiceStatus === "listening";
 
   return (
     <View style={styles.bottom}>
@@ -63,22 +73,26 @@ export default function DumpBottomBar({
           ]}
         >
           {bottomMode === "voice" ? (
-            <View style={styles.voiceMiddlePauseOnly}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Pause"
-                style={({ pressed }) => [
-                  styles.pauseBtn,
-                  {
-                    backgroundColor: ctrlSurface,
-                    borderColor: colors.borderMuted,
-                    opacity: pressed ? 0.9 : 1,
-                  },
-                ]}
-              >
-                <Pause size={20} color={colors.textPrimary} strokeWidth={2} />
-              </Pressable>
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                voiceListening ? "Pause listening" : "Start or resume voice capture"
+              }
+              onPress={onVoiceCenterPress}
+              disabled={submitting}
+              style={({ pressed }) => [
+                styles.voiceCenterTap,
+                {
+                  opacity: submitting ? 0.5 : pressed ? 0.88 : 1,
+                },
+              ]}
+            >
+              {voiceListening ? (
+                <Pause size={28} color={colors.pemAmber} strokeWidth={2.25} />
+              ) : (
+                <Mic size={28} color={colors.pemAmber} strokeWidth={2.25} />
+              )}
+            </Pressable>
           ) : (
             <TextInput
               ref={draftInputRef}
@@ -98,17 +112,16 @@ export default function DumpBottomBar({
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={bottomMode === "voice" ? "Done" : "Send to Pem"}
+          accessibilityLabel="Send dump to Pem"
           onPress={onPrimarySend}
-          disabled={bottomMode === "type" && !canSend}
+          disabled={submitting || !canSend}
           style={({ pressed }) => [
             styles.ctrlCircle,
             styles.sendCircle,
             {
               backgroundColor: sendActive ? colors.pemAmber : ctrlSurface,
               borderColor: sendActive ? colors.pemAmber : colors.borderMuted,
-              opacity:
-                bottomMode === "type" && !canSend ? 0.55 : pressed ? 0.92 : 1,
+              opacity: submitting || !canSend ? 0.55 : pressed ? 0.92 : 1,
             },
           ]}
         >
@@ -143,31 +156,24 @@ const styles = StyleSheet.create({
   },
   middleSlot: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 52,
     maxHeight: 88,
     borderRadius: radii.full,
     borderWidth: 1,
     justifyContent: "center",
+    alignItems: "center",
     paddingVertical: space[1],
     paddingHorizontal: space[2],
   },
-  voiceMiddlePauseOnly: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 40,
-  },
-  pauseBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
+  voiceCenterTap: {
+    width: "100%",
+    minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   middleInput: {
     flex: 1,
+    width: "100%",
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.md,
     lineHeight: lh(fontSize.md, lineHeight.normal),

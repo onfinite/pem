@@ -1,19 +1,22 @@
+import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import PemText from "@/components/ui/PemText";
+import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme, type ThemeSemantic } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
-import { PREPPING_ROWS, prepKindTagColor } from "./homePrepData";
+import { prepKindTagColor } from "./homePrepData";
 
 function PreppingRow({
-  row,
+  prep,
   colors,
   resolved,
 }: {
-  row: (typeof PREPPING_ROWS)[number];
+  prep: Prep;
   colors: ThemeSemantic;
   resolved: "light" | "dark";
 }) {
-  const subColor = prepKindTagColor(row.kind, resolved);
+  const subColor = prepKindTagColor(prep.kind, resolved);
+  const Icon = prep.Icon;
   return (
     <View
       style={[
@@ -34,12 +37,12 @@ function PreppingRow({
       ]}
     >
       <View style={[styles.preppingIconWell, { backgroundColor: colors.secondarySurface }]}>
-        <row.Icon size={18} stroke={colors.textSecondary} strokeWidth={2} />
+        <Icon size={18} stroke={colors.textSecondary} strokeWidth={2} />
       </View>
       <View style={styles.preppingRowBody}>
-        <PemText style={[styles.preppingRowSub, { color: subColor }]}>{row.subtitle}</PemText>
+        <PemText style={[styles.preppingRowSub, { color: subColor }]}>{prep.tag}</PemText>
         <PemText style={[styles.preppingRowTitle, { color: colors.textPrimary }]} numberOfLines={2}>
-          {row.title}
+          {prep.title}
         </PemText>
       </View>
       <View style={styles.preppingSpinner}>
@@ -51,10 +54,11 @@ function PreppingRow({
 
 export default function HomePreppingList() {
   const { colors, resolved } = useTheme();
+  const { preppingPreps } = usePrepHub();
   return (
     <View style={styles.preppingList}>
-      {PREPPING_ROWS.map((row) => (
-        <PreppingRow key={row.id} row={row} colors={colors} resolved={resolved} />
+      {preppingPreps.map((prep) => (
+        <PreppingRow key={prep.id} prep={prep} colors={colors} resolved={resolved} />
       ))}
     </View>
   );

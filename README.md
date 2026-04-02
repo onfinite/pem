@@ -63,6 +63,7 @@ Expo Router groups can separate **concerns** without requiring **tabs**:
 - **Blur / glass:** `expo-blur` (`BlurView`) — use when you want frosted chrome; **`/home`** uses a solid **`HomeTopBar`** + dock
 - **Theme:** `contexts/ThemeContext.tsx` — **light / dark / system**, persisted with **`@react-native-async-storage/async-storage`**. `useTheme()` supplies semantic colors (see `ThemeSemantic`); root `StatusBar` follows resolved scheme.
 - **Clerk** (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in `app/.env`) — root layout: splash + fonts, then `ClerkProvider` + `<Slot />`. Sign-in is **OAuth only** on `/welcome` (**Google** + **Apple**) via `useSSO` from `@clerk/expo` with **`expo-auth-session`** + **`expo-web-browser`**. In the [Clerk dashboard](https://dashboard.clerk.com), enable **Google** and **Apple** SSO providers and add the redirect URL your app uses (see Clerk’s Expo / OAuth docs).
+- **API** — set **`EXPO_PUBLIC_API_URL`** to the NestJS base URL (no trailing slash), e.g. `http://127.0.0.1:8000` with the backend running locally. In development, if this points at loopback but Metro is on a **LAN IP** (physical device), the app resolves the API to **`http://<metro-host>:8000`** automatically. Physical devices otherwise need your machine’s LAN IP or a deployed API URL. The hub and dump flow use **`POST /dumps`** (text), **`POST /dumps/audio`** (voice → Whisper on the server), **`GET /preps`**, **`PATCH /preps/:id/archive`**, and **`GET /preps/:id`** with the Clerk session token.
 
 **Routes (file-based under `app/app/`):**
 
@@ -98,7 +99,11 @@ npm install
 npm run start:dev
 ```
 
-Configure **`.env`** in `backend/` (see `backend/.env.example`). Required: **`DATABASE_URL`** (or **`DATABASE_URL_SYNC`**) and, for Clerk-backed routes and webhooks, **`CLERK_JWKS_URL`**, **`CLERK_JWT_ISSUER`**, **`CLERK_WEBHOOK_SECRET`**. Optional: **`PORT`** (default `8000`), **`ALLOWED_ORIGINS`** (comma-separated), **`ENV`**.
+Configure **`.env`** in `backend/` (see `backend/.env.example`). Required: **`DATABASE_URL`** (or **`DATABASE_URL_SYNC`**), **`REDIS_URL`** (BullMQ prep workers), **`OPENAI_API_KEY`**, and for Clerk-backed routes and webhooks **`CLERK_JWKS_URL`**, **`CLERK_JWT_ISSUER`**, **`CLERK_WEBHOOK_SECRET`**. Use **`TAVILY_API_KEY`** for web search in prep agents. Optional: **`PORT`** (default `8000`), **`ALLOWED_ORIGINS`** (comma-separated), **`ENV`**, **`OPENAI_MODEL`**, **`AGENT_MAX_STEPS`**.
+
+**Clerk users in Postgres:** The API **creates a `users` row on first authenticated request** from claims in the session JWT (`sub`, and `email` / `name` when present). The Clerk webhook still syncs updates; you can also add **`email`** / **`name`** to your session token template in Clerk for richer first inserts.
+
+**Voice on mobile:** Live captions use the OS **speech recognizer** (`expo-speech-recognition`); that text is sent like a typed dump via **`POST /dumps`**. **OpenAI Whisper** on the server is for **`POST /dumps/audio`** (recorded file → transcribe) and is not real-time. After adding the speech plugin, run a **development build** (`npx expo prebuild` / `expo run:ios` / `expo run:android`) — **Expo Go** may not include custom native modules.
 
 Database migrations: **Drizzle Kit** — see **`backend/README.md`** (`db:generate`, `db:migrate`).
 

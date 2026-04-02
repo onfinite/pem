@@ -1,39 +1,110 @@
+import PrepDetailActivity from "@/components/sections/prep-detail-sections/PrepDetailActivity";
 import PrepDetailBody from "@/components/sections/prep-detail-sections/PrepDetailBody";
+import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import { prepKindTagColor } from "@/components/sections/home-sections/homePrepData";
+import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Archive, X } from "lucide-react-native";
-import { useEffect } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /** Full prep content — close returns to hub. */
 export default function PrepDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const { getPrep, readyPreps, archivePrep } = usePrepHub();
+  const raw = useLocalSearchParams<{ id: string | string[] }>().id;
+  const id = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
+  const { getPrep, fetchPrepById, readyPreps, preppingPreps, archivePrep, refresh } = usePrepHub();
   const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const prep = typeof id === "string" ? getPrep(id) : undefined;
+  const [prep, setPrep] = useState<Prep | undefined>(undefined);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  useEffect(() => {
-    if (typeof id === "string" && !getPrep(id)) {
-      router.replace("/home");
-    }
+  const syncFromHub = useCallback(() => {
+    if (id === undefined) return;
+    const p = getPrep(id);
+    if (p) setPrep(p);
   }, [id, getPrep]);
 
-  if (!prep) {
+  useEffect(() => {
+    syncFromHub();
+  }, [syncFromHub]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+      if (id !== undefined) {
+        void fetchPrepById(id);
+      }
+    }, [refresh, fetchPrepById, id]),
+  );
+
+  useEffect(() => {
+    if (id === undefined) {
+      router.replace("/home");
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (id === undefined) return;
+    const prepId = id;
+    let cancelled = false;
+    async function load() {
+      const local = getPrep(prepId);
+      if (local) {
+        setPrep(local);
+        return;
+      }
+      const fetched = await fetchPrepById(prepId);
+      if (cancelled) return;
+      if (fetched) {
+        setPrep(fetched);
+        return;
+      }
+      setLoadFailed(true);
+      router.replace("/home");
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, getPrep, fetchPrepById]);
+
+  if (id === undefined) {
     return null;
   }
 
-  const canArchive = readyPreps.some((p) => p.id === prep.id);
+  if (loadFailed) {
+    return null;
+  }
 
-  const onArchive = () => {
-    archivePrep(prep.id);
-    router.back();
+  if (!prep) {
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: colors.pageBackground }]}>
+        <ActivityIndicator style={{ marginTop: space[8] }} color={colors.pemAmber} />
+      </View>
+    );
+  }
+
+  const canArchive =
+    prep.status !== "archived" &&
+    (prep.status === "ready" ||
+      prep.status === "prepping" ||
+      (!prep.status &&
+        (readyPreps.some((p) => p.id === prep.id) ||
+          preppingPreps.some((p) => p.id === prep.id))));
+
+  const onArchive = async () => {
+    try {
+      await archivePrep(prep.id);
+      router.back();
+    } catch {
+      /* hub refresh will surface errors on next poll */
+    }
   };
 
   return (
@@ -55,7 +126,7 @@ export default function PrepDetailScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Archive ${prep.title}`}
-            onPress={onArchive}
+            onPress={() => void onArchive()}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={({ pressed }) => [
               styles.headerCtrl,
@@ -88,6 +159,8 @@ export default function PrepDetailScreen() {
           {prep.tag}
         </PemText>
         <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
+        <PemMarkdown>{prep.summary}</PemMarkdown>
+        <PrepDetailActivity prepId={prep.id} />
         <PrepDetailBody prep={prep} />
       </ScrollView>
     </View>

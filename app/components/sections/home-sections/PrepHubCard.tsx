@@ -1,3 +1,4 @@
+import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
@@ -82,9 +83,9 @@ export default function PrepHubCard({
           <PemText style={[styles.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>
             {prep.title}
           </PemText>
-          <PemText style={[styles.summary, { color: colors.textSecondary }]} numberOfLines={3}>
-            {prep.summary}
-          </PemText>
+          <View style={styles.summaryClamp}>
+            <PemMarkdown variant="card">{prep.summary}</PemMarkdown>
+          </View>
         </View>
         <ChevronRight
           size={20}
@@ -138,10 +139,9 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     lineHeight: lh(fontSize.lg, lineHeight.snug),
   },
-  summary: {
-    fontSize: fontSize.sm,
-    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
-    fontFamily: fontFamily.sans.regular,
+  summaryClamp: {
     marginTop: space[1],
+    maxHeight: 78,
+    overflow: "hidden",
   },
 });

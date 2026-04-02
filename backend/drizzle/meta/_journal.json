@@ -8,6 +8,20 @@
       "when": 1775088656698,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775088656700,
+      "tag": "0001_pem_uuid",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775088656800,
+      "tag": "0002_prep_run_logs",
+      "breakpoints": true
     }
   ]
 }

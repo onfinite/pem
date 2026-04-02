@@ -9,11 +9,10 @@ export type AppConfig = {
   };
   cors: { origins: string[] };
   tavily: { apiKey: string | undefined };
-  openai: { apiKey: string | undefined };
-  sentry: { dsn: string | undefined };
-  defaultRateLimit: string | undefined;
-  maxRequestSize: string | undefined;
+  openai: { apiKey: string | undefined; model: string };
   redisUrl: string | undefined;
+  /** Max tool/steps for agentic flows (classification uses structured output, not steps). */
+  agentMaxSteps: number;
 };
 
 export default (): AppConfig => {
@@ -43,12 +42,9 @@ export default (): AppConfig => {
     },
     openai: {
       apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
     },
-    sentry: {
-      dsn: process.env.SENTRY_SDK_DSN,
-    },
-    defaultRateLimit: process.env.DEFAULT_RATE_LIMIT,
-    maxRequestSize: process.env.MAX_REQUEST_SIZE,
     redisUrl: process.env.REDIS_URL,
+    agentMaxSteps: Number.parseInt(process.env.AGENT_MAX_STEPS ?? '8', 10),
   };
 };

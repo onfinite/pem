@@ -12,11 +12,7 @@ import {
   TOP_ICON_CHIP,
   glassChromeBorder,
 } from "@/components/sections/home-sections/homeLayout";
-import {
-  SHOW_PREPPING_HUB_ROWS,
-  SHOW_SAMPLE_PREPS,
-  type PrepTab,
-} from "@/components/sections/home-sections/homePrepData";
+import type { PrepTab } from "@/components/sections/home-sections/homePrepData";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
@@ -27,7 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 /** Preps hub — settings in top bar, tab dock, Ready / Prepping / Archived. */
 export default function HomeScreen() {
   const { colors, resolved } = useTheme();
-  const { readyPreps } = usePrepHub();
+  const { readyPreps, preppingPreps, archivedPreps } = usePrepHub();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<PrepTab>("ready");
   const glassBorder = glassChromeBorder(resolved);
@@ -39,24 +35,33 @@ export default function HomeScreen() {
   /** Matches header height + a little gap so the first block isn’t tight to the bar. */
   const scrollTopPad =
     insets.top + TOP_BAR_ROW_PAD * 2 + TOP_ICON_CHIP + space[1] + space[3];
-  const hasPreps = SHOW_SAMPLE_PREPS && readyPreps.length > 0;
+  const hasPreps = readyPreps.length > 0;
+  const hasPrepping = preppingPreps.length > 0;
+  const nReady = readyPreps.length;
+  const nPrepping = preppingPreps.length;
+  const nArchived = archivedPreps.length;
 
   const pageHead =
     tab === "ready"
       ? {
           title: "Preps",
           sub: hasPreps
-            ? "Your prep work, ready."
+            ? `${nReady} ready — open when you want to act.`
             : "Dump voice or text first. Preps land here when they’re ready to open.",
         }
       : tab === "prepping"
         ? {
             title: "Prepping",
-            sub: "Pem’s on it — moves to Ready when done.",
+            sub: hasPrepping
+              ? `${nPrepping} in progress — moves to Ready when done.`
+              : "Nothing in the queue. New dumps show up here while Pem works.",
           }
         : {
             title: "Archived",
-            sub: "Finished or dismissed — still here if you need to look back.",
+            sub:
+              nArchived > 0
+                ? `${nArchived} archived — still here if you need to look back.`
+                : "Finished or dismissed — still here if you need to look back.",
           };
 
   return (
@@ -73,8 +78,8 @@ export default function HomeScreen() {
 
         {tab === "ready" && !hasPreps ? <HomeReadyEmpty /> : null}
         {tab === "ready" && hasPreps ? <HomeReadyPrepsList resolved={resolved} /> : null}
-        {tab === "prepping" && SHOW_PREPPING_HUB_ROWS ? <HomePreppingList /> : null}
-        {tab === "prepping" && !SHOW_PREPPING_HUB_ROWS ? <HomePreppingEmpty /> : null}
+        {tab === "prepping" && hasPrepping ? <HomePreppingList /> : null}
+        {tab === "prepping" && !hasPrepping ? <HomePreppingEmpty /> : null}
         {tab === "archived" ? <HomeArchivedList resolved={resolved} /> : null}
       </ScrollView>
 

@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -9,11 +9,15 @@ import {
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow } from '../database/schemas';
+import { PushTokenDto } from './dto/push-token.dto';
 import { UserMeDto } from './dto/user-me.dto';
+import { UserService } from './user.service';
 
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
+  constructor(private readonly users: UserService) {}
+
   @Get('me')
   @UseGuards(ClerkAuthGuard)
   @ApiBearerAuth('clerk')
@@ -23,7 +27,6 @@ export class UsersController {
     status: 401,
     description: 'Invalid or missing token / user not found',
   })
-  @ApiResponse({ status: 403, description: 'User inactive' })
   @ApiResponse({
     status: 503,
     description: 'Clerk JWT not configured on server',
@@ -33,8 +36,20 @@ export class UsersController {
       id: user.id,
       clerk_id: user.clerkId,
       email: user.email,
-      full_name: user.fullName,
-      is_active: user.isActive,
+      name: user.name,
+      push_token: user.pushToken,
     };
+  }
+
+  @Patch('me/push-token')
+  @UseGuards(ClerkAuthGuard)
+  @ApiBearerAuth('clerk')
+  @ApiOperation({ summary: 'Save or clear Expo push token' })
+  async setPushToken(
+    @CurrentUser() user: UserRow,
+    @Body() body: PushTokenDto,
+  ): Promise<{ ok: true }> {
+    await this.users.setPushToken(user.id, body.token ?? null);
+    return { ok: true };
   }
 }

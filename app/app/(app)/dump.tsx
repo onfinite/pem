@@ -3,12 +3,18 @@ import DumpCloseBar from "@/components/sections/dump-sections/DumpCloseBar";
 import DumpMainStage from "@/components/sections/dump-sections/DumpMainStage";
 import { amber, surfacePage } from "@/constants/theme";
 import { space } from "@/constants/typography";
+import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useVoiceSpeechRecognition } from "@/hooks/useVoiceSpeechRecognition";
+import { createDump } from "@/lib/pemApi";
+import { useAuth } from "@clerk/expo";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -30,15 +36,59 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-/** Voice / text capture — full-bleed gradient; Done or Send → prepping flow. */
+/**
+ * Voice: device speech-to-text (live captions) → same `POST /dumps` as typing.
+ * Server Whisper is not real-time; optional `/dumps/audio` remains for file uploads.
+ */
 export default function DumpScreen() {
   const insets = useSafeAreaInsets();
   const { colors, resolved } = useTheme();
+  const { getToken } = useAuth();
+  const { refresh: refreshPreps } = usePrepHub();
   const [bottomMode, setBottomMode] = useState<BottomMode>("voice");
   const [draft, setDraft] = useState("");
-  const trimmed = draft.trim();
-  const canSend = trimmed.length > 0;
+  const [interim, setInterim] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const trimmedType = draft.trim();
+  const canSendType = trimmedType.length > 0;
   const draftInputRef = useRef<TextInput>(null);
+
+  const voiceDisplay = useMemo(() => {
+    const i = interim.trim();
+    if (!i) return draft;
+    const base = draft.trimEnd();
+    return base ? `${base} ${i}` : i;
+  }, [draft, interim]);
+
+  const textToSend = useMemo(() => {
+    const i = interim.trim();
+    const d = draft.trim();
+    if (!i) return d;
+    return d ? `${d} ${i}` : i;
+  }, [draft, interim]);
+
+  const {
+    status: voiceStatus,
+    start: voiceStart,
+    pause: voicePause,
+    resume: voiceResume,
+    abort: voiceAbort,
+  } = useVoiceSpeechRecognition({
+    onInterim: setInterim,
+    onFinal: (t) => {
+      const add = t.trim();
+      if (!add) return;
+      setDraft((d) => (d.trim() ? `${d.trim()} ${add}` : add));
+      setInterim("");
+    },
+    onError: (m) => Alert.alert("Voice", m),
+  });
+
+  useEffect(() => {
+    return () => {
+      voiceAbort();
+    };
+  }, [voiceAbort]);
 
   const gradientColors = useMemo(
     (): readonly [string, string, string] =>
@@ -73,19 +123,67 @@ export default function DumpScreen() {
 
   const waveInactive = colors.border;
 
-  const goNext = useCallback(() => {
-    router.replace("/prepping");
+  const submitDump = useCallback(async () => {
+    const payload = bottomMode === "voice" ? textToSend.trim() : draft.trim();
+    if (!payload || submitting) return;
+    if (bottomMode === "voice" && voiceStatus === "listening") {
+      voicePause();
+    }
+    setSubmitting(true);
+    try {
+      await createDump(getToken, payload);
+      await refreshPreps();
+      router.replace("/prepping");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Something went wrong.";
+      Alert.alert("Couldn’t send dump", msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    bottomMode,
+    textToSend,
+    draft,
+    submitting,
+    voiceStatus,
+    voicePause,
+    getToken,
+    refreshPreps,
+  ]);
+
+  const onVoiceTranscriptChange = useCallback((t: string) => {
+    setInterim("");
+    setDraft(t);
   }, []);
 
-  const onPrimarySend = useCallback(() => {
-    if (bottomMode === "voice") {
-      goNext();
+  const onVoiceCenterPress = useCallback(async () => {
+    if (voiceStatus === "idle") {
+      await voiceStart();
       return;
     }
-    if (canSend) goNext();
-  }, [bottomMode, canSend, goNext]);
+    if (voiceStatus === "listening") {
+      voicePause();
+      return;
+    }
+    await voiceResume();
+  }, [voiceStatus, voiceStart, voicePause, voiceResume]);
 
-  const sendActive = bottomMode === "voice" ? true : canSend;
+  const onToggleMode = useCallback(() => {
+    setBottomMode((prev) => {
+      if (prev === "voice") {
+        voiceAbort();
+        setInterim("");
+      }
+      return prev === "voice" ? "type" : "voice";
+    });
+  }, [voiceAbort]);
+
+  const onPrimarySend = useCallback(() => {
+    void submitDump();
+  }, [submitDump]);
+
+  const canSend = bottomMode === "voice" ? textToSend.trim().length > 0 : canSendType;
+  const sendActive = !submitting && canSend;
 
   return (
     <KeyboardAvoidingView
@@ -105,22 +203,34 @@ export default function DumpScreen() {
               <DumpCloseBar />
             </View>
 
+            {submitting ? (
+              <View style={styles.submittingOverlay} accessibilityLabel="Sending dump">
+                <ActivityIndicator size="large" color={colors.pemAmber} />
+              </View>
+            ) : null}
+
             <DumpMainStage
               bottomMode={bottomMode}
               pemAmber={colors.pemAmber}
               waveInactive={waveInactive}
+              voiceTranscript={bottomMode === "voice" ? voiceDisplay : ""}
+              onVoiceTranscriptChange={onVoiceTranscriptChange}
+              voiceListening={bottomMode === "voice" && voiceStatus === "listening"}
             />
 
             <View style={{ paddingBottom: Math.max(insets.bottom, space[4]) }}>
               <DumpBottomBar
                 bottomMode={bottomMode}
-                onToggleMode={() => setBottomMode(bottomMode === "voice" ? "type" : "voice")}
+                onToggleMode={onToggleMode}
                 draft={draft}
                 onDraftChange={setDraft}
                 draftInputRef={draftInputRef}
                 canSend={canSend}
                 sendActive={sendActive}
                 onPrimarySend={onPrimarySend}
+                submitting={submitting}
+                voiceStatus={bottomMode === "voice" ? voiceStatus : "idle"}
+                onVoiceCenterPress={() => void onVoiceCenterPress()}
               />
             </View>
           </View>
@@ -139,5 +249,11 @@ const styles = StyleSheet.create({
   },
   sheetInner: {
     flex: 1,
+  },
+  submittingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
   },
 });

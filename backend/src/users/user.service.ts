@@ -4,12 +4,7 @@ import { eq } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
-import {
-  dumpTable,
-  prepTable,
-  userTable,
-  type UserRow,
-} from '../database/schemas';
+import { usersTable, type UserRow } from '../database/schemas';
 
 @Injectable()
 export class UserService {
@@ -20,8 +15,8 @@ export class UserService {
   async findByClerkId(clerkId: string): Promise<UserRow | undefined> {
     const rows = await this.db
       .select()
-      .from(userTable)
-      .where(eq(userTable.clerkId, clerkId))
+      .from(usersTable)
+      .where(eq(usersTable.clerkId, clerkId))
       .limit(1);
     return rows[0];
   }
@@ -29,8 +24,8 @@ export class UserService {
   async findByEmail(email: string): Promise<UserRow | undefined> {
     const rows = await this.db
       .select()
-      .from(userTable)
-      .where(eq(userTable.email, email))
+      .from(usersTable)
+      .where(eq(usersTable.email, email))
       .limit(1);
     return rows[0];
   }
@@ -38,31 +33,29 @@ export class UserService {
   async upsertUserFromClerk(
     clerkId: string,
     email: string | null,
-    fullName: string | null,
+    name: string | null,
   ): Promise<UserRow> {
     const existing = await this.findByClerkId(clerkId);
     if (existing) {
       let changed = false;
       let nextEmail = existing.email;
-      let nextFullName = existing.fullName;
+      let nextName = existing.name;
       if (email !== null && existing.email !== email) {
         nextEmail = email;
         changed = true;
       }
-      if (fullName !== null && existing.fullName !== fullName) {
-        nextFullName = fullName;
+      if (name !== null && existing.name !== name) {
+        nextName = name;
         changed = true;
       }
       if (changed) {
-        const now = new Date();
         const [updated] = await this.db
-          .update(userTable)
+          .update(usersTable)
           .set({
             email: nextEmail ?? null,
-            fullName: nextFullName ?? null,
-            updatedAt: now,
+            name: nextName ?? null,
           })
-          .where(eq(userTable.id, existing.id))
+          .where(eq(usersTable.id, existing.id))
           .returning();
         return updated;
       }
@@ -72,33 +65,26 @@ export class UserService {
     if (email) {
       const byEmail = await this.findByEmail(email);
       if (byEmail && byEmail.clerkId !== clerkId) {
-        const now = new Date();
         const [relinked] = await this.db
-          .update(userTable)
+          .update(usersTable)
           .set({
             clerkId,
-            fullName: fullName !== null ? fullName : byEmail.fullName,
-            updatedAt: now,
+            name: name !== null ? name : byEmail.name,
           })
-          .where(eq(userTable.id, byEmail.id))
+          .where(eq(usersTable.id, byEmail.id))
           .returning();
         this.log.log(`user_relinked_clerk_id ${clerkId}`);
         return relinked;
       }
     }
 
-    const now = new Date();
     try {
       const [created] = await this.db
-        .insert(userTable)
+        .insert(usersTable)
         .values({
           clerkId,
           email,
-          fullName,
-          isActive: true,
-          userData: {},
-          createdAt: now,
-          updatedAt: now,
+          name,
         })
         .returning();
       return created;
@@ -106,20 +92,18 @@ export class UserService {
       if (e instanceof DatabaseError && e.code === '23505') {
         const race = await this.findByClerkId(clerkId);
         if (race) {
-          return this.upsertUserFromClerk(clerkId, email, fullName);
+          return this.upsertUserFromClerk(clerkId, email, name);
         }
         if (email) {
           const again = await this.findByEmail(email);
           if (again) {
-            const relNow = new Date();
             const [relinked] = await this.db
-              .update(userTable)
+              .update(usersTable)
               .set({
                 clerkId,
-                fullName: fullName !== null ? fullName : again.fullName,
-                updatedAt: relNow,
+                name: name !== null ? name : again.name,
               })
-              .where(eq(userTable.id, again.id))
+              .where(eq(usersTable.id, again.id))
               .returning();
             this.log.log(`user_relinked_clerk_id_after_race ${clerkId}`);
             return relinked;
@@ -136,12 +120,14 @@ export class UserService {
     if (!user) {
       return false;
     }
-
-    await this.db.transaction(async (tx) => {
-      await tx.delete(prepTable).where(eq(prepTable.userId, user.id));
-      await tx.delete(dumpTable).where(eq(dumpTable.userId, user.id));
-      await tx.delete(userTable).where(eq(userTable.id, user.id));
-    });
+    await this.db.delete(usersTable).where(eq(usersTable.id, user.id));
     return true;
+  }
+
+  async setPushToken(userId: string, token: string | null): Promise<void> {
+    await this.db
+      .update(usersTable)
+      .set({ pushToken: token })
+      .where(eq(usersTable.id, userId));
   }
 }
