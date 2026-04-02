@@ -1,6 +1,6 @@
 # Pem
 
-Monorepo for the Pem product: a mobile client and a backend API. The **`app/`** and **`api/`** trees are separate packages (no shared runtime code between them).
+Monorepo for the Pem product: a mobile client and HTTP API. The **`app/`** and **`backend/`** trees are separate packages (no shared runtime code between them).
 
 **Brand & color reference:** see **`brand/pem-brand.html`** (open in a browser) and **`brand/README.md`**. The mobile app maps these to `app/constants/theme.ts` and `app/constants/typography.ts`; when in doubt about palette, type, or voice, check the brand kit first.
 
@@ -86,27 +86,25 @@ npm start
 
 Lint: `npm run lint`. More Expo notes live in `app/README.md`.
 
-## `api/` — HTTP API
+## `backend/` — HTTP API (NestJS + Drizzle)
 
-- **Python** ≥ 3.13, **FastAPI**, **SQLModel**, **Alembic** (PostgreSQL)
-- **Redis**, **arq** (async jobs), **structlog**, **slowapi** (rate limits), **Sentry**
-- **Clerk:** session JWT verification (**JWKS** + `python-jose`) and **`user.created` / `user.deleted`** webhooks (**Svix**); optional env vars in `api/app/core/config.py` (`clerk_webhook_secret`, `clerk_jwks_url`, `clerk_jwt_issuer`)
+- **Node**, **NestJS**, **Drizzle ORM** (PostgreSQL via `pg`), **Clerk** (JWT via **jose** + JWKS, webhooks via **Svix**), **`@nestjs/throttler`**, **OpenAPI** (**Swagger UI** at `/docs` when **`ENV` ≠ `prod`**)
 
 **Develop**
 
 ```bash
-cd api
-uv sync
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd backend
+npm install
+npm run start:dev
 ```
 
-Configure a **`.env`** in `api/` (fields are defined in `api/app/core/config.py`). At minimum you will need values for `database_url`, `database_url_sync`, `redis_url`, `openai_api_key`, and `sentry_sdk_dsn` (plus any others required by settings). For Clerk-backed routes and webhooks, also set **`clerk_jwks_url`** (Clerk Frontend API JWKS URL, ending in `/.well-known/jwks.json`), **`clerk_jwt_issuer`** (must match the JWT `iss` claim for your Clerk instance), and **`clerk_webhook_secret`** (Svix signing secret from the Clerk dashboard webhook endpoint).
+Configure **`.env`** in `backend/` (see `backend/.env.example`). Required: **`DATABASE_URL`** (or **`DATABASE_URL_SYNC`**) and, for Clerk-backed routes and webhooks, **`CLERK_JWKS_URL`**, **`CLERK_JWT_ISSUER`**, **`CLERK_WEBHOOK_SECRET`**. Optional: **`PORT`** (default `8000`), **`ALLOWED_ORIGINS`** (comma-separated), **`ENV`**.
 
-Database migrations: **Alembic** under `api/migrations/`.
+Database migrations: **Drizzle Kit** — see **`backend/README.md`** (`db:generate`, `db:migrate`).
 
 ## Documentation and Cursor rules
 
-**This `README.md`** is the **source of truth** for project documentation that humans read first (what lives where, how to run things, stack summary, env expectations). When you change stacks, setup, or contributor workflow, **update this file in the same change**—do not rely only on code or AI rules.
+**This `README.md`** is the **source of truth** for project documentation that humans read first (stack, layout, how to run things, env expectations). When you change stacks, setup, or contributor workflow, **update this file in the same change**—do not rely only on code or AI rules.
 
 Cursor rules in **`.cursor/rules/`** capture the same facts for agents, plus coding conventions:
 
@@ -114,7 +112,7 @@ Cursor rules in **`.cursor/rules/`** capture the same facts for agents, plus cod
 |------|--------|
 | `pem-project.mdc` | Monorepo layout, stacks, README + rules maintenance, collaboration norms |
 | `pem-app.mdc` | Expo / React Native / UI patterns |
-| `pem-api.mdc` | FastAPI / DB / routers / middleware |
+| `pem-backend.mdc` | NestJS backend (`backend/`) — Drizzle, Clerk, modules |
 
 When you add **packages**, **dependencies**, or **new patterns**, update **both** this README (if contributors need to know) **and** the relevant `.mdc` files so documentation and tooling stay aligned.
 
