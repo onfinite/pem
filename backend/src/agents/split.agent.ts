@@ -4,6 +4,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 
+import { buildSplitTranscriptPrompt } from './prompts/split-transcript.prompt';
+
 const thoughtEl = z.object({
   thought: z.string().min(1).max(400),
 });
@@ -33,17 +35,7 @@ export class SplitAgent {
         name: 'thoughts',
         description: 'Distinct actionable thoughts from the dump',
       }),
-      prompt: `Extract separate actionable thoughts from this brain dump. Each thought should be one concrete thing the user wants done (task, decision, research, draft, purchase, etc.).
-
-Rules:
-- Prefer multiple thoughts only when the user clearly mixed unrelated asks (e.g. cancel gym AND sell car AND email landlord).
-- If it is one coherent ask with constraints, return exactly ONE thought.
-- Titles: short, no markdown.
-
-Dump:
-"""
-${transcript.slice(0, 12_000)}
-"""`,
+      prompt: buildSplitTranscriptPrompt(transcript),
     });
 
     const list = output ?? [];

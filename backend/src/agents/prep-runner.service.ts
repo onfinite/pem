@@ -7,6 +7,8 @@ import { and, eq } from 'drizzle-orm';
 import { createPrepAgentTools } from './agent-tools/prep-tools.factory';
 import { buildPrepAgentSystemPrompt } from './prompts/prep-agent.system';
 import { buildStructuredFormatterPrompt } from './prompts/prep-structured.prompt';
+import { buildPrepUserPrompt } from './prompts/prep-user.prompt';
+import { appendPrepAgentStep } from './prep-runner-step';
 import { structureSchema } from './schemas/prep-result.schema';
 
 import { DRIZZLE } from '../database/database.constants';
@@ -119,22 +121,13 @@ export class PrepRunnerService {
       const ctx = JSON.stringify(mergedContext, null, 2);
       const displayName = userRow?.name?.trim() || null;
 
-      const userPrompt = `Full dump transcript (context):
-"""
-${transcript}
-"""
-
-Thought to prep (this card):
-${prep.thought || prep.title}
-
-${memorySection}
-
-${relevantBlock ? `${relevantBlock}\n` : ''}
-
-Enriched context (JSON) — structured profile map for tools that still expect key/value:
-${ctx}
-
-Use tools as needed. When finished, produce a clear final answer in plain language in your last message.`;
+      const userPrompt = buildPrepUserPrompt({
+        transcript,
+        thoughtLine: prep.thought || prep.title,
+        memorySection,
+        relevantBlock,
+        enrichedContextJson: ctx,
+      });
 
       await this.appendLog(prepId, 'run', 'Starting agent loop', {
         model: agentModelId,
@@ -159,28 +152,7 @@ Use tools as needed. When finished, produce a clear final answer in plain langua
         prompt: userPrompt,
         tools,
         stopWhen: stepCountIs(maxSteps),
-        onStepFinish: async (event) => {
-          const names =
-            event.toolCalls?.map((c) =>
-              'toolName' in c ? String(c.toolName) : 'tool',
-            ) ?? [];
-          const inputs =
-            event.toolCalls?.map((c) =>
-              'input' in c ? (c.input as Record<string, unknown>) : {},
-            ) ?? [];
-          const outputs =
-            event.toolResults?.map((r) =>
-              r && 'output' in r ? r.output : undefined,
-            ) ?? [];
-          await this.steps.insertStep({
-            prepId,
-            stepNumber: event.stepNumber,
-            toolName: names.length ? names.join(',') : 'model',
-            toolInput: inputs.length ? { calls: inputs } : { text: event.text },
-            toolOutput: outputs.length ? { results: outputs } : null,
-            thinking: event.text?.slice(0, 4000) ?? null,
-          });
-        },
+        onStepFinish: (event) => appendPrepAgentStep(prepId, this.steps, event),
       });
 
       const agentText = agentResult.text;

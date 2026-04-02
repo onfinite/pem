@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { TavilyService } from '../../integrations/tavily.service';
 import type { ProfileService } from '../../profile/profile.service';
+import { buildPrepDraftToolPrompt } from '../prompts/prep-draft.tool.prompt';
 import { stripHtml } from '../utils/strip-html';
 
 export type PrepToolsFactoryDeps = {
@@ -93,21 +94,14 @@ export function createPrepAgentTools(d: PrepToolsFactoryDeps) {
       tone: z.string(),
     }),
     execute: async ({ goal, tone }: { goal: string; tone: string }) => {
-      const who =
-        d.displayName ??
-        '(name not on file — use a neutral greeting and no fake name)';
       const out = await generateText({
         model: d.agentModel,
-        prompt: `Write a message the USER will paste and send as themselves.
-
-The user's display name for greetings and sign-offs: ${who}
-Use memory and profile from the prep context for specifics. Do not invent a name if none is given.
-
-Goal: ${goal}
-Tone: ${tone}
-
-Context:
-${d.userPrompt}`,
+        prompt: buildPrepDraftToolPrompt({
+          displayName: d.displayName,
+          goal,
+          tone,
+          userPrompt: d.userPrompt,
+        }),
       });
       return JSON.stringify({
         body: out.text,

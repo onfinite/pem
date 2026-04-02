@@ -24,7 +24,7 @@ globs: backend/**
 | `src/dump-jobs/` | BullMQ `dump` queue — split transcript → preps + prep jobs |
 | `src/preps/` | `GET /preps` (paginated: `limit`/`cursor`/`status`; `dumpId=`; `status=prepping` = prepping+failed), `GET /preps/stream`, `GET /preps/:id`, … |
 | `src/queue/`, `src/prep-jobs/` | BullMQ `prep` + `dump` queues + prep worker |
-| `src/agents/` | Split agent + agentic `PrepRunnerService`; structured formatter (`prep-structured.prompt.ts`) shapes card **`summary`** + **`result`** — copy should read like Pem reporting back (warm, first-person), not SEO/ChatGPT filler |
+| `src/agents/` | Split agent + agentic `PrepRunnerService`; **prompts** live in **`prompts/*.prompt.ts`** (split transcript, prep user message, system, structured formatter, draft tool) — keep copy there, not inline in agents; **`prep-runner-step.ts`** persists agent steps to **`agent_steps`** |
 | `src/profile/` | **`memory_facts`** — append-only rows (`memory_key`, `note`, `learned_at`, `status` active/historical, optional `source_prep_id` / `source_dump_id`); agent `remember`/`save` + `/users/me/profile` |
 | `src/steps/` | `agent_steps` logging |
 | `src/events/` | Redis prep event publisher (`PrepEventsModule` global) |
