@@ -37,16 +37,6 @@ export function decodeMemoryCursor(raw: string): {
   }
 }
 
-/** @deprecated Use decodeMemoryCursor */
-export function decodeProfileCursor(raw: string): {
-  updatedAt: Date;
-  id: string;
-} | null {
-  const d = decodeMemoryCursor(raw);
-  if (!d) return null;
-  return { updatedAt: d.learnedAt, id: d.id };
-}
-
 @Injectable()
 export class ProfileRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}

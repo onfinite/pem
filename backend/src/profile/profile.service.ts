@@ -56,7 +56,7 @@ export class ProfileService {
     return this.repo.listByUserPaginated(userId, limit, cursor, status);
   }
 
-  /** Legacy JSON context: active facts as key → one line of text. */
+  /** Active facts as key → one line for agent context (unwraps timed JSON in notes when present). */
   async getProfileMap(userId: string): Promise<Record<string, string>> {
     const map = await this.repo.getActiveMap(userId);
     const out: Record<string, string> = {};

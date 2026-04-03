@@ -1,6 +1,6 @@
 /**
- * Legacy: timed JSON blobs inside migrated `memory_facts.note` strings (optional).
- * when the user (or app) chooses history + dates. Most facts stay a plain string.
+ * Optional `kind: "timed"` JSON inside `memory_facts.note` (history + date ranges).
+ * Most facts stay a plain string; this module parses and formats timed blobs for agent + UI.
  */
 
 export const TIMED_PROFILE_VERSION = 1 as const;

@@ -10,7 +10,7 @@ import {
 import { dumpsTable } from './dumps.schema';
 import { usersTable } from './users.schema';
 
-/** Legacy / UI hint — derived from `render_type` when set. */
+/** Stored classifier — aligns with render types except `compound` → maps to research. */
 export const PREP_TYPES = ['search', 'research', 'options', 'draft'] as const;
 export type PrepType = (typeof PREP_TYPES)[number];
 

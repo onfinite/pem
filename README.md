@@ -87,7 +87,7 @@ npm install
 npm start
 ```
 
-Lint: `npm run lint`. Unit tests (prep result → UI body mapping): `npm test`. **Home** hub lists and **Prepping** (post-dump) support **pull-to-refresh**; prep lists are **newest first** (`created_at` / `id` descending) end-to-end. More Expo notes live in `app/README.md`.
+Lint: `npm run lint`. Unit tests (prep result → UI body mapping): `npm test`. **Home** hub lists and **Prepping** (post-dump) support **pull-to-refresh**; prep lists are **newest first** (`created_at` / `id` descending) end-to-end. See **`app/README.md`** for app-local commands.
 
 ## `backend/` — HTTP API (NestJS + Drizzle)
 
