@@ -1,34 +1,24 @@
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, radii, space } from "@/constants/typography";
-import * as Clipboard from "expo-clipboard";
-import { Copy, Share2 } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import { Send } from "lucide-react-native";
+import { useCallback } from "react";
 import { Platform, Pressable, Share, StyleSheet, View } from "react-native";
 
 type Props = {
   text: string;
   /** Android share dialog title */
   shareTitle?: string;
-  /** Default: labeled buttons; compact: icon-only for hub rows */
+  /** Default: labeled button; compact: icon-only for hub rows */
   variant?: "default" | "compact";
 };
 
-export default function PrepShareCopyRow({
+export default function PrepShareRow({
   text,
   shareTitle = "Prep",
   variant = "default",
 }: Props) {
   const { colors } = useTheme();
-  const [copied, setCopied] = useState(false);
-
-  const onCopy = useCallback(async () => {
-    const t = text.trim();
-    if (!t) return;
-    await Clipboard.setStringAsync(t);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [text]);
 
   const onShare = useCallback(async () => {
     const t = text.trim();
@@ -56,7 +46,7 @@ export default function PrepShareCopyRow({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Share"
+        accessibilityLabel="Send"
         onPress={() => void onShare()}
         hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
         style={({ pressed }) => [
@@ -65,27 +55,9 @@ export default function PrepShareCopyRow({
           compact && { opacity: pressed ? 0.7 : 1 },
         ]}
       >
-        <Share2 size={compact ? 18 : 18} stroke={colors.pemAmber} strokeWidth={2.25} />
+        <Send size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
         {!compact ? (
-          <PemText style={[styles.label, { color: colors.textPrimary }]}>Share</PemText>
-        ) : null}
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Copy to clipboard"
-        onPress={() => void onCopy()}
-        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-        style={({ pressed }) => [
-          compact ? styles.iconBtn : styles.btn,
-          !compact && { backgroundColor: colors.secondarySurface, opacity: pressed ? 0.88 : 1 },
-          compact && { opacity: pressed ? 0.7 : 1 },
-        ]}
-      >
-        <Copy size={compact ? 18 : 18} stroke={colors.textSecondary} strokeWidth={2.25} />
-        {!compact ? (
-          <PemText style={[styles.label, { color: colors.textPrimary }]}>
-            {copied ? "Copied" : "Copy"}
-          </PemText>
+          <PemText style={[styles.label, { color: colors.textPrimary }]}>Send</PemText>
         ) : null}
       </Pressable>
     </View>

@@ -18,6 +18,7 @@ export class PrepProcessor extends WorkerHost {
       this.log.warn('prep job missing prepId');
       return;
     }
+    this.log.log(`prep queue job ${job.id} → prep ${prepId}`);
     await this.runner.run(prepId);
   }
 }

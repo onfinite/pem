@@ -1,5 +1,6 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight } from "@/constants/typography";
+import { getSelectableMarkdownRules } from "@/lib/pemMarkdownSelectableRules";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import Markdown from "react-native-markdown-display";
 import { useMemo } from "react";
@@ -11,10 +12,19 @@ type Props = {
   children: string;
   variant?: Variant;
   style?: StyleProp<TextStyle>;
+  /** When true, text is selectable so users can drag selection handles (prep detail, etc.). */
+  selectable?: boolean;
 };
 
-/** Renders markdown with Pem typography and tappable links (`openExternalUrl` → browser / Custom Tabs). */
-export default function PemMarkdown({ children, variant = "body", style }: Props) {
+const selectableRules = getSelectableMarkdownRules();
+
+/** Renders markdown with Pem typography. With `selectable`, links are **visual only** (tap-to-open would break native text selection). */
+export default function PemMarkdown({
+  children,
+  variant = "body",
+  style,
+  selectable = false,
+}: Props) {
   const { colors } = useTheme();
 
   const markdownStyle = useMemo(() => {
@@ -31,6 +41,7 @@ export default function PemMarkdown({ children, variant = "body", style }: Props
       paragraph: {
         marginTop: 0,
         marginBottom: variant === "card" ? 4 : companion ? 14 : 8,
+        ...(selectable ? ({ userSelect: "text" } as const) : {}),
       },
       strong: {
         fontFamily: fontFamily.sans.semibold,
@@ -49,18 +60,21 @@ export default function PemMarkdown({ children, variant = "body", style }: Props
         fontSize: fontSize.xl,
         color: colors.textPrimary,
         marginBottom: 8,
+        ...(selectable ? ({ userSelect: "text" } as const) : {}),
       },
       heading2: {
         fontFamily: fontFamily.sans.semibold,
         fontSize: fontSize.lg,
         color: colors.textPrimary,
         marginBottom: 6,
+        ...(selectable ? ({ userSelect: "text" } as const) : {}),
       },
       heading3: {
         fontFamily: fontFamily.sans.semibold,
         fontSize: fontSize.md,
         color: colors.textPrimary,
         marginBottom: 4,
+        ...(selectable ? ({ userSelect: "text" } as const) : {}),
       },
       code_inline: {
         fontFamily: fontFamily.sans.regular,
@@ -75,12 +89,13 @@ export default function PemMarkdown({ children, variant = "body", style }: Props
         borderRadius: 6,
       },
     };
-  }, [colors, style, variant]);
+  }, [colors, style, variant, selectable]);
 
   return (
     <Markdown
       style={markdownStyle}
       mergeStyle
+      rules={selectable ? selectableRules : undefined}
       onLinkPress={(url) => {
         void openExternalUrl(url);
         return true;

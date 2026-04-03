@@ -11,6 +11,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react-native";
+import type { PrepResultBlock } from "@/lib/prepBlocks";
 
 /**
  * Flip to `false` to preview the empty hub (no prep cards yet). Static demo only.
@@ -24,7 +25,8 @@ export type PrepKind =
   | "deep_research"
   | "web"
   | "decide"
-  | "follow_up";
+  | "follow_up"
+  | "mixed";
 
 /** Buckets for subtle tag tint (options vs draft vs research) — scanning, not loud brand amber. */
 export type PrepKindTagBucket = "options" | "draft" | "research";
@@ -86,6 +88,8 @@ export type Prep = {
   dumpId?: string;
   /** Ready prep not yet opened in detail (inbox-style). */
   unread?: boolean;
+  /** Composable sections (new API). When set, detail renders blocks in order. */
+  blocks?: PrepResultBlock[];
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [

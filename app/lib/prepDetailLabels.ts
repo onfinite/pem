@@ -11,6 +11,8 @@ export function prepKindCompanionLabel(kind: PrepKind): string {
       return "Options";
     case "draft":
       return "Draft";
+    case "mixed":
+      return "Prep";
     case "decide":
     case "follow_up":
       return "Options";

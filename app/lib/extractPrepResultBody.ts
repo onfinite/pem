@@ -20,6 +20,10 @@ export function extractPrepResultBody(
     return {};
   }
 
+  if (Array.isArray(r.blocks) && r.blocks.length > 0) {
+    return {};
+  }
+
   if (renderOrPrep === "draft") {
     const body = typeof r.body === "string" ? r.body : "";
     const subject = r.subject === null || typeof r.subject === "string" ? r.subject : null;

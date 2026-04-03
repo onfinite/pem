@@ -98,4 +98,18 @@ describe("extractPrepResultBody", () => {
       extractPrepResultBody({ options: [{ name: "x", price: "1" }] }, "options", "ready"),
     ).toEqual({});
   });
+
+  it("returns empty when composable blocks are present", () => {
+    expect(
+      extractPrepResultBody(
+        {
+          primaryKind: "mixed",
+          blocks: [{ type: "search", answer: "A", sources: [] }],
+          summary: "Would be wrong if merged",
+        },
+        "mixed",
+        "ready",
+      ),
+    ).toEqual({});
+  });
 });

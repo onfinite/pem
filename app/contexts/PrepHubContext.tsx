@@ -1,4 +1,4 @@
-import type { Prep } from "@/components/sections/home-sections/homePrepData";
+import type { Prep, PrepTab } from "@/components/sections/home-sections/homePrepData";
 import { PREP_PAGE_SIZE } from "@/constants/limits";
 import {
   apiPrepToPrep,
@@ -6,6 +6,7 @@ import {
   getPrepById,
   listPrepsPage,
   retryPrepApi,
+  unarchivePrepApi,
   type ApiPrep,
 } from "@/lib/pemApi";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -25,12 +26,18 @@ import { AppState, type AppStateStatus } from "react-native";
 /** Pass `skipCacheHydration` on pull-to-refresh so lists don’t flash stale disk cache before the API returns. */
 export type PrepHubRefreshOptions = { skipCacheHydration?: boolean };
 
+export type HomeNavigationIntent = { tab: PrepTab; toast: string };
+
 type PrepHubContextValue = {
   readyPreps: Prep[];
   preppingPreps: Prep[];
   archivedPreps: Prep[];
   archivePrep: (id: string) => Promise<void>;
+  unarchivePrep: (id: string) => Promise<void>;
   retryPrep: (id: string) => Promise<void>;
+  /** Call before navigating to home so the hub can switch tab + show a toast (e.g. after archive). */
+  scheduleHomeNavigationIntent: (tab: PrepTab, toast: string) => void;
+  consumeHomeNavigationIntent: () => HomeNavigationIntent | null;
   getPrep: (id: string) => Prep | undefined;
   fetchPrepById: (id: string) => Promise<Prep | null>;
   upsertPrepRow: (row: ApiPrep) => void;
@@ -82,6 +89,18 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   loadingMoreRef.current = loadingMore;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const homeNavigationIntentRef = useRef<HomeNavigationIntent | null>(null);
+
+  const scheduleHomeNavigationIntent = useCallback((tab: PrepTab, toast: string) => {
+    homeNavigationIntentRef.current = { tab, toast };
+  }, []);
+
+  const consumeHomeNavigationIntent = useCallback((): HomeNavigationIntent | null => {
+    const v = homeNavigationIntentRef.current;
+    homeNavigationIntentRef.current = null;
+    return v;
+  }, []);
 
   const upsertPrepRow = useCallback((row: ApiPrep) => {
     setReadyRows((prev) => {
@@ -256,10 +275,20 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
 
   const archivePrep = useCallback(
     async (id: string) => {
-      await archivePrepApi(getTokenRef.current, id);
+      const row = await archivePrepApi(getTokenRef.current, id);
+      upsertPrepRow(row);
       await refresh();
     },
-    [refresh],
+    [refresh, upsertPrepRow],
+  );
+
+  const unarchivePrep = useCallback(
+    async (id: string) => {
+      const row = await unarchivePrepApi(getTokenRef.current, id);
+      upsertPrepRow(row);
+      await refresh();
+    },
+    [refresh, upsertPrepRow],
   );
 
   const retryPrep = useCallback(
@@ -276,7 +305,10 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       preppingPreps,
       archivedPreps,
       archivePrep,
+      unarchivePrep,
       retryPrep,
+      scheduleHomeNavigationIntent,
+      consumeHomeNavigationIntent,
       getPrep,
       fetchPrepById,
       upsertPrepRow,
@@ -292,7 +324,10 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       preppingPreps,
       archivedPreps,
       archivePrep,
+      unarchivePrep,
       retryPrep,
+      scheduleHomeNavigationIntent,
+      consumeHomeNavigationIntent,
       getPrep,
       fetchPrepById,
       upsertPrepRow,

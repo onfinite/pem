@@ -1,18 +1,27 @@
 import PrepDetailBody from "@/components/sections/prep-detail-sections/PrepDetailBody";
+import PrepShareRow from "@/components/sections/prep-detail-sections/PrepShareRow";
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import PemButton from "@/components/ui/PemButton";
 import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
+import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { prepKindCompanionLabel } from "@/lib/prepDetailLabels";
+import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
 import { apiPrepToPrep, markPrepOpened } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { Archive, X } from "lucide-react-native";
+import { Archive, ArchiveRestore, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /** Full prep content — close returns to hub. */
@@ -25,6 +34,8 @@ export default function PrepDetailScreen() {
     readyPreps,
     preppingPreps,
     archivePrep,
+    unarchivePrep,
+    scheduleHomeNavigationIntent,
     retryPrep,
     refresh,
     upsertPrepRow,
@@ -37,6 +48,7 @@ export default function PrepDetailScreen() {
   const [prep, setPrep] = useState<Prep | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [archiveModalVisible, setArchiveModalVisible] = useState(false);
 
   const syncFromHub = useCallback(() => {
     if (id === undefined) return;
@@ -128,12 +140,33 @@ export default function PrepDetailScreen() {
         (readyPreps.some((p) => p.id === prep.id) ||
           preppingPreps.some((p) => p.id === prep.id))));
 
-  const onArchive = async () => {
+  const canUnarchive = prep.status === "archived";
+
+  const openArchiveModal = () => {
+    pemImpactLight();
+    setArchiveModalVisible(true);
+  };
+
+  const confirmArchive = async () => {
+    setArchiveModalVisible(false);
+    pemSelection();
     try {
       await archivePrep(prep.id);
-      router.back();
+      scheduleHomeNavigationIntent("archived", "Archived");
+      router.replace("/home");
     } catch {
       /* hub refresh will surface errors on next poll */
+    }
+  };
+
+  const onUnarchive = async () => {
+    pemImpactLight();
+    try {
+      await unarchivePrep(prep.id);
+      const next = await fetchPrepById(prep.id);
+      if (next) setPrep(next);
+    } catch {
+      /* ignore */
     }
   };
 
@@ -156,7 +189,10 @@ export default function PrepDetailScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close"
-          onPress={() => router.back()}
+          onPress={() => {
+            pemImpactLight();
+            router.back();
+          }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
             styles.headerCtrl,
@@ -165,11 +201,29 @@ export default function PrepDetailScreen() {
         >
           <X size={22} stroke={colors.textSecondary} strokeWidth={2} />
         </Pressable>
-        {canArchive ? (
+        {canUnarchive ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Restore to Ready"
+            onPress={() => void onUnarchive()}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={({ pressed }) => [
+              styles.headerCtrl,
+              styles.archiveCtrl,
+              {
+                borderColor: colors.borderMuted,
+                backgroundColor: colors.secondarySurface,
+                opacity: pressed ? 0.88 : 1,
+              },
+            ]}
+          >
+            <ArchiveRestore size={22} stroke={colors.pemAmber} strokeWidth={2} />
+          </Pressable>
+        ) : canArchive ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Archive ${prep.title}`}
-            onPress={() => void onArchive()}
+            onPress={openArchiveModal}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={({ pressed }) => [
               styles.headerCtrl,
@@ -188,6 +242,49 @@ export default function PrepDetailScreen() {
         )}
       </View>
 
+      <Modal
+        visible={archiveModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setArchiveModalVisible(false)}
+      >
+        <Pressable
+          style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}
+          onPress={() => {
+            pemImpactLight();
+            setArchiveModalVisible(false);
+          }}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={[styles.modalCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}
+          >
+            <PemText style={[styles.modalTitle, { color: colors.textPrimary }]}>Archive this prep?</PemText>
+            <PemText style={[styles.modalBody, { color: colors.textSecondary }]}>
+              It will move to Archived. You can restore it to Ready anytime from there or from this prep.
+            </PemText>
+            <View style={styles.modalActions}>
+              <PemButton
+                variant="secondary"
+                onPress={() => {
+                  pemImpactLight();
+                  setArchiveModalVisible(false);
+                }}
+              >
+                Cancel
+              </PemButton>
+              <PemButton
+                onPress={() => {
+                  void confirmArchive();
+                }}
+              >
+                Archive
+              </PemButton>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
@@ -196,6 +293,7 @@ export default function PrepDetailScreen() {
             paddingBottom: Math.max(insets.bottom, space[6]),
           },
         ]}
+        removeClippedSubviews={false}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
@@ -209,7 +307,19 @@ export default function PrepDetailScreen() {
           {prep.kind !== "deep_research" ? (
             <>
               <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
-              <PemMarkdown variant="body">{prep.summary}</PemMarkdown>
+              <View
+                style={[
+                  styles.heroSummaryCard,
+                  { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted },
+                ]}
+              >
+                <PemMarkdown variant="body" selectable>
+                  {prep.summary}
+                </PemMarkdown>
+                <View style={[styles.heroToolbar, { borderTopColor: colors.borderMuted }]}>
+                  <PrepShareRow variant="compact" text={prep.summary} shareTitle={prep.title} />
+                </View>
+              </View>
             </>
           ) : (
             <PemText style={[styles.researchWelcome, { color: colors.textSecondary }]}>
@@ -259,6 +369,20 @@ const styles = StyleSheet.create({
   hero: {
     gap: space[3],
   },
+  heroSummaryCard: {
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: space[4],
+    gap: 0,
+  },
+  heroToolbar: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    marginTop: space[3],
+    paddingTop: space[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   heroPemRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -287,5 +411,32 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xxl,
     lineHeight: lh(fontSize.xxl, lineHeight.snug),
     letterSpacing: -0.3,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: space[6],
+  },
+  modalCard: {
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: space[5],
+    gap: space[4],
+  },
+  modalTitle: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize.xl,
+    lineHeight: lh(fontSize.xl, lineHeight.snug),
+  },
+  modalBody: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.md,
+    lineHeight: lh(fontSize.md, lineHeight.relaxed),
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: space[3],
+    flexWrap: "wrap",
   },
 });

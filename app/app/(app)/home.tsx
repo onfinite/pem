@@ -17,13 +17,16 @@ import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
 import PemText from "@/components/ui/PemText";
-import { pemSelection } from "@/lib/pemHaptics";
+import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { X } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   ListRenderItem,
+  Pressable,
   RefreshControl,
   StyleSheet,
   View,
@@ -53,6 +56,7 @@ export default function HomeScreen() {
     loadingMore,
     retryPrep,
     refresh,
+    consumeHomeNavigationIntent,
   } = usePrepHub();
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -66,10 +70,34 @@ export default function HomeScreen() {
 
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<PrepTab>("ready");
+  const [hubToast, setHubToast] = useState<string | null>(null);
   const pullRefreshEnabled = tab === "ready" || tab === "prepping";
+
+  useFocusEffect(
+    useCallback(() => {
+      const pending = consumeHomeNavigationIntent();
+      if (pending) {
+        setTab(pending.tab);
+        setHubToast(pending.toast);
+        pemSelection();
+      }
+    }, [consumeHomeNavigationIntent]),
+  );
+
+  useEffect(() => {
+    if (!hubToast) return;
+    const t = setTimeout(() => setHubToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [hubToast]);
+
+  const dismissHubToast = useCallback(() => {
+    pemSelection();
+    setHubToast(null);
+  }, []);
 
   const onHubTab = useCallback(
     (t: PrepTab) => {
+      pemImpactLight();
       if (t === tab) return;
       pemSelection();
       setTab(t);
@@ -207,6 +235,34 @@ export default function HomeScreen() {
         }
       />
 
+      {hubToast ? (
+        <View
+          style={[styles.hubToastWrap, { top: scrollTopPad - space[3] + space[2] }]}
+          pointerEvents="box-none"
+        >
+          <View
+            style={[
+              styles.hubToast,
+              {
+                backgroundColor: colors.brandMutedSurface,
+                borderColor: colors.borderMuted,
+              },
+            ]}
+          >
+            <PemText style={[styles.hubToastText, { color: colors.textPrimary }]}>{hubToast}</PemText>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss message"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={dismissHubToast}
+              style={({ pressed }) => [styles.hubToastClose, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <X size={18} stroke={colors.textSecondary} strokeWidth={2} />
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       <HomeTopBar title={pageHead.title} glassBorder={glassBorder} />
       <HomeTabDock tab={tab} onTab={onHubTab} glassBorder={glassBorder} />
     </View>
@@ -216,6 +272,31 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  hubToastWrap: {
+    position: "absolute",
+    left: space[4],
+    right: space[4],
+    zIndex: 35,
+  },
+  hubToast: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: space[2],
+    paddingLeft: space[4],
+    paddingRight: space[2],
+  },
+  hubToastText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  hubToastClose: {
+    padding: space[2],
+    justifyContent: "center",
+    alignItems: "center",
   },
   scrollContent: {
     paddingHorizontal: space[4],

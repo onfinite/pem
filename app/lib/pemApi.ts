@@ -1,7 +1,12 @@
 import type { Prep, PrepKind } from "@/components/sections/home-sections/homePrepData";
 import { extractPrepResultBody } from "@/lib/extractPrepResultBody";
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
-import { FileText, Gift, Mail, Scale, Search, type LucideIcon } from "lucide-react-native";
+import {
+  getPrimaryKindFromResult,
+  parsePrepBlocksFromResult,
+  type PrepResultBlock,
+} from "@/lib/prepBlocks";
+import { FileText, Gift, Layers, Mail, Scale, Search, type LucideIcon } from "lucide-react-native";
 
 export type ApiPrep = {
   id: string;
@@ -71,6 +76,8 @@ function prepTypeToKind(prepType: string): PrepKind {
       return "options";
     case "draft":
       return "draft";
+    case "mixed":
+      return "mixed";
     case "compound":
       return "deep_research";
     default:
@@ -79,6 +86,7 @@ function prepTypeToKind(prepType: string): PrepKind {
 }
 
 function iconForKind(kind: PrepKind): LucideIcon {
+  if (kind === "mixed") return Layers;
   if (kind === "options" || kind === "decide" || kind === "follow_up") return Gift;
   if (kind === "draft") return Mail;
   if (kind === "web") return Search;
@@ -86,7 +94,7 @@ function iconForKind(kind: PrepKind): LucideIcon {
   return FileText;
 }
 
-function tagForPrepType(prepType: string): string {
+function tagForPrimaryKind(prepType: string): string {
   switch (prepType) {
     case "search":
       return "Search";
@@ -96,6 +104,8 @@ function tagForPrepType(prepType: string): string {
       return "Options";
     case "draft":
       return "Draft";
+    case "mixed":
+      return "Prep";
     case "compound":
       return "Prep";
     default:
@@ -115,6 +125,8 @@ function viewLabelForKind(kind: PrepKind): string {
       return "Read research";
     case "web":
       return "View summary";
+    case "mixed":
+      return "Open";
     default:
       return "Open";
   }
@@ -153,13 +165,38 @@ function extractOptions(row: ApiPrep): Prep["options"] {
     .filter((o) => o.label.length > 0);
 }
 
+function optionsFromBlocks(blocks: PrepResultBlock[]): Prep["options"] | undefined {
+  const block = blocks.find((b) => b.type === "options");
+  if (!block || !block.options.length) return undefined;
+  return block.options
+    .map((o) => {
+      const url = o.url.trim();
+      const why = o.why.trim();
+      const store = o.store.trim();
+      const imageUrl = o.imageUrl.trim();
+      return {
+        label: o.name,
+        price: o.price,
+        url: url.length > 0 ? url : undefined,
+        why: why.length > 0 ? why : undefined,
+        store: store.length > 0 ? store : undefined,
+        imageUrl: imageUrl.length > 0 ? imageUrl : undefined,
+      };
+    })
+    .filter((o) => o.label.length > 0);
+}
+
 /** Maps API prep row to hub `Prep` for lists and detail. */
 export function apiPrepToPrep(row: ApiPrep): Prep {
-  const pt = row.render_type ?? row.prep_type;
-  const kind = prepTypeToKind(pt);
+  const blocks = parsePrepBlocksFromResult(row.result);
+  const pk =
+    getPrimaryKindFromResult(row.result) ?? row.render_type ?? row.prep_type;
+  const kind = prepTypeToKind(pk);
   const Icon = iconForKind(kind);
-  const { body, draftText, detailIntro, draftSubject } = extractBodyAndDraft(row);
-  const options = extractOptions(row);
+  const { body, draftText, detailIntro, draftSubject } = blocks?.length
+    ? {}
+    : extractBodyAndDraft(row);
+  const options = blocks?.length ? optionsFromBlocks(blocks) : extractOptions(row);
 
   const summary =
     row.summary?.trim() ||
@@ -180,7 +217,7 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
         ? "Prepping"
         : row.status === "failed"
           ? "Failed"
-          : tagForPrepType(pt),
+          : tagForPrimaryKind(pk),
     title,
     summary,
     viewLabel: viewLabelForKind(kind),
@@ -193,6 +230,7 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     status: row.status,
     unread:
       row.status === "ready" && (row.opened_at === null || row.opened_at === undefined),
+    blocks: blocks ?? undefined,
   };
 }
 
@@ -258,6 +296,13 @@ export async function archivePrepApi(
   id: string,
 ): Promise<ApiPrep> {
   return apiFetch(`/preps/${encodeURIComponent(id)}/archive`, { method: "PATCH", getToken });
+}
+
+export async function unarchivePrepApi(
+  getToken: () => Promise<string | null>,
+  id: string,
+): Promise<ApiPrep> {
+  return apiFetch(`/preps/${encodeURIComponent(id)}/unarchive`, { method: "PATCH", getToken });
 }
 
 export async function retryPrepApi(

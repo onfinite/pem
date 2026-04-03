@@ -9,7 +9,10 @@ import { buildPrepAgentSystemPrompt } from './prompts/prep-agent.system';
 import { buildStructuredFormatterPrompt } from './prompts/prep-structured.prompt';
 import { buildPrepUserPrompt } from './prompts/prep-user.prompt';
 import { appendPrepAgentStep } from './prep-runner-step';
-import { structureSchema } from './schemas/prep-result.schema';
+import {
+  normalizeStructuredPrepOutput,
+  structureModelSchema,
+} from './schemas/prep-result.schema';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -18,9 +21,9 @@ import {
   prepRunLogsTable,
   prepsTable,
   usersTable,
-  type PrepRenderType,
   type PrepType,
 } from '../database/schemas';
+import type { PrimaryKind } from './schemas/prep-result.schema';
 import { PrepEventsService } from '../events/prep-events.service';
 import { TavilyService } from '../integrations/tavily.service';
 import { ProfileService } from '../profile/profile.service';
@@ -28,9 +31,10 @@ import { PrepsService } from '../preps/preps.service';
 import { PushService } from '../push/push.service';
 import { StepsService } from '../steps/steps.service';
 
-function prepTypeFromRender(r: PrepRenderType): PrepType {
-  if (r === 'compound') return 'research';
-  return r;
+/** Stored `prep_type` — `mixed` maps to research (closest product bucket). */
+function prepTypeFromPrimaryKind(pk: PrimaryKind): PrepType {
+  if (pk === 'mixed') return 'research';
+  return pk;
 }
 
 @Injectable()
@@ -75,6 +79,7 @@ export class PrepRunnerService {
       }
 
       await this.appendLog(prepId, 'queued', 'Prep job picked up', {});
+      this.log.log(`prep ${prepId} run starting`);
 
       const apiKey = this.config.get<string>('openai.apiKey');
       if (!apiKey) {
@@ -146,6 +151,11 @@ export class PrepRunnerService {
 
       const system = buildPrepAgentSystemPrompt(memorySection, relevantBlock);
 
+      const agentTimeoutMs =
+        this.config.get<number>('prepAgentTimeoutMs') ?? 600_000;
+      const structureTimeoutMs =
+        this.config.get<number>('prepStructureTimeoutMs') ?? 120_000;
+
       const agentResult = await generateText({
         model: agentModel,
         system,
@@ -153,23 +163,27 @@ export class PrepRunnerService {
         tools,
         stopWhen: stepCountIs(maxSteps),
         onStepFinish: (event) => appendPrepAgentStep(prepId, this.steps, event),
+        timeout: agentTimeoutMs,
       });
 
       const agentText = agentResult.text;
 
       const structured = await generateText({
         model: miniModel,
-        output: Output.object({ schema: structureSchema }),
+        output: Output.object({ schema: structureModelSchema }),
         prompt: buildStructuredFormatterPrompt(agentText),
+        timeout: structureTimeoutMs,
       });
 
-      const out = structured.output;
-      if (!out) {
+      const rawStructured = structured.output;
+      if (!rawStructured) {
         throw new Error('Structured output missing');
       }
 
-      const renderType = out.renderType;
-      const prepType = prepTypeFromRender(renderType);
+      const out = normalizeStructuredPrepOutput(rawStructured);
+
+      const renderType = out.primaryKind;
+      const prepType = prepTypeFromPrimaryKind(out.primaryKind);
 
       const now = new Date();
       await this.appendLog(prepId, 'done', 'Prep content saved', {});
@@ -179,7 +193,10 @@ export class PrepRunnerService {
         .set({
           status: 'ready',
           summary: out.summary,
-          result: out.result as Record<string, unknown>,
+          result: {
+            primaryKind: out.primaryKind,
+            blocks: out.blocks,
+          } as Record<string, unknown>,
           renderType,
           prepType,
           errorMessage: null,

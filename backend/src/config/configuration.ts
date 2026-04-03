@@ -18,6 +18,10 @@ export type AppConfig = {
   redisUrl: string | undefined;
   /** Max tool/steps for agentic flows (classification uses structured output, not steps). */
   agentMaxSteps: number;
+  /** `generateText` timeout for the main prep agent (ms). */
+  prepAgentTimeoutMs: number;
+  /** `generateText` timeout for the structured JSON formatter (ms). */
+  prepStructureTimeoutMs: number;
 };
 
 export default (): AppConfig => {
@@ -52,5 +56,13 @@ export default (): AppConfig => {
     },
     redisUrl: process.env.REDIS_URL,
     agentMaxSteps: Number.parseInt(process.env.AGENT_MAX_STEPS ?? '8', 10),
+    prepAgentTimeoutMs: Number.parseInt(
+      process.env.PREP_AGENT_TIMEOUT_MS ?? '600000',
+      10,
+    ),
+    prepStructureTimeoutMs: Number.parseInt(
+      process.env.PREP_STRUCTURE_TIMEOUT_MS ?? '120000',
+      10,
+    ),
   };
 };

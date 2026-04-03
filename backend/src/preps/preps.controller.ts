@@ -173,6 +173,16 @@ export class PrepsController {
     return this.serializePrep(p);
   }
 
+  @Patch(':id/unarchive')
+  @ApiOperation({ summary: 'Restore archived prep to Ready' })
+  async unarchive(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const p = await this.preps.unarchive(id, user.id);
+    return this.serializePrep(p);
+  }
+
   private serializePrep(p: PrepRow) {
     const prepType = p.renderType || p.prepType || 'search';
     return {

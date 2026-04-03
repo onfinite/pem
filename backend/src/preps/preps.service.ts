@@ -233,6 +233,23 @@ export class PrepsService {
     return updated;
   }
 
+  /** Restore an archived prep to Ready (user can reopen from the hub). */
+  async unarchive(prepId: string, userId: string) {
+    const prep = await this.getByIdForUser(prepId, userId);
+    if (prep.status !== 'archived') {
+      throw new BadRequestException('Only archived preps can be restored');
+    }
+    const [updated] = await this.db
+      .update(prepsTable)
+      .set({
+        status: 'ready',
+        archivedAt: null,
+      })
+      .where(eq(prepsTable.id, prepId))
+      .returning();
+    return updated;
+  }
+
   /** Keyword overlap with past ready/archived preps (MVP relevance). */
   async relevantPastPrepsBlock(
     userId: string,

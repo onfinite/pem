@@ -28,6 +28,7 @@ export const PREP_RENDER_TYPES = [
   'options',
   'draft',
   'compound',
+  'mixed',
 ] as const;
 export type PrepRenderType = (typeof PREP_RENDER_TYPES)[number];
 
