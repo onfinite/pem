@@ -34,7 +34,7 @@ export default function InboxHeader({
   unreadReadyCount = 0,
 }: Props) {
   const s = useInboxShell();
-  const { colors } = useTheme();
+  const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
   const { user } = useUser();
   const imageUrl = user?.imageUrl;
@@ -127,7 +127,9 @@ export default function InboxHeader({
             {(!imageUrl || !avatarDecoded) && (
               <View style={styles.avatarFallback} pointerEvents="none">
                 {imageUrl && !avatarDecoded ? (
-                  <ActivityIndicator color={colors.placeholder} />
+                  <ActivityIndicator
+                    color={resolved === "dark" ? colors.textPrimary : colors.placeholder}
+                  />
                 ) : (
                   <UserRound size={20} stroke={s.textSecondary} strokeWidth={2} />
                 )}
