@@ -248,6 +248,7 @@ export class ProfileRepository {
     return rows.length > 0;
   }
 
+  /** Most recent first; capped so prep prompts stay bounded while staying generous. */
   async listActiveNotesForPrompt(userId: string): Promise<MemoryFactRow[]> {
     return this.db
       .select()
@@ -258,6 +259,7 @@ export class ProfileRepository {
           eq(memoryFactsTable.status, 'active'),
         ),
       )
-      .orderBy(desc(memoryFactsTable.learnedAt));
+      .orderBy(desc(memoryFactsTable.learnedAt))
+      .limit(120);
   }
 }

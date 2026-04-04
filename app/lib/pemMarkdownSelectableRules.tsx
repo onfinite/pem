@@ -3,10 +3,10 @@
  * Selection rules for prep detail:
  * - Only **block-level** `Text` (paragraph, headings, code) use `selectable={true}`. Nested inline
  *   nodes must **not** set `selectable` or they fight the parent selection.
- * - **Links are not pressable** (`onPress` / `onLongPress` on nested Text switches RN to
- *   `NativePressableVirtualText`, which breaks text selection). Links stay styled; users select
- *   URLs like any other text or use the share sheet.
+ * - **Links** use `Text` + `onPress` (library default) so `[label](url)` opens in the browser.
+ *   Tapping a link may not start a selection on that span; surrounding prose stays selectable.
  */
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import {
   hasParents,
   renderRules,
@@ -205,7 +205,17 @@ export function getSelectableMarkdownRules(): RenderRules {
       );
     },
     link: (node, children, parent, styles) => (
-      <Text key={node.key} style={styles.link}>
+      <Text
+        key={node.key}
+        style={styles.link}
+        accessibilityRole="link"
+        onPress={() => {
+          const href = node.attributes.href;
+          if (typeof href === "string" && href.length > 0) {
+            void openExternalUrl(href);
+          }
+        }}
+      >
         {children}
       </Text>
     ),

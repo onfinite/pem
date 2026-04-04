@@ -3,6 +3,7 @@ import { PREP_PAGE_SIZE } from "@/constants/limits";
 import {
   apiPrepToPrep,
   archivePrepApi,
+  deletePrepApi,
   getPrepById,
   listPrepsPage,
   retryPrepApi,
@@ -35,7 +36,8 @@ type PrepHubContextValue = {
   archivePrep: (id: string) => Promise<void>;
   unarchivePrep: (id: string) => Promise<void>;
   retryPrep: (id: string) => Promise<void>;
-  /** Call before navigating to home so the hub can switch tab + show a toast (e.g. after archive). */
+  deletePrep: (id: string) => Promise<void>;
+  /** Call before navigating to home so the hub can switch tab + show a toast (e.g. after archive → stay on Ready). */
   scheduleHomeNavigationIntent: (tab: PrepTab, toast: string) => void;
   consumeHomeNavigationIntent: () => HomeNavigationIntent | null;
   getPrep: (id: string) => Prep | undefined;
@@ -63,6 +65,15 @@ function sortPrepsByCreatedAtDesc(rows: ApiPrep[]): ApiPrep[] {
     if (tb !== ta) return tb - ta;
     return b.id.localeCompare(a.id);
   });
+}
+
+/** One row per prep id (later rows win — e.g. pagination overlap or bad API pages). */
+function dedupePrepsById(rows: ApiPrep[]): ApiPrep[] {
+  const map = new Map<string, ApiPrep>();
+  for (const x of rows) {
+    map.set(x.id, x);
+  }
+  return sortPrepsByCreatedAtDesc([...map.values()]);
 }
 
 type TabKey = "ready" | "prepping" | "archived";
@@ -149,9 +160,9 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
               archived?: ApiPrep[];
             };
             if (parsed.v === 2 && parsed.ready && parsed.prepping && parsed.archived) {
-              setReadyRows(sortPrepsByCreatedAtDesc(parsed.ready));
-              setPreppingRows(sortPrepsByCreatedAtDesc(parsed.prepping));
-              setArchivedRows(sortPrepsByCreatedAtDesc(parsed.archived));
+              setReadyRows(dedupePrepsById(parsed.ready));
+              setPreppingRows(dedupePrepsById(parsed.prepping));
+              setArchivedRows(dedupePrepsById(parsed.archived));
               setLoading(false);
             }
           } catch {
@@ -173,9 +184,9 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
           limit: PREP_PAGE_SIZE,
         }),
       ]);
-      setReadyRows(sortPrepsByCreatedAtDesc(r.items));
-      setPreppingRows(sortPrepsByCreatedAtDesc(p.items));
-      setArchivedRows(sortPrepsByCreatedAtDesc(a.items));
+      setReadyRows(dedupePrepsById(r.items));
+      setPreppingRows(dedupePrepsById(p.items));
+      setArchivedRows(dedupePrepsById(a.items));
       setCursors({
         ready: r.next_cursor,
         prepping: p.next_cursor,
@@ -212,11 +223,11 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
         cursor,
       });
       if (tab === "ready") {
-        setReadyRows((prev) => sortPrepsByCreatedAtDesc([...prev, ...res.items]));
+        setReadyRows((prev) => dedupePrepsById([...prev, ...res.items]));
       } else if (tab === "prepping") {
-        setPreppingRows((prev) => sortPrepsByCreatedAtDesc([...prev, ...res.items]));
+        setPreppingRows((prev) => dedupePrepsById([...prev, ...res.items]));
       } else {
-        setArchivedRows((prev) => sortPrepsByCreatedAtDesc([...prev, ...res.items]));
+        setArchivedRows((prev) => dedupePrepsById([...prev, ...res.items]));
       }
       setCursors((c) => ({ ...c, [tab]: res.next_cursor }));
     } catch (e) {
@@ -299,6 +310,14 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const deletePrep = useCallback(
+    async (id: string) => {
+      await deletePrepApi(getTokenRef.current, id);
+      await refresh({ skipCacheHydration: true });
+    },
+    [refresh],
+  );
+
   const value = useMemo(
     () => ({
       readyPreps,
@@ -307,6 +326,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       archivePrep,
       unarchivePrep,
       retryPrep,
+      deletePrep,
       scheduleHomeNavigationIntent,
       consumeHomeNavigationIntent,
       getPrep,
@@ -326,6 +346,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       archivePrep,
       unarchivePrep,
       retryPrep,
+      deletePrep,
       scheduleHomeNavigationIntent,
       consumeHomeNavigationIntent,
       getPrep,

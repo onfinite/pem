@@ -4,7 +4,8 @@ import { Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
-import { SplitAgent } from '../agents/split.agent';
+import { IntentClassifierAgent } from '../agents/intent-classifier.agent';
+import { initialPrepTypeForIntent } from '../agents/intents/prep-intent-routing';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
@@ -15,9 +16,10 @@ import {
 } from '../database/schemas';
 import { PrepEventsService } from '../events/prep-events.service';
 import { ProfileService } from '../profile/profile.service';
+import { SplitAgent } from '../agents/split.agent';
 
 /**
- * Runs after POST /dumps: split transcript → prep rows → queue BullMQ prep jobs → SSE prep.created.
+ * Runs after POST /dumps: split transcript → classify intent per thought → prep rows → queue BullMQ prep jobs → SSE prep.created.
  */
 @Injectable()
 export class DumpSplitService {
@@ -26,6 +28,7 @@ export class DumpSplitService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly split: SplitAgent,
+    private readonly intentClassifier: IntentClassifierAgent,
     private readonly profile: ProfileService,
     private readonly prepEvents: PrepEventsService,
     @InjectQueue('prep') private readonly prepQueue: Queue,
@@ -43,6 +46,10 @@ export class DumpSplitService {
     }
 
     const thoughts = await this.split.splitTranscript(dump.transcript);
+    const intents = await Promise.all(
+      thoughts.map((t) => this.intentClassifier.classifyThought(t)),
+    );
+
     const profileMap = await this.profile.getProfileMap(dump.userId);
     const [userRow] = await this.db
       .select()
@@ -64,7 +71,15 @@ export class DumpSplitService {
       return;
     }
 
-    for (const thought of thoughts) {
+    for (let i = 0; i < thoughts.length; i++) {
+      const thought = thoughts[i];
+      const intent = intents[i];
+      const prepType = initialPrepTypeForIntent(intent);
+      const context = {
+        ...baseContext,
+        intent,
+      };
+
       const [prep] = await this.db
         .insert(prepsTable)
         .values({
@@ -72,15 +87,16 @@ export class DumpSplitService {
           dumpId: dump.id,
           title: thought.slice(0, 200),
           thought,
-          context: baseContext,
-          prepType: 'search',
+          intent,
+          context,
+          prepType,
           status: 'prepping',
         })
         .returning();
 
       await this.prepQueue.add(
         'process',
-        { prepId: prep.id },
+        { prepId: prep.id, dumpId: dump.id },
         {
           attempts: 3,
           backoff: { type: 'exponential', delay: 2000 },
@@ -101,6 +117,7 @@ export class DumpSplitService {
     return {
       id: p.id,
       thought: p.thought || p.title,
+      intent: p.intent ?? null,
       status: p.status,
       render_type: p.renderType,
       summary: p.summary,

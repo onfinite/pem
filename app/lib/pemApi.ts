@@ -1,18 +1,30 @@
 import type { Prep, PrepKind } from "@/components/sections/home-sections/homePrepData";
 import { extractPrepResultBody } from "@/lib/extractPrepResultBody";
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
+import { parseAdaptiveFromResult } from "@/lib/adaptivePrep";
 import {
   getPrimaryKindFromResult,
   parsePrepBlocksFromResult,
   type PrepResultBlock,
 } from "@/lib/prepBlocks";
-import { FileText, Gift, Layers, Mail, Scale, Search, type LucideIcon } from "lucide-react-native";
+import {
+  FileText,
+  Gift,
+  Layers,
+  Mail,
+  Scale,
+  Search,
+  ShoppingBag,
+  type LucideIcon,
+} from "lucide-react-native";
 
 export type ApiPrep = {
   id: string;
   dump_id: string;
   title: string;
   thought?: string;
+  /** Fine-grained classifier intent (coarse UI bucket is `prep_type` / `render_type`). */
+  intent?: string | null;
   prep_type: string;
   render_type?: string | null;
   context?: Record<string, unknown> | null;
@@ -186,17 +198,53 @@ function optionsFromBlocks(blocks: PrepResultBlock[]): Prep["options"] | undefin
     .filter((o) => o.label.length > 0);
 }
 
+function optionsFromShoppingCard(
+  row: ApiPrep,
+): Prep["options"] | undefined {
+  const r = row.result;
+  if (!r || typeof r !== "object" || r.schema !== "SHOPPING_CARD" || !Array.isArray(r.products)) {
+    return undefined;
+  }
+  return r.products
+    .slice(0, 3)
+    .map((o) => {
+      if (!o || typeof o !== "object") return { label: "", price: "" };
+      const name = "name" in o && typeof o.name === "string" ? o.name : "";
+      const price = "price" in o && typeof o.price === "string" ? o.price : "";
+      const url = "url" in o && typeof o.url === "string" ? o.url.trim() : "";
+      const why = "why" in o && typeof o.why === "string" ? o.why : "";
+      const store = "store" in o && typeof o.store === "string" ? o.store : "";
+      const image = "image" in o && typeof o.image === "string" ? o.image.trim() : "";
+      return {
+        label: name,
+        price,
+        url: url.length > 0 ? url : undefined,
+        why: why.length > 0 ? why : undefined,
+        store: store.length > 0 ? store : undefined,
+        imageUrl: image.length > 0 ? image : undefined,
+      };
+    })
+    .filter((o) => o.label.length > 0);
+}
+
 /** Maps API prep row to hub `Prep` for lists and detail. */
 export function apiPrepToPrep(row: ApiPrep): Prep {
-  const blocks = parsePrepBlocksFromResult(row.result);
+  const adaptive = parseAdaptiveFromResult(row.result);
+  const blocks =
+    adaptive.shoppingCard || adaptive.draftCard
+      ? undefined
+      : parsePrepBlocksFromResult(row.result);
   const pk =
     getPrimaryKindFromResult(row.result) ?? row.render_type ?? row.prep_type;
   const kind = prepTypeToKind(pk);
-  const Icon = iconForKind(kind);
-  const { body, draftText, detailIntro, draftSubject } = blocks?.length
-    ? {}
-    : extractBodyAndDraft(row);
-  const options = blocks?.length ? optionsFromBlocks(blocks) : extractOptions(row);
+  const useAdaptive = Boolean(adaptive.shoppingCard || adaptive.draftCard);
+  const Icon: LucideIcon =
+    row.render_type === "shopping_card" ? ShoppingBag : iconForKind(kind);
+  const { body, draftText, detailIntro, draftSubject } =
+    blocks?.length || useAdaptive ? {} : extractBodyAndDraft(row);
+  const options = blocks?.length
+    ? optionsFromBlocks(blocks)
+    : optionsFromShoppingCard(row) ?? extractOptions(row);
 
   const summary =
     row.summary?.trim() ||
@@ -208,29 +256,41 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
 
   const title = row.thought?.trim() || row.title;
 
+  let tag =
+    row.status === "prepping"
+      ? "Prepping"
+      : row.status === "failed"
+        ? "Failed"
+        : tagForPrimaryKind(pk);
+  if (row.status === "ready") {
+    if (row.render_type === "shopping_card") tag = "Shop picks";
+    else if (row.render_type === "draft_card") tag = "Draft ready";
+  }
+
+  let viewLabel = viewLabelForKind(kind);
+  if (row.render_type === "shopping_card") viewLabel = "View picks";
+
   return {
     id: row.id,
     dumpId: row.dump_id,
+    intent: row.intent ?? undefined,
     Icon,
-    tag:
-      row.status === "prepping"
-        ? "Prepping"
-        : row.status === "failed"
-          ? "Failed"
-          : tagForPrimaryKind(pk),
+    tag,
     title,
     summary,
-    viewLabel: viewLabelForKind(kind),
+    viewLabel,
     kind,
     detailIntro,
     options,
     body: body || undefined,
-    draftText,
-    draftSubject,
+    draftText: adaptive.draftCard?.body ?? draftText,
+    draftSubject: adaptive.draftCard ? adaptive.draftCard.subject.trim() || null : draftSubject,
     status: row.status,
     unread:
       row.status === "ready" && (row.opened_at === null || row.opened_at === undefined),
     blocks: blocks ?? undefined,
+    shoppingCard: adaptive.shoppingCard,
+    draftCard: adaptive.draftCard,
   };
 }
 
@@ -310,6 +370,14 @@ export async function retryPrepApi(
   id: string,
 ): Promise<ApiPrep> {
   return apiFetch(`/preps/${encodeURIComponent(id)}/retry`, { method: "POST", getToken });
+}
+
+/** Permanently removes the prep (204). */
+export async function deletePrepApi(
+  getToken: () => Promise<string | null>,
+  id: string,
+): Promise<void> {
+  await apiFetch(`/preps/${encodeURIComponent(id)}`, { method: "DELETE", getToken });
 }
 
 export type ApiProfileFact = {

@@ -1,0 +1,153 @@
+---
+description: Pem dump intake — intent classification and prep routing (target behavior + UX rules)
+globs: backend/src/dump-jobs/**/*.ts, backend/src/agents/**/*.ts, backend/src/dumps/**/*.ts
+alwaysApply: false
+---
+
+# Pem: Dump → Split → (per-thought) Classify → Route → Prep
+
+## Where this fits in the pipeline
+
+1. **Split (required, structural)** — `SplitAgent` turns one dump into **one or more thoughts** (unrelated asks → multiple preps; one coherent ask → one prep). This step answers **only**: “how many distinct units of work?” It does **not** assign SHOPPING vs DRAFT vs RESEARCH. **Keep split dumb here** so we don’t blur “how many preps?” with “what kind?”  
+   - Implemented in: `dump-jobs/dump-split.service.ts`, `agents/split.agent.ts`, `prompts/split-transcript.prompt.ts`.
+
+2. **Intent classification (per thought, after split)** — For **each** thought (each future prep row), classify into exactly one intent type below **before** treating every prep the same way. This is the hook for **dynamic** handling: different Tavily rules, tools, prompts, and **output shapes** so users see real value (a draft vs a comparison vs a clarifying question), not one generic pattern.
+
+3. **Implementation status** — The rules in this file are the **target product contract** (what we want users to experience). Backend wiring (where classification runs: e.g. in the prep worker vs immediately after split; persisting `intent` on `preps`; branching `PrepRunnerService`) may lag — align code over time without changing the **split** contract above.
+
+**Cross-refs:** `pem-agent.mdc` (split vs agentic execution), `pem-product-brief.mdc` (prep types vs this doc’s intent lanes), **`pem-adaptive-prep-cards.mdc`** (per-intent card schemas + pipeline beyond classify/route).
+
+## Core principle
+For each **thought** (each prep), determine **intent** before using search as the default strategy. Never use the raw thought as the only Tavily query; never send a one-size-fits-all prep when a different intent calls for a different shape (draft vs options vs clarification).
+
+## Memory (prep execution)
+
+Intent lanes do **not** replace **memory**. The prep agent receives active **`memory_facts`** in system + user prompts, the structured formatter sees the same memory so hub **summary** lines stay specific (city, budget, constraints), and **`remember` / `save`** tools exist so results compound: shopping, **FIND_PLACE**, drafts, and logistics should ground in stored preferences when present.
+
+## Step 1: Intent classification
+When a **thought** arrives (after split), classify it into **exactly one** of these types using GPT-4o-mini:
+
+- **SHOPPING** — buy something, find a product, compare prices
+- **RESEARCH** — go deep on a topic **with search**: current facts, sources, comparisons of ideas (not “explain this concept” and not “summarize this paste”)
+- **DRAFT** — something written: email, message, proposal, bio, caption
+- **COMPARISON** — compare options, vendors, tools, services, plans
+- **DECISION** — choose between options; pros/cons or a recommendation
+- **LEGAL_FINANCIAL** — contracts, taxes, legal questions, financial decisions (often search + caution)
+- **LIFE_ADMIN** — logistics, scheduling, relocation, visa, renovation, appointments
+- **TASK_UNCLEAR** — too vague; need a clarifying question before proceeding
+- **SUMMARIZE** — “summarize this article / doc / contract / thread for me” — **input is a URL or pasted text**; task is compression and extraction, **not** open-ended web search
+- **FIND_PERSON** — “find the LinkedIn of the CTO of Stripe”, “who’s the head of sales at X” — **people discovery** (profiles, roles, contact paths)
+- **FIND_PLACE** — “best dentist near me”, “coworking in Oakland under $200/mo” — **local / venue / service** discovery (often needs location in context)
+- **SCHEDULE_PREP** — “I have a meeting with X investor tomorrow, prep me” — **brief someone before a meeting**: who they are, company, talking points, risks (search + synthesize)
+- **CONTENT_IDE** — “ideas for my next LinkedIn post about AI”, “what should I write about this week” — **creative angles**, hooks, outlines (minimal or no search unless trends matter)
+- **EXPLAIN** — “how do S-corps work?”, “what is a cap table?” — **conceptual clarity**, **no web search required** unless the user asks for “latest rules”; simpler and tighter than RESEARCH
+- **TRANSLATE_SIMPLIFY** — “simplify this legal clause”, “rewrite this in plain English” — **input is existing text**; output is rewritten / leveled, not a research report
+- **TRACK_MONITOR** — “tell me when X goes on sale”, “monitor this job listing” — **ongoing / async watchlist** (**not MVP** — classify when user clearly wants monitoring; product may respond with “not yet” or queue future work)
+
+Classification prompt pattern (update the enum when types change):
+You are classifying a user's thought for Pem, an AI prep assistant.
+Classify the following into exactly one of these types:
+SHOPPING | RESEARCH | DRAFT | COMPARISON | DECISION | LEGAL_FINANCIAL | LIFE_ADMIN | TASK_UNCLEAR | SUMMARIZE | FIND_PERSON | FIND_PLACE | SCHEDULE_PREP | CONTENT_IDEA | EXPLAIN | TRANSLATE_SIMPLIFY | TRACK_MONITOR
+Thought: "{thought}"
+Return only the type. No explanation.
+
+## Step 2: Route to prep strategy
+Each intent type has a different prep strategy:
+
+### SHOPPING
+- Search: product name + "best options" + "price comparison" + year
+- Output: top 3-5 options with price, pros/cons, where to buy, recommendation
+- No blog posts. Find actual products.
+
+### RESEARCH
+- Search: core topic + credible source keywords
+- Output: clear summary, key facts, sources cited, 3-5 bullet takeaways
+
+### DRAFT
+- No Tavily needed unless context is missing
+- Generate the draft directly from the dump
+- Output: ready-to-send or ready-to-use draft, with a one-line note on assumptions made
+
+### COMPARISON
+- Search: each option separately, then compare
+- Output: side-by-side table with relevant criteria, winner recommendation
+
+### DECISION
+- Search: data points relevant to the decision
+- Output: structured pros/cons, relevant data, clear recommendation at the end
+
+### LEGAL_FINANCIAL
+- Search: topic + "explained" + authoritative sources (IRS, legal sites)
+- Output: plain-English summary, key things to know, flag when a professional is needed
+
+### LIFE_ADMIN
+- Search: specific logistics (visa requirements, moving costs, contractor reviews, etc.)
+- Output: step-by-step breakdown, key contacts or resources, actionable next steps
+
+### TASK_UNCLEAR
+- Do not search
+- Output: one clarifying question only — short, friendly, specific
+
+### SUMMARIZE
+- If **URL**: fetch / extract (or search for the page if only a partial link), then summarize — **not** a generic web search on the topic
+- If **pasted text**: summarize in place; no Tavily unless fact-checking is explicitly asked
+- Output: tight summary (bullets or short sections), key dates/numbers/obligations if doc/contract; no filler
+
+### FIND_PERSON
+- Search: role + company + LinkedIn / leadership / “who is” (targeted people queries, not product search)
+- Output: who they are, role, best public profile link(s), one-line how to frame outreach — **no fabricated contact info**
+
+### FIND_PLACE
+- Search: category + geography + constraints (price, hours) — treat like local/service discovery, not generic blog list
+- Output: shortlist with why each fits, links where useful, **clear pick** when appropriate (respect “near me” only if location exists in profile/context; else ask once or state assumption)
+
+### SCHEDULE_PREP
+- Search: person, company, recent news, angle for conversation
+- Output: **briefing card**: who / what matters / 3–5 talking points / risks / suggested asks — scannable before a meeting
+
+### CONTENT_IDEA
+- Tavily optional (trends, examples) — often **none** if the ask is purely ideation from the user’s topic
+- Output: numbered ideas, angles, optional hooks; not a full draft unless they asked for one
+
+### EXPLAIN
+- **Default: no Tavily** — model knowledge only, structured clearly (definition → how it works → example → caveat)
+- Add search only if the user needs “current law/policy/pricing” or says “latest”
+
+### TRANSLATE_SIMPLIFY
+- **No Tavily** — input text is the source; rewrite in plain language, preserve meaning; flag “get a pro” for legal/medical if heavy
+
+### TRACK_MONITOR
+- **Not MVP** — do not pretend a live monitor exists. If classified: honest response that ongoing tracking is coming / unavailable, or capture intent for roadmap (product decision). Do not fake alerts or cron jobs.
+
+## Step 3: Tavily query generation rules
+- Never use the raw thought as the only search query
+- **Skip Tavily** when intent is **EXPLAIN**, **TRANSLATE_SIMPLIFY**, **DRAFT** (unless context missing), **TASK_UNCLEAR**, **CONTENT_IDEA** (unless trends), **TRACK_MONITOR** (not MVP)
+- **SUMMARIZE**: prefer fetch/extract of the given URL or pasted content — do not replace with a generic topic search
+- When search is used: 4–10 words, specific, no filler
+- **SHOPPING:** `{product} buy options price comparison 2026` — **prefer direct retailer PDPs** (Amazon/Target/Walmart/brand store); backend search excludes maps/Google Shopping SERP/local directories; do not surface “near me” or store-locator links as the product `url` unless the user asked for local pickup.
+- **COMPARISON:** `{option A} vs {option B} {criteria}`
+- **FIND_PERSON:** `{name or role} {company} LinkedIn OR leadership`
+- **FIND_PLACE:** `{category} {city or area} {constraint}`
+- **SCHEDULE_PREP:** `{person} {company} background` + `{company} news recent`
+- Prefer official pages, maps/review aggregators for places, profile pages for people — not random blogs
+
+## Step 4: Output format rules
+- Every prep output must feel like something a great EA handed you
+- Lead with the most useful thing first
+- No filler, no "great question", no preamble
+- **SHOPPING / COMPARISON / FIND_PLACE:** end with a clear recommendation when it fits
+- **DRAFT / TRANSLATE_SIMPLIFY:** include copy-paste-ready text
+- **DECISION:** end with "My take:" and a direct recommendation
+- **SUMMARIZE:** lead with the TL;DR; then sections if long source
+- **FIND_PERSON / SCHEDULE_PREP:** scannable bullets, links where real
+- **EXPLAIN:** short headings, example, one caveat if relevant
+- **CONTENT_IDEA:** list of ideas, optional one-line “start here”
+- **TRACK_MONITOR:** no fake automation; set expectations
+- Max length: enough to be useful, not an article unless the user asked for depth
+
+## General rules
+- gpt-4o-mini for classification (cheap, fast)
+- gpt-4o for prep generation (quality matters)
+- If Tavily returns blog posts or low-quality results, regenerate the query once before proceeding
+- Log the intent type on every prep for future analytics
+- Never return a prep that is just a list of links — always synthesize

@@ -58,4 +58,6 @@ When **`ENV` is not `prod`**:
 | `npm run start:dev` | Watch mode |
 | `npm run build` | Compile to `dist/` |
 | `npm run lint` | ESLint |
+
+`nest-cli` uses `deleteOutDir: false` so `npm run start:dev` doesn’t delete all of `dist/` right before Node boots (which caused missing `dist/src/main.js`). If something feels stale after refactors, run `rm -rf dist && npm run build`. Production images should run a clean `nest build` (or delete `dist` first).
 | `npm run test:e2e` | E2E (needs `DATABASE_URL`; see `test/setup-e2e.ts`) |

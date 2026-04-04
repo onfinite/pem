@@ -1,4 +1,5 @@
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
+import type { DraftCardPayload, ShoppingCardPayload } from "@/lib/adaptivePrep";
 import type { PrepResultBlock } from "@/lib/prepBlocks";
 
 export type PrepOption = NonNullable<Prep["options"]>[number];
@@ -99,6 +100,31 @@ function buildPrepOptionShareTextFromRow(o: {
   return lines.join("\n");
 }
 
+function buildShoppingCardShareText(c: ShoppingCardPayload): string {
+  const lines: string[] = [c.recommendation];
+  if (c.query.trim()) lines.push(c.query);
+  for (const p of c.products) {
+    const bits = [p.name, p.store, p.price, ratingLine(p.rating), p.why, p.url].filter(
+      (x): x is string => typeof x === "string" && x.trim().length > 0,
+    );
+    lines.push(bits.join("\n"));
+  }
+  if (c.buyingGuide.trim()) lines.push(c.buyingGuide.trim());
+  return lines.join("\n\n");
+}
+
+function ratingLine(r: number): string | null {
+  if (r <= 0) return null;
+  return `${r.toFixed(1)} ★`;
+}
+
+function buildDraftCardShareText(d: DraftCardPayload): string {
+  const head = [d.subject.trim() ? `Subject: ${d.subject.trim()}` : null, `Tone: ${d.tone}`].filter(Boolean);
+  const body = d.body.trim();
+  const tail = d.assumptions.trim() ? `\n\nAssumed: ${d.assumptions.trim()}` : "";
+  return [...head, body].filter(Boolean).join("\n") + tail;
+}
+
 /** Full prep content for detail share (markdown-ish body kept as-is). */
 export function buildPrepShareablePlainText(prep: Prep): string {
   const parts: string[] = [];
@@ -106,8 +132,16 @@ export function buildPrepShareablePlainText(prep: Prep): string {
   if (prep.title?.trim()) parts.push(prep.title.trim());
   if (prep.summary?.trim()) parts.push(prep.summary.trim());
   if (prep.detailIntro?.trim()) parts.push(prep.detailIntro.trim());
+  if (prep.shoppingCard) {
+    parts.push(buildShoppingCardShareText(prep.shoppingCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.draftCard) {
+    parts.push(buildDraftCardShareText(prep.draftCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
   if (prep.blocks?.length) {
-    parts.push(...buildPrepBlockShareLines(prep.blocks));
+   parts.push(...buildPrepBlockShareLines(prep.blocks));
   } else {
     if (prep.options?.length) {
       for (const o of prep.options) {

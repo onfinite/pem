@@ -7,6 +7,7 @@ import { PrepsModule } from '../preps/preps.module';
 import { ProfileModule } from '../profile/profile.module';
 import { PushModule } from '../push/push.module';
 import { StepsModule } from '../steps/steps.module';
+import { IntentClassifierAgent } from './intent-classifier.agent';
 import { PrepRunnerService } from './prep-runner.service';
 import { SplitAgent } from './split.agent';
 
@@ -20,7 +21,7 @@ import { SplitAgent } from './split.agent';
     StepsModule,
     PrepEventsModule,
   ],
-  providers: [SplitAgent, PrepRunnerService],
-  exports: [SplitAgent, PrepRunnerService],
+  providers: [SplitAgent, IntentClassifierAgent, PrepRunnerService],
+  exports: [SplitAgent, IntentClassifierAgent, PrepRunnerService],
 })
 export class AgentsModule {}

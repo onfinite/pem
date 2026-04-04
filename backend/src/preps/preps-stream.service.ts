@@ -108,6 +108,7 @@ export class PrepsStreamService {
     return {
       id: p.id,
       thought: p.thought || p.title,
+      intent: p.intent ?? null,
       status: p.status,
       render_type: p.renderType,
       summary: p.summary,

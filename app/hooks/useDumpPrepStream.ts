@@ -8,6 +8,7 @@ type StreamPayload = {
   prep?: {
     id: string;
     thought?: string;
+    intent?: string | null;
     status?: string;
     render_type?: string | null;
     summary?: string | null;
@@ -40,6 +41,7 @@ function partialToApiPrep(p: NonNullable<StreamPayload["prep"]>, dumpId: string)
     dump_id: dumpId,
     title: thought.slice(0, 200),
     thought,
+    intent: p.intent ?? null,
     prep_type: rt,
     render_type: p.render_type ?? null,
     status: st as ApiPrep["status"],

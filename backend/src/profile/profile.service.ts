@@ -72,7 +72,8 @@ export class ProfileService {
   async buildMemoryPromptSection(userId: string): Promise<string> {
     const rows = await this.repo.listActiveNotesForPrompt(userId);
     if (rows.length === 0) {
-      return 'What I know about this user:\n(nothing saved yet — infer only from this prep and transcript.)';
+      return `What I know about this user:
+(nothing saved yet — infer only from this dump and transcript. When they share stable preferences, constraints, or facts worth recalling later, use save() so future preps can use them.)`;
     }
     const seen = new Set<string>();
     const lines: string[] = [];
@@ -86,7 +87,9 @@ export class ProfileService {
       const text = noteForContext(r.note).trim();
       lines.push(`- (${r.memoryKey}) ${text} (as of ${when})`);
     }
-    return `What I know about this user:\n${lines.join('\n')}`;
+    return `What I know about this user:\n${lines.join('\n')}
+
+Use this actively: tailor search terms, options, and tone to these facts. Call remember(memory_key) if a topic might have more detail than shown. Call save() when the user (or tools) adds or updates something durable — don't skip "small" facts; they compound.`;
   }
 
   async remember(userId: string, key: string): Promise<string | null> {

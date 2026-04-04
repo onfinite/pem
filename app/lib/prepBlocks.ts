@@ -104,6 +104,8 @@ export function getPrimaryKindFromResult(
   result: Record<string, unknown> | null | undefined,
 ): string | undefined {
   if (!result) return undefined;
+  if (result.schema === "SHOPPING_CARD") return "options";
+  if (result.schema === "DRAFT_CARD") return "draft";
   if (typeof result.primaryKind === "string") return result.primaryKind;
   return undefined;
 }

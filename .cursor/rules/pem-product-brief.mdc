@@ -16,6 +16,11 @@ See repo **`README.md`** (*What is Pem?*) for the human story. This file capture
 
 POST `/dumps` must **return immediately** after queuing BullMQ jobs — **never await** agents in the controller. One thought = one prep row = one job.
 
+## Split vs intent (product direction)
+
+- **Split** answers only: how many distinct thoughts / preps from one dump? (Unrelated asks → multiple preps; one coherent ask → one prep.) Implemented today in the dump worker (`SplitAgent`).
+- **Intent routing** (see **`pem-intake-routing.mdc`**) is the target for **dynamic** handling per prep: classify each thought, then route (search vs draft vs clarify, etc.) so outputs match what the user needed — not one generic pattern for everything. DB `prep_type` / UI `PrepKind` may evolve to align with routed intents over time.
+
 ## Prep types
 
 `search` | `research` | `options` | `draft` — map to UI `PrepKind` where needed.

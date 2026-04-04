@@ -30,5 +30,5 @@ ${relevantBlock ? `${relevantBlock}\n` : ''}
 Enriched context (JSON) — structured profile map for tools that still expect key/value:
 ${enrichedContextJson}
 
-Use tools as needed. When finished, produce a clear final answer in plain language in your last message.`;
+Prioritize the memory block above for preferences and constraints when it does not contradict this thought. Ground recommendations in it (budget caps, city, family context). Use tools as needed. When finished, produce a clear final answer in plain language in your last message — specifics from memory should show up in what you say, not generic one-size-fits-all advice.`;
 }

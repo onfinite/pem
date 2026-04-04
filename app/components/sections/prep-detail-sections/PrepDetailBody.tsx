@@ -15,6 +15,8 @@ import { openExternalUrl } from "@/lib/openExternalUrl";
 import { ExternalLink } from "lucide-react-native";
 import { Image, Platform, Pressable, StyleSheet, View } from "react-native";
 import type { Prep } from "../home-sections/homePrepData";
+import PrepDraftDocument from "./PrepDraftDocument";
+import PrepShoppingExperience from "./PrepShoppingExperience";
 import PrepShareRow from "./PrepShareRow";
 
 type Props = { prep: Prep };
@@ -28,7 +30,6 @@ const COPY = {
   searchLead: "Here’s the gist.",
   draftSection: "Words you can send",
   draftHint: "Share when you’re ready — you’re always the one who sends.",
-  guidanceLabel: "Guidance",
   limitationLabel: "Note",
   shareSection: "Take this with you",
 } as const;
@@ -223,9 +224,9 @@ function PrepDetailBlockSection({ block, prepTitle }: BlockSectionProps) {
                 Tone: {block.tone}
               </PemText>
             ) : null}
-            <PemText selectable style={[styles.draftText, { color: colors.textPrimary }]}>
+            <PemMarkdown variant="body" selectable style={{ color: colors.textPrimary }}>
               {body}
-            </PemText>
+            </PemMarkdown>
             <View style={[styles.blockToolbarFooter, { borderTopColor: colors.borderMuted }]}>
               <PrepShareRow
                 variant="compact"
@@ -242,16 +243,12 @@ function PrepDetailBlockSection({ block, prepTitle }: BlockSectionProps) {
       if (!body) return null;
       return (
         <View style={styles.section}>
-          <View style={[styles.calloutCard, { backgroundColor: colors.brandMutedSurface, borderColor: colors.borderMuted }]}>
-            <PemText style={[styles.calloutLabel, { color: colors.textSecondary }]}>{COPY.guidanceLabel}</PemText>
-            {block.title?.trim() ? (
-              <PemText style={[styles.calloutTitle, { color: colors.textPrimary }]}>{block.title.trim()}</PemText>
-            ) : null}
-            <PemMarkdown variant="companion" selectable>
-              {body}
-            </PemMarkdown>
-            <BlockToolbar text={buildBlockShareText(block)} shareTitle={prepTitle} />
-          </View>
+          {block.title?.trim() ? (
+            <PemText style={[styles.blockSectionTitle, { color: colors.textPrimary }]}>{block.title.trim()}</PemText>
+          ) : null}
+          <PemMarkdown variant="body" selectable>
+            {body}
+          </PemMarkdown>
         </View>
       );
     }
@@ -260,15 +257,19 @@ function PrepDetailBlockSection({ block, prepTitle }: BlockSectionProps) {
       if (!body) return null;
       return (
         <View style={styles.section}>
-          <View style={[styles.calloutCard, { backgroundColor: colors.secondarySurface, borderColor: colors.borderMuted }]}>
+          <View
+            style={[
+              styles.calloutCard,
+              { backgroundColor: colors.secondarySurface, borderColor: colors.borderMuted },
+            ]}
+          >
             <PemText style={[styles.calloutLabel, { color: colors.textSecondary }]}>{COPY.limitationLabel}</PemText>
             {block.title?.trim() ? (
-              <PemText style={[styles.calloutTitle, { color: colors.textPrimary }]}>{block.title.trim()}</PemText>
+              <PemText style={[styles.blockSectionTitle, { color: colors.textPrimary }]}>{block.title.trim()}</PemText>
             ) : null}
-            <PemMarkdown variant="companion" selectable>
+            <PemMarkdown variant="body" selectable>
               {body}
             </PemMarkdown>
-            <BlockToolbar text={buildBlockShareText(block)} shareTitle={prepTitle} />
           </View>
         </View>
       );
@@ -282,7 +283,9 @@ export default function PrepDetailBody({ prep }: Props) {
   const { colors } = useTheme();
 
   const shareableFull = buildPrepShareablePlainText(prep);
+  const hasAdaptive = Boolean(prep.shoppingCard || prep.draftCard);
   const showFullShare =
+    !hasAdaptive &&
     prep.status !== "prepping" &&
     prep.status !== undefined &&
     shareableFull.trim().length > 0;
@@ -304,23 +307,38 @@ export default function PrepDetailBody({ prep }: Props) {
       ) : null}
 
       {prep.detailIntro ? (
-        <View style={[styles.draftMetaCard, { backgroundColor: colors.brandMutedSurface, borderColor: colors.borderMuted }]}>
+        <View style={styles.section}>
           <PemText selectable style={[styles.proseMuted, { color: colors.textSecondary }]}>
             {prep.detailIntro}
           </PemText>
-          <BlockToolbar text={prep.detailIntro} shareTitle={prep.title} />
         </View>
       ) : null}
 
-      {useBlocks
+      {prep.shoppingCard ? (
+        <PrepShoppingExperience
+          data={prep.shoppingCard}
+          prepTitle={prep.title}
+          sharePlainText={shareableFull}
+        />
+      ) : null}
+
+      {prep.draftCard ? (
+        <PrepDraftDocument
+          data={prep.draftCard}
+          prepTitle={prep.title}
+          sharePlainText={shareableFull}
+        />
+      ) : null}
+
+      {!hasAdaptive && useBlocks
         ? prep.blocks!.map((b, i) => (
             <PrepDetailBlockSection key={`${b.type}-${i}`} block={b} prepTitle={prep.title} />
           ))
         : null}
 
-      {isOptions ? <PrepDetailOptionPicks options={prep.options!} /> : null}
+      {!hasAdaptive && isOptions ? <PrepDetailOptionPicks options={prep.options!} /> : null}
 
-      {!useBlocks && prep.body ? (
+      {!hasAdaptive && !useBlocks && prep.body ? (
         <View style={styles.section}>
           {proseLead ? (
             <PemText selectable style={[styles.leadProse, { color: colors.textSecondary }]}>
@@ -341,14 +359,14 @@ export default function PrepDetailBody({ prep }: Props) {
         </View>
       ) : null}
 
-      {!useBlocks && prep.kind === "draft" && prep.draftText ? (
+      {!hasAdaptive && !useBlocks && prep.kind === "draft" && prep.draftText ? (
         <View style={styles.section}>
           <PemText style={[styles.sectionTitle, { color: colors.textPrimary }]}>{COPY.draftSection}</PemText>
           <PemText style={[styles.draftHint, { color: colors.textSecondary }]}>{COPY.draftHint}</PemText>
           <View style={[styles.draftSurface, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
-            <PemText selectable style={[styles.draftText, { color: colors.textPrimary }]}>
+            <PemMarkdown variant="body" selectable style={{ color: colors.textPrimary }}>
               {prep.draftText}
-            </PemText>
+            </PemMarkdown>
             <View style={[styles.blockToolbarFooter, { borderTopColor: colors.borderMuted }]}>
               <PrepShareRow
                 variant="compact"
@@ -389,11 +407,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     lineHeight: lh(fontSize.md, lineHeight.relaxed),
     fontFamily: fontFamily.sans.regular,
-  },
-  draftMetaCard: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
   },
   picksGap: {
     gap: space[5],
@@ -475,11 +488,6 @@ const styles = StyleSheet.create({
     paddingTop: space[3],
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  draftText: {
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.relaxed),
-    fontFamily: fontFamily.sans.regular,
-  },
   draftMetaLine: {
     fontSize: fontSize.sm,
     lineHeight: lh(fontSize.sm, lineHeight.relaxed),
@@ -498,10 +506,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     textTransform: "uppercase",
   },
-  calloutTitle: {
+  /** Optional title on guidance blocks; optional line under “Note” on limitation. */
+  blockSectionTitle: {
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.lg,
     lineHeight: lh(fontSize.lg, lineHeight.snug),
+    marginBottom: space[2],
   },
   shareSection: {
     gap: space[3],

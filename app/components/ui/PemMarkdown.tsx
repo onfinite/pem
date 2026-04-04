@@ -18,7 +18,7 @@ type Props = {
 
 const selectableRules = getSelectableMarkdownRules();
 
-/** Renders markdown with Pem typography. With `selectable`, links are **visual only** (tap-to-open would break native text selection). */
+/** Renders markdown with Pem typography. With `selectable`, body text is selectable; links are tappable (see `pemMarkdownSelectableRules`). */
 export default function PemMarkdown({
   children,
   variant = "body",
@@ -98,7 +98,8 @@ export default function PemMarkdown({
       rules={selectable ? selectableRules : undefined}
       onLinkPress={(url) => {
         void openExternalUrl(url);
-        return true;
+        /** `false` = skip the library’s extra `Linking.openURL` after our `openExternalUrl`. */
+        return false;
       }}
     >
       {children}

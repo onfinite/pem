@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -183,6 +185,16 @@ export class PrepsController {
     return this.serializePrep(p);
   }
 
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Permanently delete prep (cannot be undone)' })
+  async delete(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<void> {
+    await this.preps.deleteForUser(id, user.id);
+  }
+
   private serializePrep(p: PrepRow) {
     const prepType = p.renderType || p.prepType || 'search';
     return {
@@ -190,6 +202,7 @@ export class PrepsController {
       dump_id: p.dumpId,
       title: p.title,
       thought: p.thought || p.title,
+      intent: p.intent ?? null,
       prep_type: prepType,
       render_type: p.renderType,
       context: p.context,

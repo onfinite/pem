@@ -11,6 +11,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react-native";
+import type { DraftCardPayload, ShoppingCardPayload } from "@/lib/adaptivePrep";
 import type { PrepResultBlock } from "@/lib/prepBlocks";
 
 /**
@@ -86,10 +87,16 @@ export type Prep = {
   status?: "prepping" | "ready" | "archived" | "failed";
   /** Present for API-backed preps; used to scope the post-dump “Pem’s got it” list. */
   dumpId?: string;
+  /** Fine-grained classifier intent when present (API). */
+  intent?: string;
   /** Ready prep not yet opened in detail (inbox-style). */
   unread?: boolean;
   /** Composable sections (new API). When set, detail renders blocks in order. */
   blocks?: PrepResultBlock[];
+  /** Adaptive layout — `SHOPPING_CARD` from API `result.schema`. */
+  shoppingCard?: ShoppingCardPayload;
+  /** Adaptive layout — `DRAFT_CARD` from API `result.schema`. */
+  draftCard?: DraftCardPayload;
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [

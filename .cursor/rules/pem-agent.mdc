@@ -16,18 +16,19 @@ Voice is a future feature — do not build any voice infrastructure yet.
 
 ## The Core Philosophy
 
-Pem is agentic. The agent decides its own steps.
+Pem is agentic **inside each prep**: the agent plans steps, calls tools, and synthesizes.
 
-We do not pre-define "this dump is a research prep" or "this dump is a draft prep."
-We give the agent a goal, a user context, and a set of tools.
-The agent figures out what steps to take to make the result useful.
+**Split vs intent (two layers):**
 
-This is the shift:
+- **Split** only decides **how many** preps (one thought vs several unrelated thoughts). It is **structural** — see `pem-intake-routing.mdc` — and stays that way.
+- **Intent routing** (target: **per thought**, after split) steers **how** that prep is handled so users see **different kinds of value** (shopping shortlist vs draft vs clarification vs research summary). That is **not** “one identical pipeline for every prep.” It can still be agentic: within each intent **lane**, the agent chooses steps and tools — but Tavily usage, query patterns, and output shape follow the routed strategy.
 
 ```
-❌ Old thinking: classify → pick type → run one agent
-✅ Real agentic: understand goal → plan steps → run tools → synthesize
+❌ Conflate split with intent: “classify the whole dump once” and ignore multi-thought dumps
+✅ Split → then per-thought intent → routed strategy → agent plans within that lane
 ```
+
+**Implementation note:** Until intent is fully wired in code, the runner may still default many preps to a similar agentic path; **`pem-intake-routing.mdc`** is the north star for making behavior diverge by intent. **`pem-adaptive-prep-cards.mdc`** is the north star for **per-intent structured results and visual card contracts** (what ships in `result` + how the app renders).
 
 ---
 
@@ -427,6 +428,7 @@ GET   /dumps                  List user's dumps
 GET   /preps                  List user's preps (?status=prepping|ready|archived)
 GET   /preps/:id              Single prep with full result + agent steps
 PATCH /preps/:id/archive      User acted — archive
+DELETE /preps/:id             Permanently delete prep (cannot undo)
 
 GET   /preps/:id/steps        Agent step log for this prep (for detail screen)
 

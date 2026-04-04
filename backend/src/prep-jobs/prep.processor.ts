@@ -12,13 +12,13 @@ export class PrepProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<{ prepId: string }>): Promise<void> {
-    const { prepId } = job.data;
+  async process(job: Job<{ prepId: string; dumpId?: string }>): Promise<void> {
+    const { prepId, dumpId } = job.data;
     if (!prepId) {
       this.log.warn('prep job missing prepId');
       return;
     }
     this.log.log(`prep queue job ${job.id} → prep ${prepId}`);
-    await this.runner.run(prepId);
+    await this.runner.run(prepId, dumpId);
   }
 }

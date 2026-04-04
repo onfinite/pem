@@ -29,6 +29,9 @@ export const PREP_RENDER_TYPES = [
   'draft',
   'compound',
   'mixed',
+  /** Adaptive layouts — see `pem-adaptive-prep-cards.mdc` */
+  'shopping_card',
+  'draft_card',
 ] as const;
 export type PrepRenderType = (typeof PREP_RENDER_TYPES)[number];
 
@@ -46,6 +49,11 @@ export const prepsTable = pgTable(
     title: text('title').notNull(),
     /** One extracted actionable line from the dump (agentic flow). */
     thought: text('thought').notNull().default(''),
+    /**
+     * Per-thought intent after split (`IntentClassifierAgent`).
+     * See `.cursor/rules/pem-intake-routing.mdc`.
+     */
+    intent: text('intent'),
     /** Enriched context merged from dump + profile at prep creation. */
     context: json('context').$type<Record<string, unknown>>(),
     prepType: text('prep_type').notNull(),

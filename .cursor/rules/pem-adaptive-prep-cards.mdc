@@ -1,0 +1,162 @@
+---
+description: Pem adaptive visual prep — intent-scoped card schemas, 5-stage pipeline target, app dispatch (beyond split)
+globs: backend/src/agents/**/*.ts, backend/src/prep-jobs/**/*.ts, backend/src/integrations/**/*.ts, app/components/sections/prep-detail-sections/**/*.tsx, app/app/(app)/prep/**/*.tsx
+alwaysApply: false
+---
+
+# Pem: Adaptive Visual Prep System + Smarter Agentic Loop (beyond split)
+
+## Relationship to other rules
+
+- **Split stays structural only** — see **`pem-intake-routing.mdc`** (how many preps). Do not blend “how many?” with “what layout?”.
+- **Intent taxonomy** — same doc: per-thought **SHOPPING**, **FIND_PLACE**, **DRAFT**, etc. This file defines **what the user sees**: different card UIs and structured `result` payloads matched to those intents.
+- **Agentic execution** — **`pem-agent.mdc`** (tools, steps, memory). Adaptive cards are **what we synthesize and store**, not a replacement for clarify/tools.
+
+**Cross-refs:** `pem-intake-routing.mdc`, `pem-agent.mdc`, `pem-backend.mdc` (where code lives).
+
+---
+
+## Core philosophy
+
+Every ready prep should feel like **a different app opened for that task** — not a wall of chat text. Prefer **structured data + a render signal** the mobile client maps to **layout components**. The API returns **honest, validated-shaped JSON**; the client chooses **visual language** (grid, map row, brief, document, verdict).
+
+**Wow standard:** If it reads like a generic assistant reply, it failed. If it feels purpose-built for that task, it succeeded.
+
+---
+
+## Pipeline (five stages — target architecture)
+
+Implementation may still use a **single agent loop + formatter** while migrating; the **target** is explicit stages so search, parallelism, and synthesis stay intent-aware.
+
+### Stage 1 — Classify
+
+- Model: fast (e.g. gpt-4o-mini).
+- **Input:** one **thought** (after split), plus optional dump context.
+- **Output:** intent enum (see `pem-intake-routing.mdc`) + optional **confidence** + **extracted entities** (product name, city, person, company, URL, etc.).
+- **Code touchpoints:** `IntentClassifierAgent`, `preps.intent`, `agents/prompts/intent-classify.prompt.ts`, `agents/intents/prep-intent.ts`.
+
+### Stage 2 — Plan
+
+- **Before** heavy search/generation: produce a **prep plan** JSON — what to search, what modalities matter, which **output schema** to fill.
+- Example shape (illustrative; tighten in code when added):
+
+```json
+{
+  "searches": [
+    { "query": "...", "purpose": "...", "resultType": "products|places|people|articles|data" }
+  ],
+  "needsImages": true,
+  "needsMap": true,
+  "needsProfileLookup": true,
+  "outputSchema": "SHOPPING_CARD",
+  "parallelizable": true
+}
+```
+
+- **Planner** may be a dedicated prompt/step or the first reasoning block inside the runner — product choice is **explicit plan object** vs implicit tool plan.
+
+### Stage 3 — Execute (parallel where possible)
+
+- Run independent searches with **`Promise.all`** when the plan allows (cap concurrency e.g. **5**; respect Tavily rate limits).
+- Pass **resultType** (or equivalent) into search integration so queries stay lane-specific — aligned with Tavily rules in **`pem-intake-routing.mdc`** (products vs places vs people vs articles).
+- Optional: **images** from real result URLs only; **map** coords only when reliable; **person** enrichment without inventing photos or emails.
+
+**Code touchpoints:** `TavilyService`, `agents/agent-tools/prep-tools.factory.ts`, future planner module.
+
+### Stage 4 — Synthesize
+
+- Model: capable (e.g. gpt-4o-class).
+- **Input:** thought, intent, entities, aggregated research (not raw dumps of irrelevant SERP).
+- **Output:** one JSON object matching the chosen **card schema** (below). No prose outside JSON. **No hallucinated prices, URLs, or images** — omit or say unknown.
+
+**Code touchpoints:** `PrepRunnerService` structured pass, `agents/prompts/prep-structured.prompt.ts`, `agents/schemas/prep-result.schema.ts` (evolve toward discriminated **schema** + payload).
+
+### Stage 5 — Render signal
+
+- Persist on the prep **`result`** (and hub **`summary`**): include a stable **`schema`** (or `layout`) string the app uses to **`switch`/`match`** on the detail screen.
+- Backend does **not** pick fonts or spacing — it returns **data + schema id**. **`render_type` / `prep_type`** may remain coarse for lists; **detail** can key off **`result.schema`**.
+
+**Code touchpoints:** `preps.result` JSON, `PrepDetailBody.tsx`, `app/(app)/prep/[id].tsx`.
+
+---
+
+## Intent → visual lane → `outputSchema`
+
+Map **intent** (intake-routing) to a **card schema** the product owns. Multiple intents may share one schema if the layout fits; split intents (e.g. COMPARISON vs DECISION) may get distinct schemas when UX diverges.
+
+| Intent lane | Visual feel | `outputSchema` (string) |
+|-------------|-------------|-------------------------|
+| SHOPPING | Product grid, images, price, CTA | `SHOPPING_CARD` |
+| COMPARISON | Side-by-side / swipeable compare | `COMPARISON_CARD` |
+| RESEARCH | Article-like, key facts, sources | `RESEARCH_CARD` |
+| FIND_PLACE | Map + list, distance, rating | `PLACE_CARD` |
+| FIND_PERSON | Profile card, links, no fake photo | `PERSON_CARD` |
+| SCHEDULE_PREP | Meeting brief | `MEETING_BRIEF` |
+| DRAFT | Clean document, copy-first | `DRAFT_CARD` |
+| DECISION | Verdict up top, evidence below | `DECISION_CARD` |
+| LEGAL_FINANCIAL | Clauses + plain English | `LEGAL_FINANCIAL_CARD` (or split `CLAUSE_CARD` + summary by product) |
+| EXPLAIN | TL;DR, steps, analogy | `EXPLAIN_CARD` |
+| SUMMARIZE | Pull quotes, key points, reading time | `SUMMARY_CARD` |
+| CONTENT_IDE | Idea cards, swipe / save-discard pattern | `IDEA_CARDS` |
+| TASK_UNCLEAR | Single clarify prompt (minimal chrome) | align with existing clarify / `guidance` — product decides |
+| Others (LIFE_ADMIN, TRACK_MONITOR, …) | Fallback or dedicated schema as product matures | `RESEARCH_CARD` / `GUIDANCE_CARD` / intent-specific |
+
+When adding a schema, add **Zod** (or equivalent) validation server-side and a **single** React subtree under `app/components/sections/prep-detail-sections/`.
+
+---
+
+## Card schema registry (contract names)
+
+These are **API/contract identifiers**. Field lists belong in **`agents/schemas/`** and TypeScript types — keep this table as the **index** only.
+
+| Schema | Role |
+|--------|------|
+| `SHOPPING_CARD` | `recommendation`, `products[]` (name, price, rating, image URL, url, pros/cons, optional badge), `buyingGuide?` |
+| `COMPARISON_CARD` | `options[]`, `criteria[]`, `winner`, `winnerReason`, scores per option |
+| `PLACE_CARD` | `places[]` (address, rating, geo?, photo?, hours?, …), `mapCenter?` |
+| `PERSON_CARD` | `name`, role, company, links, `bio?`, `photo?` only if confident |
+| `MEETING_BRIEF` | `meetingWith`, company context, person background, `recentNews[]`, talking points, avoid list |
+| `DRAFT_CARD` | `draftType`, `subject?`, `body`, `tone`, `assumptions?` |
+| `DECISION_CARD` | `question`, `verdict`, `verdictReason`, `options[]`, `keyData[]`, `confidence` |
+| `RESEARCH_CARD` | `topic`, executive `summary`, `keyFacts[]`, `sections?`, `sources[]` |
+| `EXPLAIN_CARD` | `concept`, `tldr`, `explanation`, `steps?`, `analogy?`, `commonMistakes?` |
+| `SUMMARY_CARD` | `tldr`, `keyPoints[]`, `pullQuote?`, `readingTime?`, source metadata |
+| `IDEA_CARDS` | `context`, `ideas[]` (title, hook, angle, format?) |
+
+Extend the registry in code when UX requires a new layout; update this table in the **same** change.
+
+---
+
+## Quality rules (agentic loop)
+
+- Prefer **≥3 distinct sources** for search-heavy intents when claiming recommendations (regenerate query once on low-quality SERP — see intake-routing).
+- **Shopping:** ≥3 products with **real** prices and URLs when possible; never placeholder images.
+- **Places:** ≥3 candidates with ratings when the ask implies a shortlist; **map** only with real coordinates or omit.
+- **People:** omit `photo` rather than wrong person.
+- **Meeting brief:** include **recent** angle (e.g. news) when user asked for prep before a meeting.
+- **Confidence:** surface **low** when sources are thin; never pad with fiction.
+- **Latency target:** favor parallel execution; simple intents **~30s**, complex **~60s** (tune with timeouts in config — see `pem-backend.mdc`).
+
+---
+
+## Implementation map (repo)
+
+| Area | Location |
+|------|----------|
+| Intent on row | `backend/src/database/schemas/preps.schema.ts` (`intent`) |
+| Classify | `backend/src/agents/intent-classifier.agent.ts` |
+| Run prep + structure | `backend/src/agents/prep-runner.service.ts` |
+| Blocks / structured output (today) | `backend/src/agents/schemas/prep-result.schema.ts` |
+| Tools | `backend/src/agents/agent-tools/prep-tools.factory.ts` |
+| Prep worker | `backend/src/prep-jobs/` |
+| Detail UI | `app/components/sections/prep-detail-sections/PrepDetailBody.tsx`, `app/app/(app)/prep/[id].tsx` |
+
+**Migration note:** Until `result.schema` + per-schema payloads ship, the app may render **legacy** `blocks` + `primaryKind`. New work should **prefer** intent-scoped schemas + dispatch without breaking existing clients (version or optional fields as needed).
+
+---
+
+## Rules of thumb for agents
+
+- Never ship **raw** search results as the prep — always **synthesize**.
+- **Structured output:** use Vercel AI SDK patterns from **`pem-core-loop.mdc`** (`generateText` + `Output.object`; no deprecated `generateObject`).
+- Document **request/response** changes for mobile in OpenAPI/DTOs and **`README.md`** when the contract changes.

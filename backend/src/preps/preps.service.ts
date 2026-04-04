@@ -184,7 +184,7 @@ export class PrepsService {
     }
     await this.prepQueue.add(
       'process',
-      { prepId },
+      { prepId, dumpId: prep.dumpId },
       {
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
@@ -197,6 +197,7 @@ export class PrepsService {
       prep: {
         id: updated.id,
         thought: updated.thought || updated.title,
+        intent: updated.intent ?? null,
         status: updated.status,
         render_type: updated.renderType,
         summary: updated.summary,
@@ -304,6 +305,17 @@ export class PrepsService {
       return `- "${title}" (${when})${sum ? ` — ${sum}` : ''}`;
     });
     return `Relevant past preps:\n${lines.join('\n')}`;
+  }
+
+  /** Hard-delete prep and cascaded rows (`agent_steps`, `prep_run_logs`). `memory_facts.source_prep_id` set null. */
+  async deleteForUser(prepId: string, userId: string): Promise<void> {
+    const deleted = await this.db
+      .delete(prepsTable)
+      .where(and(eq(prepsTable.id, prepId), eq(prepsTable.userId, userId)))
+      .returning({ id: prepsTable.id });
+    if (deleted.length === 0) {
+      throw new NotFoundException('Prep not found');
+    }
   }
 
   async markOpened(prepId: string, userId: string): Promise<PrepRow> {
