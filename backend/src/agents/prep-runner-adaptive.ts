@@ -10,6 +10,14 @@ import {
   buildShoppingCardFormatterPrompt,
 } from './prompts/prep-adaptive.prompt';
 import {
+  buildBusinessCardFormatterPrompt,
+  buildEventsCardFormatterPrompt,
+  buildFlightsCardFormatterPrompt,
+  buildJobsCardFormatterPrompt,
+  buildMarketCardFormatterPrompt,
+  buildTrendsCardFormatterPrompt,
+} from './prompts/prep-adaptive-discovery.prompt';
+import {
   buildComparisonCardFormatterPrompt,
   buildDecisionCardFormatterPrompt,
   buildExplainCardFormatterPrompt,
@@ -29,6 +37,20 @@ import {
   placeCardModelSchema,
   shoppingCardModelSchema,
 } from './schemas/adaptive-prep.schema';
+import {
+  businessCardModelSchema,
+  eventsCardModelSchema,
+  flightsCardModelSchema,
+  jobsCardModelSchema,
+  marketCardModelSchema,
+  normalizeBusinessCard,
+  normalizeEventsCard,
+  normalizeFlightsCard,
+  normalizeJobsCard,
+  normalizeMarketCard,
+  normalizeTrendsCard,
+  trendsCardModelSchema,
+} from './schemas/adaptive-prep-discovery.schema';
 import {
   comparisonCardModelSchema,
   decisionCardModelSchema,
@@ -63,6 +85,13 @@ function prepTypeForSchema(schema: string): PrepType {
     case 'PERSON_CARD':
     case 'EXPLAIN_CARD':
       return 'search';
+    case 'EVENTS_CARD':
+    case 'FLIGHTS_CARD':
+    case 'BUSINESS_CARD':
+    case 'TRENDS_CARD':
+    case 'MARKET_CARD':
+    case 'JOBS_CARD':
+      return 'research';
     default:
       return 'research';
   }
@@ -216,6 +245,48 @@ export async function tryPersistAdaptiveFormat(params: {
         ideaCardsModelSchema,
         buildIdeaCardsFormatterPrompt(agentText, ctx),
         (raw) => normalizeIdeaCards(raw as never),
+      );
+    case 'EVENTS':
+      return run(
+        'EVENTS',
+        eventsCardModelSchema,
+        buildEventsCardFormatterPrompt(agentText, ctx),
+        (raw) => normalizeEventsCard(raw as never),
+      );
+    case 'FLIGHTS':
+      return run(
+        'FLIGHTS',
+        flightsCardModelSchema,
+        buildFlightsCardFormatterPrompt(agentText, ctx),
+        (raw) => normalizeFlightsCard(raw as never),
+      );
+    case 'BUSINESS':
+      return run(
+        'BUSINESS',
+        businessCardModelSchema,
+        buildBusinessCardFormatterPrompt(agentText, ctx),
+        (raw) => normalizeBusinessCard(raw as never),
+      );
+    case 'TRENDS':
+      return run(
+        'TRENDS',
+        trendsCardModelSchema,
+        buildTrendsCardFormatterPrompt(agentText, ctx),
+        (raw) => normalizeTrendsCard(raw as never),
+      );
+    case 'MARKET':
+      return run(
+        'MARKET',
+        marketCardModelSchema,
+        buildMarketCardFormatterPrompt(agentText, ctx),
+        (raw) => normalizeMarketCard(raw as never),
+      );
+    case 'JOBS':
+      return run(
+        'JOBS',
+        jobsCardModelSchema,
+        buildJobsCardFormatterPrompt(agentText, ctx),
+        (raw) => normalizeJobsCard(raw as never),
       );
     default:
       return false;

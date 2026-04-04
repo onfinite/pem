@@ -1,11 +1,14 @@
 import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
+import { PLACE_HERO_COUNT } from "@/constants/shopping";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
 import type { PlaceCardPayload } from "@/lib/adaptivePrep";
 import { openExternalUrl } from "@/lib/openExternalUrl";
-import { ExternalLink, MapPin } from "lucide-react-native";
+import { pemSelection } from "@/lib/pemHaptics";
+import * as Clipboard from "expo-clipboard";
+import { ChevronRight, Copy, ExternalLink, MapPin, MessageCircle, Phone } from "lucide-react-native";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import PrepShareRow from "./PrepShareRow";
 
@@ -32,8 +35,86 @@ function mapsUrlForPlace(p: PlaceCardPayload["places"][number]): string {
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 
+const HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 } as const;
+
+/** Digits and leading + only — for tel: / sms: */
+function phoneForDial(phone: string): string | null {
+  const t = phone.trim();
+  if (!t) return null;
+  const core = t.replace(/[^\d+]/g, "");
+  if (!core) return null;
+  return core;
+}
+
+function ensureHttpUrl(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  if (/^https?:\/\//i.test(t)) return t;
+  return `https://${t}`;
+}
+
+async function copyLine(text: string): Promise<void> {
+  const t = text.trim();
+  if (!t) return;
+  await Clipboard.setStringAsync(t);
+  pemSelection();
+}
+
+function PlaceMoreRow({ p }: { p: PlaceCardPayload["places"][number] }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${p.name}, open in Maps`}
+      onPress={() => void openExternalUrl(mapsUrlForPlace(p))}
+      style={({ pressed }) => [
+        styles.morePlaceRow,
+        {
+          backgroundColor: colors.cardBackground,
+          borderColor: colors.borderMuted,
+          opacity: pressed ? 0.92 : 1,
+          ...Platform.select({
+            ios: {
+              shadowColor: "#1c1a16",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.06,
+              shadowRadius: 6,
+            },
+            android: { elevation: 1 },
+          }),
+        },
+      ]}
+    >
+      <RemoteImageOrPlaceholder
+        uri={p.photo.trim()}
+        style={[styles.morePlaceImage, { backgroundColor: colors.secondarySurface }]}
+        placeholderStyle={{ backgroundColor: colors.secondarySurface }}
+      />
+      <View style={styles.morePlaceBody}>
+        <PemText numberOfLines={2} style={[styles.morePlaceTitle, { color: colors.textPrimary }]}>
+          {p.name}
+        </PemText>
+        {ratingLine(p.rating, p.reviewCount) ? (
+          <PemText variant="caption" style={{ color: colors.textSecondary }}>
+            {ratingLine(p.rating, p.reviewCount)}
+          </PemText>
+        ) : null}
+        {p.address.trim() ? (
+          <PemText variant="caption" numberOfLines={2} style={{ color: colors.textTertiary }}>
+            {p.address}
+          </PemText>
+        ) : null}
+      </View>
+      <ChevronRight size={20} stroke={colors.textTertiary} strokeWidth={2} />
+    </Pressable>
+  );
+}
+
 export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }: Props) {
   const { colors } = useTheme();
+
+  const heroPlaces = data.places.slice(0, PLACE_HERO_COUNT);
+  const morePlaces = data.places.slice(PLACE_HERO_COUNT);
 
   const showMap = data.mapCenterLat !== 0 && data.mapCenterLng !== 0;
   const mapUri = showMap
@@ -81,13 +162,17 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
         ) : null}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.hScroll}
-        decelerationRate="fast"
-      >
-        {data.places.map((p, i) => (
+      <View style={styles.sectionBlock}>
+        <PemText style={[styles.sectionLabel, { color: colors.textSecondary }]}>Top places</PemText>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.hScroll}
+          decelerationRate="fast"
+        >
+          {heroPlaces.map((p, i) => {
+          const dial = phoneForDial(p.phone);
+          return (
           <View
             key={`${p.name}-${i}`}
             style={[
@@ -116,14 +201,19 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
               <PemText style={[styles.tileName, { color: colors.textPrimary }]} numberOfLines={3}>
                 {p.name}
               </PemText>
-              {p.address.trim() ? (
-                <PemText variant="caption" style={{ color: colors.textSecondary }} numberOfLines={3}>
-                  {p.address}
-                </PemText>
-              ) : null}
               {ratingLine(p.rating, p.reviewCount) ? (
                 <PemText variant="caption" style={{ color: colors.textSecondary }}>
                   {ratingLine(p.rating, p.reviewCount)}
+                </PemText>
+              ) : null}
+              {p.reviewSnippet.trim() ? (
+                <PemText variant="caption" style={{ color: colors.textSecondary }} numberOfLines={4}>
+                  {p.reviewSnippet.trim()}
+                </PemText>
+              ) : null}
+              {p.customerSatisfaction.trim() ? (
+                <PemText variant="caption" style={{ color: colors.pemAmber }} numberOfLines={3}>
+                  {p.customerSatisfaction.trim()}
                 </PemText>
               ) : null}
               {p.priceRange.trim() ? (
@@ -136,10 +226,127 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
                   {p.hours}
                 </PemText>
               ) : null}
+              {p.address.trim() ? (
+                <View style={styles.copyLineRow}>
+                  <PemText variant="caption" style={[styles.flex1, { color: colors.textSecondary }]} selectable>
+                    {p.address}
+                  </PemText>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Copy address"
+                    hitSlop={HIT_SLOP}
+                    onPress={() => void copyLine(p.address)}
+                  >
+                    <Copy size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  </Pressable>
+                </View>
+              ) : null}
               {p.phone.trim() ? (
-                <PemText variant="caption" style={{ color: colors.textSecondary }}>
-                  {p.phone}
-                </PemText>
+                <View style={styles.contactBlock}>
+                  <PemText variant="caption" style={{ color: colors.textTertiary }}>
+                    Phone
+                  </PemText>
+                  <View style={styles.phoneRow}>
+                    <PemText
+                      style={[styles.contactValue, styles.flex1, { color: colors.textPrimary }]}
+                      selectable
+                    >
+                      {p.phone}
+                    </PemText>
+                    <View style={styles.iconActions}>
+                      {dial ? (
+                        <>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Call"
+                            hitSlop={HIT_SLOP}
+                            onPress={() => void openExternalUrl(`tel:${dial}`)}
+                          >
+                            <Phone size={20} stroke={colors.pemAmber} strokeWidth={2.25} />
+                          </Pressable>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Text"
+                            hitSlop={HIT_SLOP}
+                            onPress={() => void openExternalUrl(`sms:${dial}`)}
+                          >
+                            <MessageCircle size={20} stroke={colors.pemAmber} strokeWidth={2.25} />
+                          </Pressable>
+                        </>
+                      ) : null}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Copy phone number"
+                        hitSlop={HIT_SLOP}
+                        onPress={() => void copyLine(p.phone)}
+                      >
+                        <Copy size={20} stroke={colors.textSecondary} strokeWidth={2.25} />
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+              {p.email.trim() ? (
+                <View style={styles.contactBlock}>
+                  <PemText variant="caption" style={{ color: colors.textTertiary }}>
+                    Email
+                  </PemText>
+                  <View style={styles.copyLineRow}>
+                    <Pressable
+                      accessibilityRole="link"
+                      accessibilityLabel={`Email ${p.email}`}
+                      onPress={() => void openExternalUrl(`mailto:${p.email.trim()}`)}
+                      style={styles.flex1}
+                    >
+                      <PemText style={[styles.contactValue, { color: colors.pemAmber }]} selectable numberOfLines={2}>
+                        {p.email}
+                      </PemText>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy email"
+                      hitSlop={HIT_SLOP}
+                      onPress={() => void copyLine(p.email)}
+                    >
+                      <Copy size={18} stroke={colors.textSecondary} strokeWidth={2.25} />
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+              {p.website.trim() ? (
+                <View style={styles.contactBlock}>
+                  <PemText variant="caption" style={{ color: colors.textTertiary }}>
+                    Website
+                  </PemText>
+                  <View style={styles.copyLineRow}>
+                    <Pressable
+                      accessibilityRole="link"
+                      accessibilityLabel="Open website"
+                      onPress={() => void openExternalUrl(ensureHttpUrl(p.website))}
+                      style={styles.flex1}
+                    >
+                      <PemText style={[styles.contactValue, { color: colors.pemAmber }]} numberOfLines={2} selectable>
+                        {p.website}
+                      </PemText>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy website URL"
+                      hitSlop={HIT_SLOP}
+                      onPress={() => void copyLine(ensureHttpUrl(p.website))}
+                    >
+                      <Copy size={18} stroke={colors.textSecondary} strokeWidth={2.25} />
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Open in browser"
+                      hitSlop={HIT_SLOP}
+                      onPress={() => void openExternalUrl(ensureHttpUrl(p.website))}
+                    >
+                      <ExternalLink size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
+                    </Pressable>
+                  </View>
+                </View>
               ) : null}
               {p.pemNote.trim() ? (
                 <View style={styles.note}>
@@ -164,8 +371,24 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
               </Pressable>
             </View>
           </View>
-        ))}
-      </ScrollView>
+          );
+        })}
+        </ScrollView>
+      </View>
+
+      {morePlaces.length > 0 ? (
+        <View style={styles.morePlacesSection}>
+          <PemText style={[styles.morePlacesTitle, { color: colors.textSecondary }]}>More places</PemText>
+          <PemText variant="caption" style={[styles.morePlacesHint, { color: colors.textTertiary }]}>
+            Additional matches — tap a row for Maps.
+          </PemText>
+          <View style={styles.morePlacesList}>
+            {morePlaces.map((p, i) => (
+              <PlaceMoreRow key={`more-place-${p.name}-${i}`} p={p} />
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {sharePlainText.trim() ? (
         <View style={[styles.shareFooter, { borderTopColor: colors.borderMuted }]}>
@@ -205,11 +428,58 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize["2xl"],
-    lineHeight: lh(fontSize["2xl"], lineHeight.snug),
+    fontSize: fontSize.xxl,
+    lineHeight: lh(fontSize.xxl, lineHeight.snug),
   },
   heroSub: {
     marginTop: space[1],
+  },
+  sectionBlock: {
+    gap: space[2],
+  },
+  sectionLabel: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.sm,
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
+  morePlacesSection: {
+    gap: space[2],
+  },
+  morePlacesTitle: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.sm,
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
+  morePlacesHint: {
+    marginTop: -space[1],
+  },
+  morePlacesList: {
+    gap: space[3],
+  },
+  morePlaceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[3],
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: space[3],
+  },
+  morePlaceImage: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.md,
+  },
+  morePlaceBody: {
+    flex: 1,
+    gap: space[1],
+    minWidth: 0,
+  },
+  morePlaceTitle: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.sm,
+    lineHeight: lh(fontSize.sm, lineHeight.snug),
   },
   hScroll: {
     gap: space[3],
@@ -250,6 +520,31 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.sm,
+  },
+  flex1: { flex: 1 },
+  copyLineRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: space[2],
+  },
+  contactBlock: {
+    gap: space[1],
+  },
+  phoneRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: space[2],
+  },
+  iconActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[3],
+    paddingTop: 2,
+  },
+  contactValue: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.sm,
+    lineHeight: lh(fontSize.sm, lineHeight.snug),
   },
   shareFooter: {
     paddingTop: space[3],

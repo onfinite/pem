@@ -10,6 +10,8 @@ import {
 } from "@/lib/prepBlocks";
 import {
   BookOpen,
+  Briefcase,
+  Building2,
   Calendar,
   FileText,
   Gavel,
@@ -17,12 +19,15 @@ import {
   GitCompare,
   Layers,
   Lightbulb,
+  LineChart,
   Mail,
   MapPin,
+  Plane,
   Scale,
   Search,
   ShoppingBag,
   StickyNote,
+  TrendingUp,
   User,
   type LucideIcon,
 } from "lucide-react-native";
@@ -145,6 +150,20 @@ function iconForLayout(layout: CardLayoutId): LucideIcon {
       return StickyNote;
     case "draft_card":
       return Mail;
+    case "events_card":
+      return Calendar;
+    case "flights_card":
+      return Plane;
+    case "business_card":
+      return Building2;
+    case "trends_card":
+      return TrendingUp;
+    case "market_card":
+      return LineChart;
+    case "jobs_card":
+      return Briefcase;
+    default:
+      return Search;
   }
 }
 
@@ -321,6 +340,12 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     else if (layout === "explain_card") tag = "Explained";
     else if (layout === "summary_card") tag = "Summary";
     else if (layout === "idea_cards_card") tag = "Ideas";
+    else if (layout === "events_card") tag = "Events";
+    else if (layout === "flights_card") tag = "Flights";
+    else if (layout === "business_card") tag = "Business";
+    else if (layout === "trends_card") tag = "Trends";
+    else if (layout === "market_card") tag = "Market";
+    else if (layout === "jobs_card") tag = "Jobs";
   }
 
   let viewLabel = viewLabelForKind(kind);
@@ -335,6 +360,12 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
   else if (layout === "explain_card") viewLabel = "Read";
   else if (layout === "summary_card") viewLabel = "Read";
   else if (layout === "idea_cards_card") viewLabel = "Browse ideas";
+  else if (layout === "events_card") viewLabel = "View events";
+  else if (layout === "flights_card") viewLabel = "View flights";
+  else if (layout === "business_card") viewLabel = "View picks";
+  else if (layout === "trends_card") viewLabel = "View trends";
+  else if (layout === "market_card") viewLabel = "View quote";
+  else if (layout === "jobs_card") viewLabel = "View listings";
 
   return {
     id: row.id,
@@ -368,6 +399,12 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     explainCard: adaptive.explainCard,
     summaryCard: adaptive.summaryCard,
     ideaCards: adaptive.ideaCards,
+    eventsCard: adaptive.eventsCard,
+    flightsCard: adaptive.flightsCard,
+    businessCard: adaptive.businessCard,
+    trendsCard: adaptive.trendsCard,
+    marketCard: adaptive.marketCard,
+    jobsCard: adaptive.jobsCard,
     starred: Boolean(row.starred_at),
   };
 }

@@ -49,13 +49,16 @@ One punchy line: "Best overall: …" or "Pem's pick: …" — must follow from a
 - **Rows 4–10 (optional):** Up to **7** more **distinct** products from the trace — “browse more” tiles: shorter \`why\` or "", empty \`pros\`/\`cons\` OK; **name**, **price**, **url**, **store**, **image**, **rating** must still come from agent data only. **Never** duplicate URLs or pad with fake rows.
 - Real products only — names, prices, URLs, images from the agent output **only**. If the agent lacked an image URL, use "" for image.
 - **Minimum (hero):** If \`google_shopping\` **or** \`amazon_search\` has **2+** viable rows, output **at least 2** products in positions 1–3. If the trace has only **one** usable row, output a single product total.
-- **Target:** When many viable rows exist, aim for **3 hero + more** (up to **10** total) so the app shows a main carousel and a compact grid below.
+- **Target:** When many viable rows exist, aim for **3 hero + more** (up to **10** total) so the app shows a main carousel and a **vertical list** of more options below.
 - **Never** use **news, TV, or magazine sites** as **url** (e.g. today.com, nbcnews.com, cnn.com, forbes.com, wired.com) — those are articles, not checkout pages. If the only link in the trace is editorial, take product rows from \`google_shopping\` / \`amazon_search\` instead.
 - **Pick offers** — **prefer major retailers** in this order: Amazon, Walmart, Target, Best Buy, Costco, Home Depot, Lowe's, Wayfair, then other well-known stores. Use \`amazon_search\` for Amazon-native links and \`google_shopping\` for mixed merchants; **do not** collapse everything into one affiliate blog pick.
 - **url** must be a **direct retailer product page** where someone can add-to-cart or buy (e.g. amazon.com/dp/…, target.com/p/…, walmart.com/ip/…, bestbuy.com/site/…, brand.com product URL).
 - **Never** put in **url**: Google Shopping (shopping.google.com), Google Maps, Yelp, TripAdvisor, Yellow Pages, Facebook Marketplace browse, or generic Google/Bing **search** result URLs — use "" if the agent only had those; do not guess a retailer URL.
-- **image** — from the same product row as the chosen **url**. Prefer **\`serpapi_thumbnail\`** from \`google_shopping\` JSON when present (mobile-friendly); otherwise **\`thumbnail\`**. Also allow retailer CDN / https URLs from **fetch** or the agent trace. If the only image URLs are **LinkedIn** (licdn.com / media.licdn.com) or other hotlink-blocked hosts, use **""** — the app cannot display them.
+- **image** — from the same product row as the chosen **url**. The API may expose **\`image\`**, **\`serpapi_thumbnail\`**, **\`thumbnail\`**, or **\`images[]\`** — prefer the **largest / clearest** URL from the trace (backend also ranks candidates). Retailer CDN / **fetch** og:image allowed. If the only image URLs are **LinkedIn** (licdn.com / media.licdn.com) or other hotlink-blocked hosts, use **""** — the app cannot display them.
 - rating: 0–5 number; use 0 if unknown.
+- **reviewCount** — integer from retailer/Serp when present; else 0.
+- **reviewSnippet** — one short authentic line from reviews in the trace (or fetch); "" if none.
+- **customerSentiment** — one line on how buyers feel (e.g. "Strong marks for comfort"); "" if unknown.
 - pros / cons: short bullets (arrays can be empty).
 - badge: "" or one of Best Value | Top Rated | Pem's Pick when justified.
 - Never invent prices, stores, or links.
@@ -152,11 +155,16 @@ Short restatement of what we looked for (subtitle).
 One line: Pem's pick or how to choose among the options — from agent data only.
 
 ## places (1–5 rows)
+- Order by fit: **first 3** render as the horizontal **Top places** carousel; **4–5** (if present) render as a **vertical list** below (same fields, compact rows).
 - **name**, **address**, **rating** (0–5), **reviewCount** (integer) — from google_maps / agent only; use 0 if unknown.
-- **photo** — image URL from results if present; otherwise "".
+- **photo** — best image URL from results (maps/local/events often expose **\`thumbnail\`**, **\`serpapi_thumbnail\`**, or **\`images[]\`**); otherwise "".
 - **lat**, **lng** — from Serp/maps data when present; use **0** and **0** if unknown (never guess coordinates).
-- **priceRange**, **hours**, **phone** — from results or ""; never invent.
-- **url** — Google Maps place link or official site from results; "" if none.
+- **priceRange**, **hours**, **phone** — from Serp \`google_maps\` rows (\`phone\`, etc.) or ""; never invent.
+- **website** — business homepage URL from Serp \`google_maps\` \`website\` field when present; otherwise "". Not the same as the Maps link.
+- **email** — only if it appears explicitly in the agent trace (e.g. fetched page); otherwise "". Never guess.
+- **url** — Google Maps place link (\`placeUrl\` / \`link\` in \`google_maps\` JSON) when present; "" if none.
+- **reviewSnippet** — short line from reviews, forums, or maps review text in the trace; "" if none.
+- **customerSatisfaction** — one line summarizing reputation / satisfaction; "" if none.
 - **pemNote** — one short line why this place fits the ask (from context).
 
 ## mapCenterLat / mapCenterLng

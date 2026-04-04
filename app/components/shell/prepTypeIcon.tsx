@@ -2,16 +2,21 @@ import type { LucideIcon } from "lucide-react-native";
 import {
   AlignLeft,
   BookOpen,
+  Briefcase,
+  Building2,
   Calendar,
   ClipboardList,
   Columns2,
   FileText,
   Layers,
   Lightbulb,
+  LineChart,
   MapPin,
+  Plane,
   Scale,
   Search,
   ShoppingBag,
+  TrendingUp,
   User,
 } from "lucide-react-native";
 
@@ -35,6 +40,12 @@ const INTENT_ICONS: Record<string, LucideIcon> = {
   CONTENT_IDEA: Lightbulb,
   TRANSLATE_SIMPLIFY: FileText,
   TRACK_MONITOR: Search,
+  EVENTS: Calendar,
+  FLIGHTS: Plane,
+  BUSINESS: Building2,
+  TRENDS: TrendingUp,
+  MARKET: LineChart,
+  JOBS: Briefcase,
 };
 
 const KIND_ICONS: Record<PrepKind, LucideIcon> = {
@@ -108,6 +119,12 @@ function accentKey(intent: string | null | undefined, kind: PrepKind): string {
       CONTENT_IDEA: "mixed",
       TRANSLATE_SIMPLIFY: "draft",
       TRACK_MONITOR: "web",
+      EVENTS: "follow",
+      FLIGHTS: "web",
+      BUSINESS: "places",
+      TRENDS: "research",
+      MARKET: "decide",
+      JOBS: "mixed",
     };
     const k = byIntent[intent];
     if (k) return k;

@@ -1,17 +1,23 @@
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import type {
+  BusinessCardPayload,
   ComparisonCardPayload,
   DecisionCardPayload,
   DraftCardPayload,
+  EventsCardPayload,
   ExplainCardPayload,
+  FlightsCardPayload,
   IdeaCardsPayload,
+  JobsCardPayload,
   LegalFinancialCardPayload,
+  MarketCardPayload,
   MeetingBriefPayload,
   PersonCardPayload,
   PlaceCardPayload,
   ResearchCardPayload,
   ShoppingCardPayload,
   SummaryCardPayload,
+  TrendsCardPayload,
 } from "@/lib/adaptivePrep";
 import type { PrepResultBlock } from "@/lib/prepBlocks";
 
@@ -150,9 +156,17 @@ function buildShoppingCardShareText(c: ShoppingCardPayload): string {
   const lines: string[] = [c.recommendation];
   if (c.query.trim()) lines.push(c.query);
   for (const p of c.products) {
-    const bits = [p.name, p.store, p.price, ratingLine(p.rating), p.why, p.url].filter(
-      (x): x is string => typeof x === "string" && x.trim().length > 0,
-    );
+    const bits = [
+      p.name,
+      p.store,
+      p.price,
+      ratingLine(p.rating),
+      p.reviewCount > 0 ? `${p.reviewCount.toLocaleString()} reviews` : null,
+      p.reviewSnippet.trim() ? `“${p.reviewSnippet.trim()}”` : null,
+      p.customerSentiment.trim() || null,
+      p.why,
+      p.url,
+    ].filter((x): x is string => typeof x === "string" && x.trim().length > 0);
     lines.push(bits.join("\n"));
   }
   if (c.buyingGuide.trim()) lines.push(c.buyingGuide.trim());
@@ -250,13 +264,113 @@ function buildPlaceCardShareText(c: PlaceCardPayload): string {
       p.name,
       p.address,
       ratingLinePlace(p.rating, p.reviewCount),
+      p.reviewSnippet.trim() ? `Review: ${p.reviewSnippet.trim()}` : null,
+      p.customerSatisfaction.trim() || null,
       p.priceRange,
       p.hours,
       p.phone,
+      p.website,
+      p.email,
       p.pemNote,
       p.url,
     ].filter((x): x is string => typeof x === "string" && x.trim().length > 0);
     lines.push(bits.join("\n"));
+  }
+  return lines.join("\n\n");
+}
+
+function buildEventsCardShareText(c: EventsCardPayload): string {
+  const lines: string[] = [c.recommendation, c.query].filter((x) => x.trim().length > 0);
+  for (const e of c.events) {
+    lines.push(
+      [e.title, e.when, e.venue, e.address, e.ticketHint, e.reviewSnippet, e.link, e.pemNote]
+        .filter((x) => x.trim().length > 0)
+        .join("\n"),
+    );
+  }
+  return lines.join("\n\n");
+}
+
+function buildFlightsCardShareText(c: FlightsCardPayload): string {
+  const lines: string[] = [c.recommendation, c.routeLabel, c.query].filter((x) => x.trim().length > 0);
+  for (const o of c.offers) {
+    lines.push(
+      [o.label, o.price, o.airline, o.duration, o.stops, o.notes, o.bookingUrl]
+        .filter((x) => x.trim().length > 0)
+        .join("\n"),
+    );
+  }
+  return lines.join("\n\n");
+}
+
+function buildBusinessCardShareText(c: BusinessCardPayload): string {
+  const lines: string[] = [c.recommendation, c.query].filter((x) => x.trim().length > 0);
+  for (const b of c.businesses) {
+    lines.push(
+      [
+        b.name,
+        ratingLinePlace(b.rating, b.reviewCount),
+        b.reviewSnippet.trim() ? `Review: ${b.reviewSnippet.trim()}` : null,
+        b.customerSatisfaction.trim() || null,
+        b.address,
+        b.hours,
+        b.phone,
+        b.website,
+        b.mapsUrl,
+        b.pemNote,
+      ]
+        .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+        .join("\n"),
+    );
+  }
+  return lines.join("\n\n");
+}
+
+function buildTrendsCardShareText(c: TrendsCardPayload): string {
+  const lines: string[] = [
+    c.recommendation,
+    c.keyword,
+    c.trendReadout,
+    c.timeframe,
+    ...c.relatedQueries,
+  ].filter((x) => x.trim().length > 0);
+  for (const s of c.sources) {
+    if (s.url.trim()) lines.push(s.title.trim() ? `${s.title}\n${s.url}` : s.url);
+  }
+  return lines.join("\n\n");
+}
+
+function buildMarketCardShareText(c: MarketCardPayload): string {
+  const lines: string[] = [
+    c.recommendation,
+    [c.symbol, c.name, c.price, c.change, c.currency].filter((x) => x.trim().length > 0).join(" · "),
+    c.sentiment,
+    ...c.keyPoints,
+  ].filter((x) => x.trim().length > 0);
+  for (const s of c.sources) {
+    if (s.url.trim()) lines.push(s.title.trim() ? `${s.title}\n${s.url}` : s.url);
+  }
+  return lines.join("\n\n");
+}
+
+function buildJobsCardShareText(c: JobsCardPayload): string {
+  const lines: string[] = [c.recommendation, c.query].filter((x) => x.trim().length > 0);
+  for (const j of c.jobs) {
+    lines.push(
+      [
+        j.title,
+        j.company,
+        j.location,
+        j.salaryHint,
+        j.employerRating > 0 ? `${j.employerRating.toFixed(1)} ★ employer` : null,
+        j.reviewSnippet.trim() ? `Glassdoor / reviews: ${j.reviewSnippet.trim()}` : null,
+        j.snippet,
+        j.link,
+        j.pemNote,
+      ]
+        .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+        .join("\n"),
+    );
   }
   return lines.join("\n\n");
 }
@@ -274,6 +388,30 @@ export function buildPrepShareablePlainText(prep: Prep): string {
   }
   if (prep.placeCard) {
     parts.push(buildPlaceCardShareText(prep.placeCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.eventsCard) {
+    parts.push(buildEventsCardShareText(prep.eventsCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.flightsCard) {
+    parts.push(buildFlightsCardShareText(prep.flightsCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.businessCard) {
+    parts.push(buildBusinessCardShareText(prep.businessCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.trendsCard) {
+    parts.push(buildTrendsCardShareText(prep.trendsCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.marketCard) {
+    parts.push(buildMarketCardShareText(prep.marketCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.jobsCard) {
+    parts.push(buildJobsCardShareText(prep.jobsCard));
     return parts.filter(Boolean).join("\n\n");
   }
   if (prep.draftCard) {

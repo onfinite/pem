@@ -91,6 +91,12 @@ export function adjustIntentForPlaceDiscovery(
     'CONTENT_IDEA',
     'TRACK_MONITOR',
     'LEGAL_FINANCIAL',
+    'EVENTS',
+    'FLIGHTS',
+    'BUSINESS',
+    'TRENDS',
+    'MARKET',
+    'JOBS',
   ];
   if (skip.includes(intent)) return intent;
 

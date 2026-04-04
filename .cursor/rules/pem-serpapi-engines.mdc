@@ -9,49 +9,62 @@ alwaysApply: false
 
 # Pem: SerpAPI engines + app cards (reference)
 
-**Implementation lives in** `backend/src/integrations/serpapi.service.ts` (`fetchJson` → `https://serpapi.com/search.json`) and **`backend/src/agents/agent-tools/prep-google-bundle.ts`** (intent-aware `Promise.all`). This file is the **engine directory** and **intent → card** map — not every engine is wired yet; add new engines beside existing methods and extend `executeGoogleBundle` / intent lanes.
+**Implementation:** `backend/src/integrations/serpapi.service.ts` (`fetchJson` → `https://serpapi.com/search.json`), **`backend/src/integrations/serpapi-query-parsers.ts`** (pipe formats for flights/hotels/reviews/ASIN/immersive token), and **`backend/src/agents/agent-tools/prep-google-bundle.ts`** (intent-aware `Promise.all` Serp + Tavily).
 
-## Base pattern
+**Types:** `GoogleVertical` in `prep-google-bundle.ts`. **`intentAllowsGoogleSerp`** includes `SHOPPING`, `RESEARCH`, `COMPARISON`, `DECISION`, `LEGAL_FINANCIAL`, `FIND_PLACE`, `FIND_PERSON`, `SCHEDULE_PREP`, `LIFE_ADMIN`.
 
-- Pass **`hl` / `gl`** when we add locale-aware engines (shopping bundle today uses SerpAPI defaults; extend `fetchJson` params as needed).
-- **Parallelize** independent Serp + Tavily legs — see **`pem-core-loop.mdc`** and **`pem-search-provider-routing.mdc`**.
+## `google()` vertical → engine / method
 
-## Wired today
+| vertical | SerpAPI engine(s) | Service method | Notes |
+|----------|-------------------|----------------|-------|
+| `shopping` | `google_shopping` + `amazon` + Tavily | `googleShopping`, `amazonSearch`, shopping bundle | SHOPPING intent always this bundle |
+| `maps` | `google_maps` | `googleMaps` | `ll` from client hint when present |
+| `local` | `google_local` | `googleLocal` | SMB / local pack style |
+| `local_services` | `google_local_services` | `googleLocalServices` | Pros / home services |
+| `web` | `google` organic | `googleOrganic` | |
+| `news` | `google_news` | `googleNewsEngine` | Dedicated news engine |
+| `images` | `google_images` | `googleImages` | |
+| `images_light` | `google_images_light` | `googleImagesLight` | Faster image search |
+| `jobs` | `google_jobs` | `googleJobs` | |
+| `finance` | `google_finance` | `googleFinance` | Tickers / instruments |
+| `events` | `google_events` | `googleEvents` | Concerts, festivals; optional `htichips` via method opts (not exposed on tool yet) |
+| `flights` | `google_flights` | `googleFlights` | Query **`flight\|DEP\|ARR\|YYYY-MM-DD`** |
+| `hotels` | `google_hotels` | `googleHotels` | Query **`hotel\|City or name\|check_in\|check_out`** |
+| `forums` | `google_forums` | `googleForums` | Discussions / forums |
+| `maps_reviews` | `google_maps_reviews` | `googleMapsReviews` | Query **`reviews\|DATA_ID`** |
+| `travel_explore` | `google_travel_explore` | `googleTravelExplore` | Trip inspiration |
+| `trends` | `google_trends` | `googleTrends` | Keyword interest |
+| `immersive_product` | `google_immersive_product` | `googleImmersiveProduct` | **`product\|PAGE_TOKEN`** from Shopping |
+| `amazon_product` | `amazon_product` | `amazonProduct` | ASIN or **`asin\|B0…`** |
+| `apple_app_store` | `apple_app_store` | `appleAppStore` | App search |
+| `home_depot` | `home_depot` | `homeDepot` | Retail |
+| `facebook_profile` | `facebook_profile` | `facebookProfile` | Public profile id — use responsibly |
+| `scholar` | `google_scholar` | `googleScholar` | Academic (not Google Play) |
 
-| Engine (SerpAPI) | Service method | `google()` vertical / intent |
-|------------------|----------------|------------------------------|
-| `google_shopping` | `googleShopping()` | `shopping` — SHOPPING; also RESEARCH/COMPARISON/DECISION + `shopping` |
-| `amazon` | `amazonSearch()` | same bundle as above |
-| `google_maps` | `googleMaps()` | `maps` — FIND_PLACE; LIFE_ADMIN+maps; RESEARCH family |
-| `google` (organic) | `googleOrganic()` | `web` — FIND_PERSON, SCHEDULE, LIFE_ADMIN web; RESEARCH+`web` |
-| `google` + `tbm=nws` | `googleNews()` | `news` — RESEARCH / COMPARISON / DECISION |
-| `google_images` | `googleImages()` | `images` — RESEARCH / COMPARISON / DECISION |
-| `google_jobs` | `googleJobs()` | `jobs` — RESEARCH / COMPARISON / DECISION |
-| `google_finance` | `googleFinance()` | `finance` — RESEARCH / COMPARISON / DECISION |
+**Legacy helper:** `googleNews()` still uses `engine=google` + `tbm=nws` inside `serpapi.service.ts`; **`news` vertical uses `googleNewsEngine()`** (`engine=google_news`).
 
-**Types:** `GoogleVertical` in `backend/src/agents/agent-tools/prep-google-bundle.ts`. **`intentAllowsGoogleSerp`** includes `RESEARCH`, `COMPARISON`, `DECISION` so those intents get the **`google()`** tool.
+## Intent routing (high level)
 
-## Product / buy behavior (SHOPPING)
+- **FIND_PLACE:** default `maps`; also `events`, `local`, `local_services`, `travel_explore`, `maps_reviews` (see `executeGoogleBundle`).
+- **LIFE_ADMIN:** `maps` or travel stack (`flights`, `hotels`, `travel_explore`, `events`, `local`, `local_services`, `finance`, `trends`) or falls back to web + Tavily.
+- **RESEARCH / COMPARISON / DECISION:** full vertical set via `runResearchVerticalBundle`.
+- **LEGAL_FINANCIAL:** `google()` enabled — prefer `finance`, `news`, `web`, `scholar`, `forums` + synthesis; never invent citations.
 
-- **`google(vertical: shopping)`** returns **`google_shopping`** + **`amazon_search`** + **`buying_guide_tavily`**. Cards must use **retailer PDP URLs** from those structured arrays — not news roundups (e.g. today.com). Forbidden hosts are stripped in **`backend/src/agents/schemas/shopping-product-url.ts`**.
-- **App:** `SHOPPING_CARD` → **`PrepShoppingExperience`** (`app/components/sections/prep-detail-sections/PrepShoppingExperience.tsx`).
+## App cards
 
-## Engine directory (extend incrementally)
+Structured **Serp JSON** feeds the prep agent and the **adaptive formatter** (`RESEARCH_CARD`, `PLACE_CARD`, `SHOPPING_CARD`, etc.). There is **not** a separate Expo component per Serp engine today — new **dedicated card types** (e.g. events-only layout) are added when UX needs a distinct layout; extend **`PrepAdaptiveStack`** + Zod schema in the same change.
 
-Full SerpAPI engine list: [SerpAPI Search API](https://serpapi.com/search-api), [Playground](https://serpapi.com/playground). **Not wired in code yet** (add `SerpApiService` method + branch in `executeGoogleBundle`):
+## Not wired (product direction)
 
 | Engine | Notes |
 |--------|--------|
-| `google_flights` | Trip search — params differ |
-| `google_hotels` | Stays / dates |
-| `google_videos` / `youtube` | Prefer YouTube Data API for prod quotas |
-| `walmart` / `ebay` / `bing_shopping` | Extra retail coverage |
-| `airbnb` / `zillow` | Vertical-specific cards |
+| `google_videos` / YouTube | Prefer YouTube Data API for prod quotas |
+| `walmart` / `ebay` / `bing_shopping` | Extra retail |
+| `airbnb` / `zillow` | Vertical-specific |
 
 ## Expo / RN
 
 - Prefer **`RemoteImageOrPlaceholder`** + **`normalizeRemoteImageUri`**; prefer **`serpapi_thumbnail`** when SerpAPI provides it (see **`pem-search-provider-routing.mdc`**).
-- New card types: add a section component under `app/components/sections/prep-detail-sections/` and branch in **`PrepAdaptiveStack`** / `pemApi` icon mapping as today.
 
 ## Env
 

@@ -13,18 +13,24 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import type {
+  BusinessCardPayload,
   ComparisonCardPayload,
   DecisionCardPayload,
   DraftCardPayload,
+  EventsCardPayload,
   ExplainCardPayload,
+  FlightsCardPayload,
   IdeaCardsPayload,
+  JobsCardPayload,
   LegalFinancialCardPayload,
+  MarketCardPayload,
   MeetingBriefPayload,
   PersonCardPayload,
   PlaceCardPayload,
   ResearchCardPayload,
   ShoppingCardPayload,
   SummaryCardPayload,
+  TrendsCardPayload,
 } from "@/lib/adaptivePrep";
 import type { PrepResultBlock } from "@/lib/prepBlocks";
 
@@ -126,6 +132,12 @@ export type Prep = {
   explainCard?: ExplainCardPayload;
   summaryCard?: SummaryCardPayload;
   ideaCards?: IdeaCardsPayload;
+  eventsCard?: EventsCardPayload;
+  flightsCard?: FlightsCardPayload;
+  businessCard?: BusinessCardPayload;
+  trendsCard?: TrendsCardPayload;
+  marketCard?: MarketCardPayload;
+  jobsCard?: JobsCardPayload;
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [

@@ -15,7 +15,13 @@ export type CardLayoutId =
   | "legal_financial_card"
   | "explain_card"
   | "summary_card"
-  | "idea_cards_card";
+  | "idea_cards_card"
+  | "events_card"
+  | "flights_card"
+  | "business_card"
+  | "trends_card"
+  | "market_card"
+  | "jobs_card";
 
 const SCHEMA_TO_LAYOUT: Record<string, CardLayoutId> = {
   SHOPPING_CARD: "shopping_card",
@@ -30,6 +36,12 @@ const SCHEMA_TO_LAYOUT: Record<string, CardLayoutId> = {
   EXPLAIN_CARD: "explain_card",
   SUMMARY_CARD: "summary_card",
   IDEA_CARDS: "idea_cards_card",
+  EVENTS_CARD: "events_card",
+  FLIGHTS_CARD: "flights_card",
+  BUSINESS_CARD: "business_card",
+  TRENDS_CARD: "trends_card",
+  MARKET_CARD: "market_card",
+  JOBS_CARD: "jobs_card",
 };
 
 /** When `result.schema` is set, the prep uses an adaptive card layout. */

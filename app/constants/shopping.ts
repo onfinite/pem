@@ -4,3 +4,5 @@ export const SHOPPING_HERO_COUNT = 3;
 export const SHOPPING_MORE_MAX = 7;
 /** Matches backend `SHOPPING_PRODUCTS_MAX` — total products on a shopping prep (no load-more). */
 export const SHOPPING_CARD_PRODUCTS_MAX = SHOPPING_HERO_COUNT + SHOPPING_MORE_MAX;
+/** Top places in horizontal carousel; remainder render as a vertical list (same pattern as shopping). */
+export const PLACE_HERO_COUNT = 3;

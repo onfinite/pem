@@ -24,7 +24,7 @@ type Props = {
   selectionMode?: boolean;
   selected?: boolean;
   onLongPress?: () => void;
-  /** Gmail-style star; hidden in selection mode. */
+  /** Gmail-style star; hidden in selection mode and while the prep is still prepping. */
   starred?: boolean;
   onStarPress?: () => void;
 };
@@ -173,7 +173,7 @@ export default function PrepInboxRow({
           </View>
         </View>
 
-        {!selectionMode && onStarPress ? (
+        {!selectionMode && onStarPress && !isPrepping ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={starred ? "Remove star" : "Star prep"}

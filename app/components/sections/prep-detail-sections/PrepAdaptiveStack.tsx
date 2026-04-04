@@ -18,6 +18,14 @@ import {
   View,
 } from "react-native";
 import PrepDraftDocument from "./PrepDraftDocument";
+import {
+  PrepBusinessExperience,
+  PrepEventsExperience,
+  PrepFlightsExperience,
+  PrepJobsExperience,
+  PrepMarketExperience,
+  PrepTrendsExperience,
+} from "./PrepDiscoveryCards";
 import PrepPlaceExperience from "./PrepPlaceExperience";
 import PrepShoppingExperience from "./PrepShoppingExperience";
 import PrepShareRow from "./PrepShareRow";
@@ -691,7 +699,7 @@ function IdeaSwipe({ prep }: { prep: NonNullable<Prep["ideaCards"]> }) {
 }
 
 /** Renders the single adaptive layout for this prep (one schema at a time). */
-export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText, onPrepRefresh }: Props) {
+export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: Props) {
   const { colors } = useTheme();
   const share =
     sharePlainText.trim().length > 0 ? (
@@ -711,6 +719,48 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText, onP
     return (
       <View>
         <PrepPlaceExperience data={prep.placeCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
+      </View>
+    );
+  }
+  if (prep.eventsCard) {
+    return (
+      <View>
+        <PrepEventsExperience data={prep.eventsCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
+      </View>
+    );
+  }
+  if (prep.flightsCard) {
+    return (
+      <View>
+        <PrepFlightsExperience data={prep.flightsCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
+      </View>
+    );
+  }
+  if (prep.businessCard) {
+    return (
+      <View>
+        <PrepBusinessExperience data={prep.businessCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
+      </View>
+    );
+  }
+  if (prep.trendsCard) {
+    return (
+      <View>
+        <PrepTrendsExperience data={prep.trendsCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
+      </View>
+    );
+  }
+  if (prep.marketCard) {
+    return (
+      <View>
+        <PrepMarketExperience data={prep.marketCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
+      </View>
+    );
+  }
+  if (prep.jobsCard) {
+    return (
+      <View>
+        <PrepJobsExperience data={prep.jobsCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
       </View>
     );
   }
@@ -817,8 +867,8 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize["2xl"],
-    lineHeight: lh(fontSize["2xl"], lineHeight.snug),
+    fontSize: fontSize.xxl,
+    lineHeight: lh(fontSize.xxl, lineHeight.snug),
   },
   heroSub: { marginTop: space[1] },
   hScroll: { gap: space[3], paddingVertical: space[1] },
@@ -920,7 +970,7 @@ const styles = StyleSheet.create({
   profileRow: { flexDirection: "row", gap: space[3], alignItems: "flex-start" },
   avatar: { width: 72, height: 72, borderRadius: radii.lg },
   avatarPh: { alignItems: "center", justifyContent: "center" },
-  profileName: { fontFamily: fontFamily.display.semibold, fontSize: fontSize["2xl"] },
+  profileName: { fontFamily: fontFamily.display.semibold, fontSize: fontSize.xxl },
   companyLogo: { width: 100, height: 32, marginTop: space[2] },
   linkBtn: {
     flexDirection: "row",
@@ -949,8 +999,8 @@ const styles = StyleSheet.create({
   verdictRow: { flexDirection: "row", alignItems: "center", gap: space[2] },
   verdictText: {
     fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize["2xl"],
-    lineHeight: lh(fontSize["2xl"], lineHeight.snug),
+    fontSize: fontSize.xxl,
+    lineHeight: lh(fontSize.xxl, lineHeight.snug),
   },
   optBlock: {
     borderRadius: radii.md,
@@ -981,7 +1031,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
   },
   quoteText: {
-    fontFamily: fontFamily.display.medium,
+    fontFamily: fontFamily.display.italic,
     fontSize: fontSize.lg,
     lineHeight: lh(fontSize.lg, lineHeight.relaxed),
     fontStyle: "italic",

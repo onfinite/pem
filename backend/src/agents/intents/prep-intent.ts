@@ -18,6 +18,13 @@ export const PREP_INTENTS = [
   'EXPLAIN',
   'TRANSLATE_SIMPLIFY',
   'TRACK_MONITOR',
+  /** First-class Serp lanes — see adaptive discovery cards */
+  'EVENTS',
+  'FLIGHTS',
+  'BUSINESS',
+  'TRENDS',
+  'MARKET',
+  'JOBS',
 ] as const;
 
 export type PrepIntent = (typeof PREP_INTENTS)[number];

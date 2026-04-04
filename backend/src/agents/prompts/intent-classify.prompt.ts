@@ -1,4 +1,4 @@
-const INTENT_LINE = `SHOPPING | RESEARCH | DRAFT | COMPARISON | DECISION | LEGAL_FINANCIAL | LIFE_ADMIN | TASK_UNCLEAR | SUMMARIZE | FIND_PERSON | FIND_PLACE | SCHEDULE_PREP | CONTENT_IDEA | EXPLAIN | TRANSLATE_SIMPLIFY | TRACK_MONITOR`;
+const INTENT_LINE = `SHOPPING | RESEARCH | DRAFT | COMPARISON | DECISION | LEGAL_FINANCIAL | LIFE_ADMIN | TASK_UNCLEAR | SUMMARIZE | FIND_PERSON | FIND_PLACE | SCHEDULE_PREP | CONTENT_IDEA | EXPLAIN | TRANSLATE_SIMPLIFY | TRACK_MONITOR | EVENTS | FLIGHTS | BUSINESS | TRENDS | MARKET | JOBS`;
 
 /** Build classification prompt for one thought (after split). */
 export function buildIntentClassifyPrompt(thought: string): string {
@@ -25,6 +25,12 @@ Classify into exactly ONE intent:
 - EXPLAIN — explain a concept (S-corp, cap table); no web research unless "latest law"
 - TRANSLATE_SIMPLIFY — rewrite/simplify pasted text, plain English
 - TRACK_MONITOR — ongoing alerts (price drop, job listing watch) — not MVP but classify if clearly stated
+- EVENTS — **concerts, festivals, shows, things to do this weekend**, ticketed or local happenings (want a **list of real events** with dates/venues) — not generic industry "events" research
+- FLIGHTS — **book or compare flights**, airfare, routes, airports, "fly to X", layovers — not general travel essays
+- BUSINESS — **find a business / service provider as a company** (plumber, CPA firm, agency) where **reputation, reviews, and contact** matter — broader than a single restaurant visit; use when the ask is **who to hire / which firm** vs **where to eat tonight** (FIND_PLACE)
+- TRENDS — **what's trending**, search interest, keyword momentum (Google Trends style) — not long-form topic research
+- MARKET — **stock, ETF, crypto, FX quote** or live market snapshot — not legal/tax advice (LEGAL_FINANCIAL) unless the ask is clearly compliance
+- JOBS — **open roles, hiring, salaries, apply** — job search / career move
 
 **Venues vs research (critical):**
 - "Best restaurants in Austin", "top coffee shops near me", "find a good bar in Brooklyn", "where should we eat tonight", "search hotels in Tokyo under $200" → **FIND_PLACE**

@@ -300,7 +300,13 @@ export default function PrepDetailBody({ prep }: Props) {
       prep.legalFinancialCard ||
       prep.explainCard ||
       prep.summaryCard ||
-      prep.ideaCards,
+      prep.ideaCards ||
+      prep.eventsCard ||
+      prep.flightsCard ||
+      prep.businessCard ||
+      prep.trendsCard ||
+      prep.marketCard ||
+      prep.jobsCard,
   );
   const showFullShare =
     !hasAdaptive &&

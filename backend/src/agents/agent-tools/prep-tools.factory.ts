@@ -60,16 +60,32 @@ export function createPrepAgentTools(d: PrepToolsFactoryDeps) {
   const googleVerticals = [
     'shopping',
     'maps',
+    'local',
+    'local_services',
     'web',
     'news',
     'images',
+    'images_light',
     'jobs',
     'finance',
+    'events',
+    'flights',
+    'hotels',
+    'forums',
+    'maps_reviews',
+    'travel_explore',
+    'trends',
+    'immersive_product',
+    'amazon_product',
+    'apple_app_store',
+    'home_depot',
+    'facebook_profile',
+    'scholar',
   ] as const satisfies readonly GoogleVertical[];
 
   const googleTool = tool({
     description:
-      '**SerpAPI + Tavily bundle** — structured Google data plus context. Call **before** search() when you need real SERP rows. **vertical**: `shopping` (Google Shopping + Amazon + reviews for buy lanes), `maps` (local), `web` (organic), `news` (headlines), `images` (image search), `jobs` (Google Jobs), `finance` (ticker/price snapshot). RESEARCH/COMPARISON/DECISION can use any vertical; SHOPPING always runs the shopping bundle; FIND_PLACE always maps; FIND_PERSON always web.',
+      '**SerpAPI + Tavily bundle** — structured Google/third-party data plus context. Call **before** search() when you need real SERP rows. **vertical**: `shopping` (Google Shopping + Amazon + buying guide), `maps` (Google Maps places), `local` (google_local), `local_services` (pros / home services), `web` (organic), `news` (google_news engine), `images` / `images_light` (fast images), `jobs`, `finance`, `events` (concerts/festivals), `flights` (query **flight|DEP|ARR|YYYY-MM-DD**), `hotels` (**hotel|City|check_in|check_out**), `forums` (discussions), `maps_reviews` (**reviews|DATA_ID**), `travel_explore`, `trends`, `immersive_product` (**product|PAGE_TOKEN** from shopping), `amazon_product` (ASIN or **asin|B0…**), `apple_app_store`, `home_depot`, `facebook_profile` (public id), `scholar` (papers). SHOPPING always shopping bundle; FIND_PLACE defaults to maps but may use `events`/`local`/`local_services`/`travel_explore`/`maps_reviews`; LIFE_ADMIN may use travel/finance/trends; RESEARCH/COMPARISON/DECISION can use any vertical.',
     inputSchema: z.object({
       query: z.string(),
       vertical: z.enum(googleVerticals),

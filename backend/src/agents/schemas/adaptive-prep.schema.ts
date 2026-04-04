@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { upgradeGoogleImageSize } from '../../integrations/serpapi-image-url';
 import { sanitizeShoppingProductUrl } from './shopping-product-url';
 
 /** Real URLs and numbers only from agent output — never invented. */
@@ -8,6 +9,12 @@ const shoppingProductSchema = z.object({
   price: z.string(),
   /** 0–5 when unknown use 0 */
   rating: z.number(),
+  /** Count of reviews when known; else 0 */
+  reviewCount: z.number(),
+  /** One short quote or paraphrase from reviews; "" if none */
+  reviewSnippet: z.string(),
+  /** One line on buyer sentiment (e.g. "Loved for battery life"); "" if none */
+  customerSentiment: z.string(),
   image: z.string(),
   url: z.string(),
   store: z.string(),
@@ -27,7 +34,7 @@ export const shoppingCardModelSchema = z.object({
   query: z.string(),
   recommendation: z.string(),
   buyingGuide: z.string(),
-  /** Top 3 are hero picks in the app; up to 7 more render as a compact grid (max 10 total). */
+  /** Top 3 are hero carousel in the app; up to 7 more render as a vertical list (max 10 total). */
   products: z.array(shoppingProductSchema).min(1).max(10),
 });
 
@@ -64,7 +71,7 @@ export function normalizeShoppingCard(
     ...p,
     name: p.name.trim(),
     price: p.price.trim(),
-    image: p.image.trim(),
+    image: upgradeGoogleImageSize(p.image.trim()),
     url: sanitizeShoppingProductUrl(p.url),
     store: p.store.trim(),
     why: p.why.trim(),
@@ -72,6 +79,9 @@ export function normalizeShoppingCard(
     pros: p.pros.map((s) => s.trim()).filter(Boolean),
     cons: p.cons.map((s) => s.trim()).filter(Boolean),
     rating: Math.min(5, Math.max(0, p.rating)),
+    reviewCount: Math.max(0, Math.floor(p.reviewCount)),
+    reviewSnippet: p.reviewSnippet.trim(),
+    customerSentiment: p.customerSentiment.trim(),
   }));
   return {
     schema: 'SHOPPING_CARD',
@@ -109,7 +119,16 @@ const placeRowSchema = z.object({
   priceRange: z.string(),
   hours: z.string(),
   phone: z.string(),
+  /** Business site from Serp/maps when present — not the same as Maps URL in `url`. */
+  website: z.string(),
+  /** Only when explicitly in sources; maps SERP rarely includes email — use "" otherwise. */
+  email: z.string(),
+  /** Google Maps place link when available; "" if none. */
   url: z.string(),
+  /** Short paraphrase from reviews / forums when available; "" if none */
+  reviewSnippet: z.string(),
+  /** One line on reputation / satisfaction; "" if none */
+  customerSatisfaction: z.string(),
   pemNote: z.string(),
 });
 
@@ -135,11 +154,15 @@ export function normalizePlaceCard(
     ...p,
     name: p.name.trim(),
     address: p.address.trim(),
-    photo: p.photo.trim(),
+    photo: upgradeGoogleImageSize(p.photo.trim()),
     priceRange: p.priceRange.trim(),
     hours: p.hours.trim(),
     phone: p.phone.trim(),
+    website: p.website.trim(),
+    email: p.email.trim(),
     url: p.url.trim(),
+    reviewSnippet: p.reviewSnippet.trim(),
+    customerSatisfaction: p.customerSatisfaction.trim(),
     pemNote: p.pemNote.trim(),
     rating: Math.min(5, Math.max(0, p.rating)),
     reviewCount: Math.max(0, Math.floor(p.reviewCount)),

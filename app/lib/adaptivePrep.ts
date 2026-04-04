@@ -8,6 +8,9 @@ export type ShoppingProduct = {
   name: string;
   price: string;
   rating: number;
+  reviewCount: number;
+  reviewSnippet: string;
+  customerSentiment: string;
   image: string;
   url: string;
   store: string;
@@ -47,7 +50,13 @@ export type PlaceRow = {
   priceRange: string;
   hours: string;
   phone: string;
+  /** Business website (not the Maps URL). */
+  website: string;
+  /** When present in sources only. */
+  email: string;
   url: string;
+  reviewSnippet: string;
+  customerSatisfaction: string;
   pemNote: string;
 };
 
@@ -193,6 +202,107 @@ export type IdeaCardsPayload = {
   ideas: IdeaRow[];
 };
 
+export type EventsCardPayload = {
+  schema: "EVENTS_CARD";
+  summary: string;
+  query: string;
+  recommendation: string;
+  events: {
+    title: string;
+    when: string;
+    venue: string;
+    address: string;
+    link: string;
+    photo: string;
+    ticketHint: string;
+    reviewSnippet: string;
+    pemNote: string;
+  }[];
+};
+
+export type FlightsCardPayload = {
+  schema: "FLIGHTS_CARD";
+  summary: string;
+  query: string;
+  recommendation: string;
+  routeLabel: string;
+  offers: {
+    label: string;
+    price: string;
+    airline: string;
+    duration: string;
+    stops: string;
+    bookingUrl: string;
+    notes: string;
+  }[];
+};
+
+export type BusinessCardPayload = {
+  schema: "BUSINESS_CARD";
+  summary: string;
+  query: string;
+  recommendation: string;
+  businesses: {
+    name: string;
+    rating: number;
+    reviewCount: number;
+    phone: string;
+    website: string;
+    address: string;
+    hours: string;
+    photo: string;
+    reviewSnippet: string;
+    customerSatisfaction: string;
+    mapsUrl: string;
+    pemNote: string;
+  }[];
+};
+
+export type TrendsCardPayload = {
+  schema: "TRENDS_CARD";
+  summary: string;
+  query: string;
+  recommendation: string;
+  keyword: string;
+  trendReadout: string;
+  relatedQueries: string[];
+  timeframe: string;
+  sources: ResearchSource[];
+};
+
+export type MarketCardPayload = {
+  schema: "MARKET_CARD";
+  summary: string;
+  query: string;
+  recommendation: string;
+  symbol: string;
+  name: string;
+  price: string;
+  change: string;
+  currency: string;
+  sentiment: string;
+  keyPoints: string[];
+  sources: ResearchSource[];
+};
+
+export type JobsCardPayload = {
+  schema: "JOBS_CARD";
+  summary: string;
+  query: string;
+  recommendation: string;
+  jobs: {
+    title: string;
+    company: string;
+    location: string;
+    link: string;
+    snippet: string;
+    salaryHint: string;
+    employerRating: number;
+    reviewSnippet: string;
+    pemNote: string;
+  }[];
+};
+
 function isRecord(x: unknown): x is Record<string, unknown> {
   return x !== null && typeof x === "object" && !Array.isArray(x);
 }
@@ -213,7 +323,11 @@ function parsePlaceRow(o: unknown): PlaceRow | null {
     priceRange: typeof o.priceRange === "string" ? o.priceRange : "",
     hours: typeof o.hours === "string" ? o.hours : "",
     phone: typeof o.phone === "string" ? o.phone : "",
+    website: typeof o.website === "string" ? o.website : "",
+    email: typeof o.email === "string" ? o.email : "",
     url: typeof o.url === "string" ? o.url : "",
+    reviewSnippet: typeof o.reviewSnippet === "string" ? o.reviewSnippet : "",
+    customerSatisfaction: typeof o.customerSatisfaction === "string" ? o.customerSatisfaction : "",
     pemNote: typeof o.pemNote === "string" ? o.pemNote : "",
   };
 }
@@ -226,6 +340,10 @@ function parseProduct(o: unknown): ShoppingProduct | null {
     name: typeof o.name === "string" ? o.name : "",
     price: typeof o.price === "string" ? o.price : "",
     rating: typeof o.rating === "number" && !Number.isNaN(o.rating) ? o.rating : 0,
+    reviewCount:
+      typeof o.reviewCount === "number" && !Number.isNaN(o.reviewCount) ? Math.floor(o.reviewCount) : 0,
+    reviewSnippet: typeof o.reviewSnippet === "string" ? o.reviewSnippet : "",
+    customerSentiment: typeof o.customerSentiment === "string" ? o.customerSentiment : "",
     image: typeof o.image === "string" ? o.image : "",
     url: typeof o.url === "string" ? o.url : "",
     store: typeof o.store === "string" ? o.store : "",
@@ -254,6 +372,12 @@ export type AdaptiveParseResult = {
   explainCard?: ExplainCardPayload;
   summaryCard?: SummaryCardPayload;
   ideaCards?: IdeaCardsPayload;
+  eventsCard?: EventsCardPayload;
+  flightsCard?: FlightsCardPayload;
+  businessCard?: BusinessCardPayload;
+  trendsCard?: TrendsCardPayload;
+  marketCard?: MarketCardPayload;
+  jobsCard?: JobsCardPayload;
 };
 
 /** Parse adaptive payloads from API `result` (no blocks). */
@@ -572,6 +696,191 @@ export function parseAdaptiveFromResult(
         summary: typeof result.summary === "string" ? result.summary : "",
         context: typeof result.context === "string" ? result.context : "",
         ideas: ideas.slice(0, 12),
+      },
+    };
+  }
+
+  if (sch === "EVENTS_CARD") {
+    const raw = Array.isArray(result.events) ? result.events : [];
+    const events: EventsCardPayload["events"] = [];
+    for (const e of raw) {
+      if (!isRecord(e)) continue;
+      const title = typeof e.title === "string" ? e.title.trim() : "";
+      if (!title) continue;
+      events.push({
+        title,
+        when: typeof e.when === "string" ? e.when : "",
+        venue: typeof e.venue === "string" ? e.venue : "",
+        address: typeof e.address === "string" ? e.address : "",
+        link: typeof e.link === "string" ? e.link : "",
+        photo: typeof e.photo === "string" ? e.photo : "",
+        ticketHint: typeof e.ticketHint === "string" ? e.ticketHint : "",
+        reviewSnippet: typeof e.reviewSnippet === "string" ? e.reviewSnippet : "",
+        pemNote: typeof e.pemNote === "string" ? e.pemNote : "",
+      });
+    }
+    if (!events.length) return {};
+    return {
+      eventsCard: {
+        schema: "EVENTS_CARD",
+        summary: typeof result.summary === "string" ? result.summary : "",
+        query: typeof result.query === "string" ? result.query : "",
+        recommendation: typeof result.recommendation === "string" ? result.recommendation : "",
+        events: events.slice(0, 8),
+      },
+    };
+  }
+
+  if (sch === "FLIGHTS_CARD") {
+    const raw = Array.isArray(result.offers) ? result.offers : [];
+    const offers: FlightsCardPayload["offers"] = [];
+    for (const x of raw) {
+      if (!isRecord(x)) continue;
+      const label = typeof x.label === "string" ? x.label.trim() : "";
+      const priceStr = typeof x.price === "string" ? x.price.trim() : "";
+      if (!label && !priceStr) continue;
+      offers.push({
+        label,
+        price: priceStr,
+        airline: typeof x.airline === "string" ? x.airline : "",
+        duration: typeof x.duration === "string" ? x.duration : "",
+        stops: typeof x.stops === "string" ? x.stops : "",
+        bookingUrl: typeof x.bookingUrl === "string" ? x.bookingUrl : "",
+        notes: typeof x.notes === "string" ? x.notes : "",
+      });
+    }
+    if (!offers.length) return {};
+    return {
+      flightsCard: {
+        schema: "FLIGHTS_CARD",
+        summary: typeof result.summary === "string" ? result.summary : "",
+        query: typeof result.query === "string" ? result.query : "",
+        recommendation: typeof result.recommendation === "string" ? result.recommendation : "",
+        routeLabel: typeof result.routeLabel === "string" ? result.routeLabel : "",
+        offers: offers.slice(0, 8),
+      },
+    };
+  }
+
+  if (sch === "BUSINESS_CARD") {
+    const raw = Array.isArray(result.businesses) ? result.businesses : [];
+    const businesses: BusinessCardPayload["businesses"] = [];
+    for (const b of raw) {
+      if (!isRecord(b)) continue;
+      const name = typeof b.name === "string" ? b.name.trim() : "";
+      if (!name) continue;
+      businesses.push({
+        name,
+        rating: typeof b.rating === "number" && !Number.isNaN(b.rating) ? b.rating : 0,
+        reviewCount:
+          typeof b.reviewCount === "number" && !Number.isNaN(b.reviewCount) ? Math.floor(b.reviewCount) : 0,
+        phone: typeof b.phone === "string" ? b.phone : "",
+        website: typeof b.website === "string" ? b.website : "",
+        address: typeof b.address === "string" ? b.address : "",
+        hours: typeof b.hours === "string" ? b.hours : "",
+        photo: typeof b.photo === "string" ? b.photo : "",
+        reviewSnippet: typeof b.reviewSnippet === "string" ? b.reviewSnippet : "",
+        customerSatisfaction: typeof b.customerSatisfaction === "string" ? b.customerSatisfaction : "",
+        mapsUrl: typeof b.mapsUrl === "string" ? b.mapsUrl : "",
+        pemNote: typeof b.pemNote === "string" ? b.pemNote : "",
+      });
+    }
+    if (!businesses.length) return {};
+    return {
+      businessCard: {
+        schema: "BUSINESS_CARD",
+        summary: typeof result.summary === "string" ? result.summary : "",
+        query: typeof result.query === "string" ? result.query : "",
+        recommendation: typeof result.recommendation === "string" ? result.recommendation : "",
+        businesses: businesses.slice(0, 8),
+      },
+    };
+  }
+
+  if (sch === "TRENDS_CARD") {
+    const sourcesRaw = Array.isArray(result.sources) ? result.sources : [];
+    const sources: ResearchSource[] = [];
+    for (const s of sourcesRaw) {
+      if (!isRecord(s)) continue;
+      const url = typeof s.url === "string" ? s.url.trim() : "";
+      if (!url) continue;
+      sources.push({ title: typeof s.title === "string" ? s.title : "", url });
+    }
+    const kw = typeof result.keyword === "string" ? result.keyword.trim() : "";
+    const readout = typeof result.trendReadout === "string" ? result.trendReadout.trim() : "";
+    if (!kw && !readout) return {};
+    return {
+      trendsCard: {
+        schema: "TRENDS_CARD",
+        summary: typeof result.summary === "string" ? result.summary : "",
+        query: typeof result.query === "string" ? result.query : "",
+        recommendation: typeof result.recommendation === "string" ? result.recommendation : "",
+        keyword: kw,
+        trendReadout: readout,
+        relatedQueries: parseStringArray(result.relatedQueries).slice(0, 12),
+        timeframe: typeof result.timeframe === "string" ? result.timeframe : "",
+        sources,
+      },
+    };
+  }
+
+  if (sch === "MARKET_CARD") {
+    const sourcesRaw = Array.isArray(result.sources) ? result.sources : [];
+    const sources: ResearchSource[] = [];
+    for (const s of sourcesRaw) {
+      if (!isRecord(s)) continue;
+      const url = typeof s.url === "string" ? s.url.trim() : "";
+      if (!url) continue;
+      sources.push({ title: typeof s.title === "string" ? s.title : "", url });
+    }
+    const sym = typeof result.symbol === "string" ? result.symbol.trim() : "";
+    if (!sym) return {};
+    return {
+      marketCard: {
+        schema: "MARKET_CARD",
+        summary: typeof result.summary === "string" ? result.summary : "",
+        query: typeof result.query === "string" ? result.query : "",
+        recommendation: typeof result.recommendation === "string" ? result.recommendation : "",
+        symbol: sym,
+        name: typeof result.name === "string" ? result.name : "",
+        price: typeof result.price === "string" ? result.price : "",
+        change: typeof result.change === "string" ? result.change : "",
+        currency: typeof result.currency === "string" ? result.currency : "",
+        sentiment: typeof result.sentiment === "string" ? result.sentiment : "",
+        keyPoints: parseStringArray(result.keyPoints).slice(0, 10),
+        sources,
+      },
+    };
+  }
+
+  if (sch === "JOBS_CARD") {
+    const raw = Array.isArray(result.jobs) ? result.jobs : [];
+    const jobs: JobsCardPayload["jobs"] = [];
+    for (const j of raw) {
+      if (!isRecord(j)) continue;
+      const title = typeof j.title === "string" ? j.title.trim() : "";
+      if (!title) continue;
+      jobs.push({
+        title,
+        company: typeof j.company === "string" ? j.company : "",
+        location: typeof j.location === "string" ? j.location : "",
+        link: typeof j.link === "string" ? j.link : "",
+        snippet: typeof j.snippet === "string" ? j.snippet : "",
+        salaryHint: typeof j.salaryHint === "string" ? j.salaryHint : "",
+        employerRating:
+          typeof j.employerRating === "number" && !Number.isNaN(j.employerRating) ? j.employerRating : 0,
+        reviewSnippet: typeof j.reviewSnippet === "string" ? j.reviewSnippet : "",
+        pemNote: typeof j.pemNote === "string" ? j.pemNote : "",
+      });
+    }
+    if (!jobs.length) return {};
+    return {
+      jobsCard: {
+        schema: "JOBS_CARD",
+        summary: typeof result.summary === "string" ? result.summary : "",
+        query: typeof result.query === "string" ? result.query : "",
+        recommendation: typeof result.recommendation === "string" ? result.recommendation : "",
+        jobs: jobs.slice(0, 10),
       },
     };
   }
