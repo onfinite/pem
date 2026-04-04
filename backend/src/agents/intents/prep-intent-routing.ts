@@ -2,7 +2,7 @@ import type { PrepType } from '../../database/schemas';
 
 import type { PrepIntent } from './prep-intent';
 
-/** Initial DB `prep_type` before structured output overwrites — legacy bucket. */
+/** Initial DB `prep_type` before the agent overwrites with the final bucket. */
 export function initialPrepTypeForIntent(intent: PrepIntent): PrepType {
   switch (intent) {
     case 'DRAFT':
@@ -31,14 +31,16 @@ export function intentSystemAddendum(intent: PrepIntent): string {
   switch (intent) {
     case 'SHOPPING':
       lines.push(
-        'Find real products with **direct retailer purchase links** (Amazon, Target, Walmart, Best Buy, official brand store — actual product detail pages /dp/ /p/ etc.).',
-        'Do **not** use as the product link: Google Shopping or Google search result URLs, Google Maps, Yelp, TripAdvisor, store locators, "near me" pages, or blog roundup pages — unless the user explicitly asked for local pickup; default is **online buy**.',
-        'Use search() with product + retailer or "buy online"; use fetch() on **retailer PDPs** to verify price and image. Max 3 options. End with a clear recommendation.',
+        'Call **google()** first with `vertical: shopping` — JSON includes **google_shopping** (Google Shopping) **and** **amazon_search** (Amazon PDPs) in parallel. Those arrays are your **only** sources for real product names, prices, thumbnails, and **buy links**.',
+        'In your final answer, surface **at least two distinct products** when either array has 2+ rows — never a single news or magazine URL (e.g. today.com, CNN) as the only “buy” link.',
+        'Use **search()** (Tavily) only for supplemental expert reviews or buying guides after google(). Use **fetch()** on real retailer PDP URLs (Amazon /dp/, Target /p/, etc.) to verify price and image.',
+        'Do **not** use blog-only or maps links as the product purchase URL. Max 3 options. End with a clear recommendation.',
       );
       break;
     case 'RESEARCH':
       lines.push(
-        'Search for credible sources. Deliver summary, key facts, cited sources, bullet takeaways.',
+        'Call **google()** with the right **vertical**: `web` (general SERP), `news` (headlines), `images` (visual search), `jobs` (role hiring), `finance` (ticker/price), `maps` (places), `shopping` (products + Amazon). SerpAPI + Tavily run in parallel — pick the vertical that matches the question.',
+        'Deliver summary, key facts, cited sources, bullet takeaways.',
       );
       break;
     case 'DRAFT':
@@ -48,12 +50,12 @@ export function intentSystemAddendum(intent: PrepIntent): string {
       break;
     case 'COMPARISON':
       lines.push(
-        'Compare options with a side-by-side view and a winner recommendation.',
+        'Use **google()** with `vertical: shopping` for product comparisons when relevant, or `web` / `news` / `maps` / `finance` / `jobs` / `images` as needed. Compare options with a side-by-side view and a winner recommendation.',
       );
       break;
     case 'DECISION':
       lines.push(
-        'Structured pros/cons and data; end with "My take:" and a direct recommendation.',
+        'Use **google()** with the vertical that fits (often `web`, `shopping`, or `finance`). Structured pros/cons and data; end with "My take:" and a direct recommendation.',
       );
       break;
     case 'LEGAL_FINANCIAL':
@@ -63,7 +65,7 @@ export function intentSystemAddendum(intent: PrepIntent): string {
       break;
     case 'LIFE_ADMIN':
       lines.push(
-        'Step-by-step, actionable; search for specific logistics when needed.',
+        'Step-by-step, actionable. If the ask involves a **place** (contractor, office, service), call **google()** with `vertical: maps`; otherwise `vertical: web` or rely on **search()** (Tavily) for process and logistics.',
       );
       break;
     case 'TASK_UNCLEAR':
@@ -78,17 +80,17 @@ export function intentSystemAddendum(intent: PrepIntent): string {
       break;
     case 'FIND_PERSON':
       lines.push(
-        'People discovery: role, company, best public profile links. Never invent email/phone.',
+        'Call **google()** with `vertical: web` first (organic results + knowledge-style links), then use **search()** for synthesis. People discovery: role, company, best public profile links. Never invent email/phone.',
       );
       break;
     case 'FIND_PLACE':
       lines.push(
-        'Local/service discovery with constraints (location, price). Clear pick when possible.',
+        'Call **google()** with `vertical: maps` first — structured **Google Maps** results (ratings, address, coordinates, photos). Use **search()** for extra context. Respect user location from memory when they said “near me”. Clear pick when possible.',
       );
       break;
     case 'SCHEDULE_PREP':
       lines.push(
-        'Meeting prep: who, company context, talking points, risks — scannable briefing.',
+        'Call **google()** with `vertical: web` — bundled **recent news** (past month) + Tavily company/person background. Meeting prep: who, company, talking points, risks — scannable briefing.',
       );
       break;
     case 'CONTENT_IDEA':
@@ -129,6 +131,23 @@ export function intentAllowsSearch(intent: PrepIntent): boolean {
       return false;
     default:
       return true;
+  }
+}
+
+/** SerpAPI (Google Shopping / Maps / organic) — structured data; see `pem-search-provider-routing.mdc`. */
+export function intentAllowsGoogleSerp(intent: PrepIntent): boolean {
+  switch (intent) {
+    case 'SHOPPING':
+    case 'RESEARCH':
+    case 'COMPARISON':
+    case 'DECISION':
+    case 'FIND_PLACE':
+    case 'FIND_PERSON':
+    case 'SCHEDULE_PREP':
+    case 'LIFE_ADMIN':
+      return true;
+    default:
+      return false;
   }
 }
 

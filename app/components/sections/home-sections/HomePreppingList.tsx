@@ -1,5 +1,6 @@
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import PemButton from "@/components/ui/PemButton";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme, type ThemeSemantic } from "@/contexts/ThemeContext";
@@ -7,6 +8,7 @@ import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/
 import { useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { prepKindTagColor } from "./homePrepData";
+import { prepListAccentFromIntent } from "@/components/shell/prepTypeIcon";
 
 export function PreppingRow({
   prep,
@@ -22,6 +24,7 @@ export function PreppingRow({
   const [retrying, setRetrying] = useState(false);
   const failed = prep.status === "failed";
   const subColor = prepKindTagColor(prep.kind, resolved);
+  const accent = prepListAccentFromIntent(prep.intent ?? null, prep.kind, resolved);
   const Icon = prep.Icon;
   return (
     <View
@@ -42,8 +45,8 @@ export function PreppingRow({
         },
       ]}
     >
-      <View style={[styles.preppingIconWell, { backgroundColor: colors.secondarySurface }]}>
-        <Icon size={18} stroke={colors.textSecondary} strokeWidth={2} />
+      <View style={[styles.preppingIconWell, { backgroundColor: accent.well }]}>
+        <Icon size={20} stroke={accent.icon} strokeWidth={2.1} />
       </View>
       <View style={styles.preppingRowBody}>
         <PemText style={[styles.preppingRowSub, { color: subColor }]}>{prep.tag}</PemText>
@@ -54,7 +57,7 @@ export function PreppingRow({
       <View style={styles.preppingSpinner}>
         {failed ? (
           retrying ? (
-            <ActivityIndicator size="small" color={colors.pemAmber} />
+            <PemLoadingIndicator placement="bare" size="small" />
           ) : (
             <PemButton
               size="sm"
@@ -68,7 +71,7 @@ export function PreppingRow({
             </PemButton>
           )
         ) : (
-          <ActivityIndicator size="small" color={colors.placeholder} />
+          <ActivityIndicator size="small" color={accent.icon} />
         )}
       </View>
     </View>
@@ -101,21 +104,21 @@ export default function HomePreppingList({ preps: prepsOverride }: Props) {
 
 const styles = StyleSheet.create({
   preppingList: {
-    gap: space[3],
+    gap: space[4],
   },
   preppingRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: space[3],
-    paddingVertical: space[4],
-    paddingHorizontal: space[4],
+    gap: space[4],
+    paddingVertical: space[5],
+    paddingHorizontal: space[5],
     borderRadius: radii.lg,
     borderWidth: 1,
   },
   preppingIconWell: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },

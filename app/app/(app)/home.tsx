@@ -1,270 +1,374 @@
-import HomeTopBar from "@/components/sections/home-sections/HomeTopBar";
-import HomePageHead from "@/components/sections/home-sections/HomePageHead";
 import HomePreppingEmpty from "@/components/sections/home-sections/HomePreppingEmpty";
 import HomeReadyEmpty from "@/components/sections/home-sections/HomeReadyEmpty";
-import HomeReadyPrepCard from "@/components/sections/home-sections/HomeReadyPrepCard";
-import {
-  TAB_DOCK_INNER_MIN,
-  TOP_BAR_ROW_PAD,
-  TOP_ICON_CHIP,
-  glassChromeBorder,
-} from "@/components/sections/home-sections/homeLayout";
-import PrepHubCard from "@/components/sections/home-sections/PrepHubCard";
-import { PreppingRow } from "@/components/sections/home-sections/HomePreppingList";
-import HomeTabDock from "@/components/sections/home-sections/HomeTabDock";
-import type { Prep, PrepTab } from "@/components/sections/home-sections/homePrepData";
+import HubSwipeableRow from "@/components/sections/home-sections/HubSwipeableRow";
+import HubEmptyState from "@/components/shell/HubEmptyState";
+import InboxDumpFab from "@/components/shell/InboxDumpFab";
+import InboxHeader from "@/components/shell/InboxHeader";
+import InboxShellTabBar from "@/components/shell/InboxShellTabBar";
+import PrepInboxRow from "@/components/shell/PrepInboxRow";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { space } from "@/constants/typography";
-import PemText from "@/components/ui/PemText";
-import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
-import { router } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
-import { X } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
+  INBOX_DUMP_FAB_SIZE,
+  INBOX_FAB_GAP_ABOVE_TAB,
+  INBOX_SCROLL_CLEARANCE_ABOVE_BOTTOM_NAV,
+  INBOX_TAB_BAR_FIXED_HEIGHT,
+} from "@/components/sections/home-sections/homeLayout";
+import { PREP_PAGE_SIZE } from "@/constants/limits";
+import { useInboxShell } from "@/constants/shellTokens";
+import { space } from "@/constants/typography";
+import { apiPrepToPrep, searchPrepsPage, type ApiPrep } from "@/lib/pemApi";
+import { useAuth } from "@clerk/expo";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
+import PemRefreshControl from "@/components/ui/PemRefreshControl";
+import { pemSelection } from "@/lib/pemHaptics";
+import { router } from "expo-router";
+import { Archive } from "lucide-react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
   FlatList,
   ListRenderItem,
-  Pressable,
-  RefreshControl,
+  Platform,
   StyleSheet,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-function ArchivedTabEmpty() {
+import type { Prep, PrepTab } from "@/components/sections/home-sections/homePrepData";
+
+type HubRow = { kind: "prep"; prep: Prep };
+
+function mergeHubTab(rows: ApiPrep[]): HubRow[] {
+  const sorted = [...rows].sort((a, b) => {
+    const ta = Date.parse(a.created_at);
+    const tb = Date.parse(b.created_at);
+    if (tb !== ta) return tb - ta;
+    return b.id.localeCompare(a.id);
+  });
+  return sorted.map((api) => ({ kind: "prep" as const, prep: apiPrepToPrep(api) }));
+}
+
+/** Unread-ready first, then recency — Gmail-style Preps tab. */
+function sortReadyApiPreps(rows: ApiPrep[]): ApiPrep[] {
+  return [...rows].sort((a, b) => {
+    const ua = a.status === "ready" && (a.opened_at === null || a.opened_at === undefined);
+    const ub = b.status === "ready" && (b.opened_at === null || b.opened_at === undefined);
+    if (ua !== ub) return ua ? -1 : 1;
+    const ta = Date.parse(a.created_at);
+    const tb = Date.parse(b.created_at);
+    if (tb !== ta) return tb - ta;
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function ArchivedTabEmptyInbox() {
   const { colors } = useTheme();
   return (
-    <View style={{ paddingVertical: space[6], alignItems: "center" }}>
-      <PemText variant="body" style={{ color: colors.textSecondary, textAlign: "center" }}>
-        Nothing archived yet — when you finish with a prep, it can show up here.
-      </PemText>
-    </View>
+    <HubEmptyState
+      compact
+      smallIconWell
+      icon={<Archive size={26} stroke={colors.textSecondary} strokeWidth={2} />}
+      title="Archive is empty"
+      body="Preps you've handled can show up here."
+    />
   );
 }
 
-/** Preps hub — settings in top bar, tab dock, Ready / Prepping / Archived (paged lists). */
+/** Preps hub — theme-aware inbox shell, top tabs, floating dump. */
 export default function HomeScreen() {
-  const { colors, resolved } = useTheme();
+  const { resolved } = useTheme();
+  const s = useInboxShell();
   const {
-    readyPreps,
-    preppingPreps,
-    archivedPreps,
+    readyPrepRows,
+    preppingPrepRows,
+    archivedPrepRows,
     loadMore,
     hasMore,
     loadingMore,
+    prepCounts,
     retryPrep,
     refresh,
     consumeHomeNavigationIntent,
+    showHubToast,
   } = usePrepHub();
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    const started = Date.now();
     try {
       await refresh({ skipCacheHydration: true });
     } finally {
+      const minMs = 450;
+      const elapsed = Date.now() - started;
+      if (elapsed < minMs) {
+        await new Promise((r) => setTimeout(r, minMs - elapsed));
+      }
       setRefreshing(false);
     }
   }, [refresh]);
 
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<PrepTab>("ready");
-  const [hubToast, setHubToast] = useState<string | null>(null);
-  const pullRefreshEnabled = tab === "ready" || tab === "prepping";
 
   useFocusEffect(
     useCallback(() => {
       const pending = consumeHomeNavigationIntent();
       if (pending) {
         setTab(pending.tab);
-        setHubToast(pending.toast);
-        pemSelection();
+        if (pending.toast) {
+          showHubToast(pending.toast);
+          pemSelection();
+        }
       }
-    }, [consumeHomeNavigationIntent]),
+    }, [consumeHomeNavigationIntent, showHubToast]),
   );
 
-  useEffect(() => {
-    if (!hubToast) return;
-    const t = setTimeout(() => setHubToast(null), 3200);
-    return () => clearTimeout(t);
-  }, [hubToast]);
-
-  const dismissHubToast = useCallback(() => {
-    pemSelection();
-    setHubToast(null);
+  const onHubTab = useCallback((t: PrepTab) => {
+    setTab(t);
   }, []);
 
-  const onHubTab = useCallback(
-    (t: PrepTab) => {
-      pemImpactLight();
-      if (t === tab) return;
-      pemSelection();
-      setTab(t);
-    },
-    [tab],
+  const hasPreps = readyPrepRows.length > 0;
+  const hasPrepping = preppingPrepRows.length > 0;
+  const nArchived = prepCounts?.archived ?? archivedPrepRows.length;
+
+  const hasUnreadReady = useMemo(
+    () =>
+      readyPrepRows.some(
+        (r) => r.status === "ready" && (r.opened_at === null || r.opened_at === undefined),
+      ),
+    [readyPrepRows],
   );
-  const glassBorder = glassChromeBorder(resolved);
 
-  const tabDockBottomSpace =
-    insets.bottom + TAB_DOCK_INNER_MIN + space[1] + space[2];
-  const bottomPad = tabDockBottomSpace + space[6];
-  const scrollTopPad =
-    insets.top + TOP_BAR_ROW_PAD * 2 + TOP_ICON_CHIP + space[1] + space[3];
-  const hasPreps = readyPreps.length > 0;
-  const hasPrepping = preppingPreps.length > 0;
-  const nReady = readyPreps.length;
-  const nPrepping = preppingPreps.length;
-  const nArchived = archivedPreps.length;
+  const [searchInput, setSearchInput] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+  const [searchRows, setSearchRows] = useState<ApiPrep[]>([]);
+  const [searchCursor, setSearchCursor] = useState<string | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
 
-  const tabData: Prep[] = useMemo(() => {
-    if (tab === "ready") return readyPreps;
-    if (tab === "prepping") return preppingPreps;
-    return archivedPreps;
-  }, [tab, readyPreps, preppingPreps, archivedPreps]);
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchInput.trim()), 320);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  const pageHead =
-    tab === "ready"
-      ? {
-          title: "Preps",
-          sub: hasPreps
-            ? `${nReady}${hasMore.ready ? "+" : ""} ready — open when you want to act.`
-            : "Dump a thought first. Preps land here when they’re ready to open.",
+  const searchActive = searchDebounced.length >= 2;
+  const searchWaiting =
+    searchActive && searchInput.trim().length >= 2 && searchInput.trim() !== searchDebounced;
+
+  useEffect(() => {
+    if (!searchActive) {
+      setSearchRows((prev) => (prev.length === 0 ? prev : []));
+      setSearchCursor((prev) => (prev === null ? prev : null));
+      setSearchLoading((prev) => (prev === false ? prev : false));
+      return;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const status =
+      tab === "ready" ? "ready" : tab === "prepping" ? "prepping" : "archived";
+    void (async () => {
+      try {
+        const res = await searchPrepsPage(() => getTokenRef.current(), {
+          q: searchDebounced,
+          status,
+          limit: PREP_PAGE_SIZE,
+        });
+        if (cancelled) return;
+        setSearchRows(res.items);
+        setSearchCursor(res.next_cursor);
+      } catch {
+        if (!cancelled) {
+          setSearchRows([]);
+          setSearchCursor(null);
         }
-      : tab === "prepping"
-        ? {
-            title: "Prepping",
-            sub: hasPrepping
-              ? `${nPrepping}${hasMore.prepping ? "+" : ""} in progress — moves to Ready when done.`
-              : "Nothing in the queue. New dumps show up here while Pem works.",
-          }
-        : {
-            title: "Archived",
-            sub:
-              nArchived > 0
-                ? `${nArchived}${hasMore.archived ? "+" : ""} archived — still here if you need to look back.`
-                : "Finished or dismissed — still here if you need to look back.",
-          };
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchActive, searchDebounced, tab]);
+
+  const tabData: HubRow[] = useMemo(() => {
+    if (searchActive) {
+      const rows = tab === "ready" ? sortReadyApiPreps(searchRows) : searchRows;
+      return mergeHubTab(rows);
+    }
+    if (tab === "ready") return mergeHubTab(sortReadyApiPreps(readyPrepRows));
+    if (tab === "prepping") return mergeHubTab(preppingPrepRows);
+    return mergeHubTab(archivedPrepRows);
+  }, [
+    searchActive,
+    searchRows,
+    tab,
+    readyPrepRows,
+    preppingPrepRows,
+    archivedPrepRows,
+  ]);
+
+  const searchHasMore = Boolean(searchCursor) && searchActive;
+
+  const loadMoreSearch = useCallback(async () => {
+    if (!searchActive || !searchCursor) return;
+    setSearchLoading(true);
+    try {
+      const status =
+        tab === "ready" ? "ready" : tab === "prepping" ? "prepping" : "archived";
+      const res = await searchPrepsPage(() => getTokenRef.current(), {
+        q: searchDebounced,
+        status,
+        limit: PREP_PAGE_SIZE,
+        cursor: searchCursor,
+      });
+      setSearchRows((prev) => [...prev, ...res.items]);
+      setSearchCursor(res.next_cursor);
+    } catch {
+      /* ignore */
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchActive, searchCursor, searchDebounced, tab]);
 
   const onEndReached = useCallback(() => {
+    if (searchActive) {
+      if (searchHasMore && !searchLoading) void loadMoreSearch();
+      return;
+    }
     if (tab === "ready" && hasMore.ready) void loadMore("ready");
     if (tab === "prepping" && hasMore.prepping) void loadMore("prepping");
     if (tab === "archived" && hasMore.archived) void loadMore("archived");
-  }, [tab, hasMore, loadMore]);
+  }, [
+    searchActive,
+    searchHasMore,
+    searchLoading,
+    loadMoreSearch,
+    tab,
+    hasMore,
+    loadMore,
+  ]);
 
-  const renderItem: ListRenderItem<Prep> = useCallback(
-    ({ item }) => {
-      if (tab === "ready") {
-        return <HomeReadyPrepCard prep={item} resolved={resolved} />;
-      }
+  const bottomPad =
+    insets.bottom +
+    INBOX_TAB_BAR_FIXED_HEIGHT +
+    INBOX_FAB_GAP_ABOVE_TAB +
+    INBOX_DUMP_FAB_SIZE +
+    space[3] +
+    INBOX_SCROLL_CLEARANCE_ABOVE_BOTTOM_NAV;
+
+  const listIsEmpty = tabData.length === 0;
+
+  const contentContainerStyle = useMemo(
+    () => [
+      styles.scrollContent,
+      { paddingBottom: bottomPad },
+      listIsEmpty && styles.scrollContentCentered,
+    ],
+    [bottomPad, listIsEmpty],
+  );
+
+  const renderItem: ListRenderItem<HubRow> = useCallback(
+    ({ item, index }) => {
+      const isLast = index === tabData.length - 1;
+      const prep = item.prep;
+      const canDelete = prep.dumpId !== undefined;
+
       if (tab === "prepping") {
         return (
-          <PreppingRow
-            prep={item}
-            colors={colors}
-            resolved={resolved}
+          <PrepInboxRow
+            prep={prep}
+            mode="prepping"
+            isLast={isLast}
+            onOpen={() => router.push(`/prep/${prep.id}`)}
             onRetry={retryPrep}
           />
         );
       }
+
+      if (tab === "ready") {
+        return (
+          <HubSwipeableRow variant="ready" prepId={prep.id} canDelete={canDelete} flat>
+            <PrepInboxRow
+              prep={prep}
+              mode="ready"
+              isLast={isLast}
+              onOpen={() => router.push(`/prep/${prep.id}`)}
+            />
+          </HubSwipeableRow>
+        );
+      }
+
       return (
-        <PrepHubCard
-          prep={item}
-          resolved={resolved}
-          archivedVisual
-          onOpenDetail={() => router.push(`/prep/${item.id}`)}
-        />
+        <HubSwipeableRow variant="archived" prepId={prep.id} canDelete={canDelete} flat>
+          <PrepInboxRow
+            prep={prep}
+            mode="archived"
+            isLast={isLast}
+            onOpen={() => router.push(`/prep/${prep.id}`)}
+          />
+        </HubSwipeableRow>
       );
     },
-    [tab, colors, resolved, retryPrep],
+    [tab, tabData.length, retryPrep],
   );
 
   const listFooter =
+    searchLoading ||
     (tab === "ready" && loadingMore.ready) ||
     (tab === "prepping" && loadingMore.prepping) ||
     (tab === "archived" && loadingMore.archived) ? (
-      <ActivityIndicator style={{ marginVertical: space[4] }} color={colors.pemAmber} />
+      <PemLoadingIndicator placement="hubFooter" />
     ) : null;
 
   const listEmpty =
-    tab === "ready" && !hasPreps ? (
-      <HomeReadyEmpty />
+    searchActive && searchRows.length === 0 ? (
+      searchLoading || searchWaiting ? (
+        <PemLoadingIndicator placement="searchEmpty" />
+      ) : (
+        <HubEmptyState
+          compact
+          title="No matches"
+          body={`No preps match “${searchDebounced}”.`}
+        />
+      )
+    ) : tab === "ready" && !hasPreps ? (
+      <HomeReadyEmpty variant="inbox" />
     ) : tab === "prepping" && !hasPrepping ? (
-      <HomePreppingEmpty />
+      <HomePreppingEmpty variant="inbox" />
     ) : tab === "archived" && nArchived === 0 ? (
-      <ArchivedTabEmpty />
+      <ArchivedTabEmptyInbox />
     ) : null;
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.pageBackground }]}>
+    <View style={[styles.screen, { backgroundColor: s.bg }]}>
+      <StatusBar style={resolved === "dark" ? "light" : "dark"} />
+      <InboxHeader searchValue={searchInput} onSearchChange={setSearchInput} />
       <FlatList
         key={tab}
+        style={styles.list}
         data={tabData}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.prep.id}
         renderItem={renderItem}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: scrollTopPad, paddingBottom: bottomPad },
-        ]}
-        ListHeaderComponent={
-          <View style={{ gap: space[4], marginBottom: space[2] }}>
-            {pullRefreshEnabled && refreshing ? (
-              <ActivityIndicator
-                accessibilityLabel="Loading preps"
-                color={colors.pemAmber}
-              />
-            ) : null}
-            <HomePageHead sub={pageHead.sub} />
-          </View>
-        }
+        contentContainerStyle={contentContainerStyle}
         ListEmptyComponent={listEmpty}
         ListFooterComponent={listFooter}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.3}
-        ItemSeparatorComponent={() => <View style={{ height: space[4] }} />}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          pullRefreshEnabled ? (
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => void onRefresh()}
-              tintColor={colors.pemAmber}
-              colors={[colors.pemAmber]}
-            />
-          ) : undefined
+          <PemRefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            progressViewOffset={Platform.OS === "android" ? 0 : undefined}
+          />
         }
       />
-
-      {hubToast ? (
-        <View
-          style={[styles.hubToastWrap, { top: scrollTopPad - space[3] + space[2] }]}
-          pointerEvents="box-none"
-        >
-          <View
-            style={[
-              styles.hubToast,
-              {
-                backgroundColor: colors.brandMutedSurface,
-                borderColor: colors.borderMuted,
-              },
-            ]}
-          >
-            <PemText style={[styles.hubToastText, { color: colors.textPrimary }]}>{hubToast}</PemText>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss message"
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={dismissHubToast}
-              style={({ pressed }) => [styles.hubToastClose, { opacity: pressed ? 0.7 : 1 }]}
-            >
-              <X size={18} stroke={colors.textSecondary} strokeWidth={2} />
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
-
-      <HomeTopBar title={pageHead.title} glassBorder={glassBorder} />
-      <HomeTabDock tab={tab} onTab={onHubTab} glassBorder={glassBorder} />
+      <InboxShellTabBar active={tab} onChange={onHubTab} hasUnreadReady={hasUnreadReady} />
+      <InboxDumpFab />
     </View>
   );
 }
@@ -273,34 +377,13 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  hubToastWrap: {
-    position: "absolute",
-    left: space[4],
-    right: space[4],
-    zIndex: 35,
-  },
-  hubToast: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[2],
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: space[2],
-    paddingLeft: space[4],
-    paddingRight: space[2],
-  },
-  hubToastText: {
+  list: {
     flex: 1,
-    minWidth: 0,
-  },
-  hubToastClose: {
-    padding: space[2],
-    justifyContent: "center",
-    alignItems: "center",
   },
   scrollContent: {
-    paddingHorizontal: space[4],
-    gap: space[4],
     flexGrow: 1,
+  },
+  scrollContentCentered: {
+    justifyContent: "center",
   },
 });

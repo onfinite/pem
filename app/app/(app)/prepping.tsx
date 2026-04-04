@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** After a dump: scrollable body + pinned “View in Preps” so long lists stay usable. */
+/** After a dump: scrollable body + pinned CTA to the hub. */
 export default function PreppingScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -32,7 +32,7 @@ export default function PreppingScreen() {
       >
         <View style={styles.footerInner}>
           <PemButton variant="primary" size="lg" onPress={goHome} style={styles.footerBtn}>
-            View in Preps
+            Open For you
           </PemButton>
         </View>
       </View>

@@ -1,8 +1,11 @@
+import HubToastBanner from "@/components/sections/home-sections/HubToastBanner";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import { PrepHubProvider } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 export default function AppLayout() {
   const { colors } = useTheme();
@@ -10,8 +13,8 @@ export default function AppLayout() {
 
   if (!isLoaded) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator />
+      <View style={{ flex: 1 }}>
+        <PemLoadingIndicator placement="pageCenter" />
       </View>
     );
   }
@@ -21,13 +24,24 @@ export default function AppLayout() {
   }
 
   return (
-    <PrepHubProvider>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.pageBackground },
-        }}
-      />
-    </PrepHubProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PrepHubProvider>
+        <View style={styles.appStack}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.pageBackground },
+            }}
+          />
+          <HubToastBanner />
+        </View>
+      </PrepHubProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  appStack: {
+    flex: 1,
+  },
+});

@@ -1,10 +1,12 @@
 import PemMarkdown from "@/components/ui/PemMarkdown";
 import PemText from "@/components/ui/PemText";
+import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { formatKeyPointsMarkdown, formatSourcesMarkdown } from "@/lib/prepBodyMarkdown";
 import { prepKindCompanionLabel } from "@/lib/prepDetailLabels";
 import type { PrepOptionRow, PrepResultBlock } from "@/lib/prepBlocks";
+import { buildCanonicalSectionsFromPrep } from "@/lib/prepSections";
 import {
   buildBlockShareText,
   buildDraftBlockShareText,
@@ -13,13 +15,19 @@ import {
 } from "@/lib/prepShareableText";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { ExternalLink } from "lucide-react-native";
-import { Image, Platform, Pressable, StyleSheet, View } from "react-native";
+import { useMemo } from "react";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
+import type { ApiPrep } from "@/lib/pemApi";
 import type { Prep } from "../home-sections/homePrepData";
-import PrepDraftDocument from "./PrepDraftDocument";
-import PrepShoppingExperience from "./PrepShoppingExperience";
+import PrepAdaptiveStack from "./PrepAdaptiveStack";
+import PrepSectionStack from "./PrepSectionStack";
 import PrepShareRow from "./PrepShareRow";
 
-type Props = { prep: Prep };
+type Props = {
+  prep: Prep;
+  /** Pass updated row from mutations (e.g. load more shopping) to avoid a refetch. */
+  onPrepRefresh?: (row?: ApiPrep) => Promise<void>;
+};
 
 const PICK_WARM = ["First pick", "Second pick", "Third pick"] as const;
 
@@ -99,11 +107,11 @@ function PrepDetailOptionPicks({ options, nested }: OptionPicksProps) {
             ]}
           >
             {o.imageUrl ? (
-              <Image
-                source={{ uri: o.imageUrl }}
+              <RemoteImageOrPlaceholder
+                uri={o.imageUrl}
                 style={[styles.pickImage, { backgroundColor: colors.secondarySurface }]}
+                placeholderStyle={{ backgroundColor: colors.secondarySurface }}
                 resizeMode="cover"
-                accessibilityIgnoresInvertColors
               />
             ) : null}
             <View style={styles.pickInner}>
@@ -279,11 +287,24 @@ function PrepDetailBlockSection({ block, prepTitle }: BlockSectionProps) {
   }
 }
 
-export default function PrepDetailBody({ prep }: Props) {
+export default function PrepDetailBody({ prep, onPrepRefresh }: Props) {
   const { colors } = useTheme();
 
   const shareableFull = buildPrepShareablePlainText(prep);
-  const hasAdaptive = Boolean(prep.shoppingCard || prep.draftCard);
+  const hasAdaptive = Boolean(
+    prep.shoppingCard ||
+      prep.placeCard ||
+      prep.draftCard ||
+      prep.comparisonCard ||
+      prep.researchCard ||
+      prep.personCard ||
+      prep.meetingBrief ||
+      prep.decisionCard ||
+      prep.legalFinancialCard ||
+      prep.explainCard ||
+      prep.summaryCard ||
+      prep.ideaCards,
+  );
   const showFullShare =
     !hasAdaptive &&
     prep.status !== "prepping" &&
@@ -298,6 +319,18 @@ export default function PrepDetailBody({ prep }: Props) {
 
   const proseLead = isResearch ? COPY.researchLead : isSearch ? COPY.searchLead : null;
 
+  const canonicalSections = useMemo(
+    () =>
+      buildCanonicalSectionsFromPrep({
+        cardSummary: prep.summary,
+        detailIntro: prep.detailIntro,
+        blocks: prep.blocks,
+      }),
+    [prep.summary, prep.detailIntro, prep.blocks],
+  );
+
+  const useSectionStack = !hasAdaptive && useBlocks && canonicalSections.length > 0;
+
   return (
     <View style={styles.block}>
       {prep.status === "prepping" ? (
@@ -306,7 +339,7 @@ export default function PrepDetailBody({ prep }: Props) {
         </PemText>
       ) : null}
 
-      {prep.detailIntro ? (
+      {prep.detailIntro && !useSectionStack ? (
         <View style={styles.section}>
           <PemText selectable style={[styles.proseMuted, { color: colors.textSecondary }]}>
             {prep.detailIntro}
@@ -314,23 +347,20 @@ export default function PrepDetailBody({ prep }: Props) {
         </View>
       ) : null}
 
-      {prep.shoppingCard ? (
-        <PrepShoppingExperience
-          data={prep.shoppingCard}
+      {hasAdaptive ? (
+        <PrepAdaptiveStack
+          prep={prep}
           prepTitle={prep.title}
           sharePlainText={shareableFull}
+          onPrepRefresh={onPrepRefresh}
         />
       ) : null}
 
-      {prep.draftCard ? (
-        <PrepDraftDocument
-          data={prep.draftCard}
-          prepTitle={prep.title}
-          sharePlainText={shareableFull}
-        />
+      {useSectionStack ? (
+        <PrepSectionStack sections={canonicalSections} prepTitle={prep.title} />
       ) : null}
 
-      {!hasAdaptive && useBlocks
+      {!hasAdaptive && useBlocks && !useSectionStack
         ? prep.blocks!.map((b, i) => (
             <PrepDetailBlockSection key={`${b.type}-${i}`} block={b} prepTitle={prep.title} />
           ))

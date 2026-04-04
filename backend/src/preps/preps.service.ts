@@ -12,8 +12,11 @@ import {
   eq,
   ilike,
   inArray,
+  isNull,
   lt,
+  ne,
   or,
+  sql,
   type SQL,
 } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
@@ -21,12 +24,15 @@ import type { Queue } from 'bullmq';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
+  dumpsTable,
   prepRunLogsTable,
   prepsTable,
   type PrepRow,
   type PrepStatus,
 } from '../database/schemas';
+import { sanitizeShoppingProductUrl } from '../agents/schemas/shopping-product-url';
 import { PrepEventsService } from '../events/prep-events.service';
+import { SerpApiService } from '../integrations/serpapi.service';
 import { StepsService } from '../steps/steps.service';
 
 function encodePrepCursor(createdAt: Date, id: string): string {
@@ -51,12 +57,16 @@ function decodePrepCursor(raw: string): { c: Date; i: string } | null {
   }
 }
 
+/** Max product rows stored on a shopping prep (initial formatter still returns ≤3). */
+export const SHOPPING_PRODUCTS_MAX = 25;
+
 @Injectable()
 export class PrepsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly steps: StepsService,
     private readonly prepEvents: PrepEventsService,
+    private readonly serp: SerpApiService,
     @InjectQueue('prep') private readonly prepQueue: Queue,
   ) {}
 
@@ -74,7 +84,10 @@ export class PrepsService {
     },
   ): Promise<{ rows: PrepRow[]; nextCursor: string | null }> {
     const lim = Math.min(Math.max(opts.limit, 1), 50);
-    const conditions: SQL[] = [eq(prepsTable.userId, userId)];
+    const conditions: SQL[] = [
+      eq(prepsTable.userId, userId),
+      isNull(prepsTable.parentPrepId),
+    ];
 
     if (opts.dumpId) {
       conditions.push(eq(prepsTable.dumpId, opts.dumpId));
@@ -123,15 +136,124 @@ export class PrepsService {
         .select()
         .from(prepsTable)
         .where(
-          and(eq(prepsTable.userId, userId), eq(prepsTable.status, status)),
+          and(
+            eq(prepsTable.userId, userId),
+            isNull(prepsTable.parentPrepId),
+            eq(prepsTable.status, status),
+          ),
         )
         .orderBy(desc(prepsTable.createdAt));
     }
     return this.db
       .select()
       .from(prepsTable)
-      .where(eq(prepsTable.userId, userId))
+      .where(
+        and(eq(prepsTable.userId, userId), isNull(prepsTable.parentPrepId)),
+      )
       .orderBy(desc(prepsTable.createdAt));
+  }
+
+  /** Exact counts for hub tabs (ready / preparing+failed / archived). */
+  async countByTabBuckets(userId: string): Promise<{
+    ready: number;
+    preparing: number;
+    archived: number;
+  }> {
+    const [rReady] = await this.db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(prepsTable)
+      .where(
+        and(
+          eq(prepsTable.userId, userId),
+          isNull(prepsTable.parentPrepId),
+          eq(prepsTable.status, 'ready'),
+        ),
+      );
+    const [rPrep] = await this.db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(prepsTable)
+      .where(
+        and(
+          eq(prepsTable.userId, userId),
+          isNull(prepsTable.parentPrepId),
+          inArray(prepsTable.status, ['prepping', 'failed']),
+        ),
+      );
+    const [rArch] = await this.db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(prepsTable)
+      .where(
+        and(
+          eq(prepsTable.userId, userId),
+          isNull(prepsTable.parentPrepId),
+          eq(prepsTable.status, 'archived'),
+        ),
+      );
+    return {
+      ready: Number(rReady?.c ?? 0),
+      preparing: Number(rPrep?.c ?? 0),
+      archived: Number(rArch?.c ?? 0),
+    };
+  }
+
+  /** Search thought / title / summary (same pagination as list). */
+  async searchPrepsPaginated(
+    userId: string,
+    opts: {
+      q: string;
+      status: 'ready' | 'prepping' | 'archived';
+      limit: number;
+      cursor?: string | null;
+    },
+  ): Promise<{ rows: PrepRow[]; nextCursor: string | null }> {
+    const lim = Math.min(Math.max(opts.limit, 1), 50);
+    const conditions: SQL[] = [
+      eq(prepsTable.userId, userId),
+      isNull(prepsTable.parentPrepId),
+    ];
+    const escaped = opts.q
+      .replace(/\\/g, '\\\\')
+      .replace(/%/g, '\\%')
+      .replace(/_/g, '\\_');
+    const term = `%${escaped}%`;
+    conditions.push(
+      or(
+        ilike(prepsTable.thought, term),
+        ilike(prepsTable.title, term),
+        ilike(prepsTable.summary, term),
+      )!,
+    );
+    if (opts.status === 'prepping') {
+      conditions.push(inArray(prepsTable.status, ['prepping', 'failed']));
+    } else {
+      conditions.push(eq(prepsTable.status, opts.status));
+    }
+    if (opts.cursor) {
+      const cur = decodePrepCursor(opts.cursor);
+      if (!cur) {
+        throw new BadRequestException('Invalid cursor');
+      }
+      conditions.push(
+        or(
+          lt(prepsTable.createdAt, cur.c),
+          and(eq(prepsTable.createdAt, cur.c), lt(prepsTable.id, cur.i)),
+        )!,
+      );
+    }
+    const rows = await this.db
+      .select()
+      .from(prepsTable)
+      .where(and(...conditions))
+      .orderBy(desc(prepsTable.createdAt), desc(prepsTable.id))
+      .limit(lim + 1);
+    const hasMore = rows.length > lim;
+    const page = hasMore ? rows.slice(0, lim) : rows;
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last && last.createdAt
+        ? encodePrepCursor(last.createdAt, last.id)
+        : null;
+    return { rows: page, nextCursor };
   }
 
   async getByIdForUser(prepId: string, userId: string) {
@@ -199,7 +321,7 @@ export class PrepsService {
         thought: updated.thought || updated.title,
         intent: updated.intent ?? null,
         status: updated.status,
-        render_type: updated.renderType,
+        prep_type: updated.prepType,
         summary: updated.summary,
         result: updated.result,
         created_at: updated.createdAt.toISOString(),
@@ -287,6 +409,7 @@ export class PrepsService {
         and(
           eq(prepsTable.userId, userId),
           inArray(prepsTable.status, ['ready', 'archived']),
+          isNull(prepsTable.parentPrepId),
           tokenClause,
         ),
       )
@@ -307,8 +430,170 @@ export class PrepsService {
     return `Relevant past preps:\n${lines.join('\n')}`;
   }
 
+  /**
+   * Keyword overlap with **other** dumps (same user, excluding the current dump).
+   * Surfaces older raw transcripts so the agent can reuse context without inventing.
+   */
+  async relevantPastDumpsBlock(
+    userId: string,
+    excludeDumpId: string | null | undefined,
+    thought: string,
+    transcript: string,
+    limit = 4,
+  ): Promise<string> {
+    if (!excludeDumpId) {
+      return '';
+    }
+    const haystack = `${thought}\n${transcript}`.slice(0, 8_000);
+    const tokens = haystack
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w) => w.replace(/[^a-z0-9]/gi, ''))
+      .filter((w) => w.length > 2)
+      .slice(0, 14);
+    if (tokens.length === 0) {
+      return '';
+    }
+    const tokenClause = or(
+      ...tokens.map((t) => ilike(dumpsTable.transcript, `%${t}%`)),
+    )!;
+    const rows = await this.db
+      .select({
+        id: dumpsTable.id,
+        transcript: dumpsTable.transcript,
+        createdAt: dumpsTable.createdAt,
+      })
+      .from(dumpsTable)
+      .where(
+        and(
+          eq(dumpsTable.userId, userId),
+          ne(dumpsTable.id, excludeDumpId),
+          tokenClause,
+        ),
+      )
+      .orderBy(desc(dumpsTable.createdAt))
+      .limit(limit);
+    if (rows.length === 0) {
+      return '';
+    }
+    const lines = rows.map((r) => {
+      const when = r.createdAt.toLocaleDateString(undefined, {
+        month: 'short',
+        year: 'numeric',
+      });
+      const excerpt = r.transcript.replace(/\s+/g, ' ').trim().slice(0, 220);
+      return `- (${when}) "${excerpt}${r.transcript.length > excerpt.length ? '…' : ''}"`;
+    });
+    return `Relevant older dumps (same user — raw text, may overlap this session):\n${lines.join('\n')}`;
+  }
+
+  /**
+   * Append more shopping rows via Serp (Google Shopping + Amazon), deduped by URL, cap {@link SHOPPING_PRODUCTS_MAX}.
+   */
+  async appendShoppingProducts(
+    userId: string,
+    prepId: string,
+    opts: { query?: string; batchSize?: number },
+  ): Promise<PrepRow> {
+    const prep = await this.getByIdForUser(prepId, userId);
+    if (prep.parentPrepId) {
+      throw new BadRequestException('Not a leaf prep');
+    }
+    if (prep.status !== 'ready') {
+      throw new BadRequestException('Prep must be ready');
+    }
+    const r = prep.result;
+    if (!r || r.schema !== 'SHOPPING_CARD') {
+      throw new BadRequestException('Not a shopping prep');
+    }
+    if (!this.serp.hasKey()) {
+      throw new BadRequestException('Product search is unavailable');
+    }
+    const rawProducts = Array.isArray(r.products) ? r.products : [];
+    if (rawProducts.length >= SHOPPING_PRODUCTS_MAX) {
+      throw new BadRequestException(
+        `At most ${SHOPPING_PRODUCTS_MAX} products`,
+      );
+    }
+    const batch = Math.min(
+      opts.batchSize ?? 6,
+      SHOPPING_PRODUCTS_MAX - rawProducts.length,
+    );
+    if (batch < 1) {
+      throw new BadRequestException('No room for more products');
+    }
+    const searchQuery = (
+      opts.query?.trim() ||
+      (typeof r.query === 'string' ? r.query : '') ||
+      prep.thought ||
+      prep.title ||
+      (typeof prep.summary === 'string' ? prep.summary : '') ||
+      ''
+    ).slice(0, 400);
+    if (!searchQuery) {
+      throw new BadRequestException('No search query');
+    }
+    const [googleRows, amazonRows] = await Promise.all([
+      this.serp.googleShopping(searchQuery),
+      this.serp.amazonSearch(searchQuery),
+    ]);
+    const merged = [...googleRows, ...amazonRows];
+    const existingUrls = new Set<string>();
+    for (const p of rawProducts) {
+      if (p && typeof p === 'object' && 'url' in p) {
+        const u = sanitizeShoppingProductUrl(
+          String((p as { url: unknown }).url),
+        );
+        if (u) existingUrls.add(u);
+      }
+    }
+    const newOnes: Record<string, unknown>[] = [];
+    for (const row of merged) {
+      if (newOnes.length >= batch) break;
+      const url = sanitizeShoppingProductUrl(row.link);
+      if (!url || existingUrls.has(url)) continue;
+      existingUrls.add(url);
+      newOnes.push({
+        name: row.title.trim(),
+        price: row.price.trim(),
+        rating: Math.min(5, Math.max(0, row.rating)),
+        image: row.thumbnail.trim(),
+        url,
+        store: row.source.trim(),
+        why: '',
+        badge: '',
+        pros: [],
+        cons: [],
+      });
+    }
+    if (newOnes.length === 0) {
+      throw new BadRequestException('No additional products found');
+    }
+    const prior = rawProducts as unknown[];
+    const nextProducts = [...prior, ...newOnes].slice(0, SHOPPING_PRODUCTS_MAX);
+    const nextResult = { ...r, products: nextProducts };
+    const [updated] = await this.db
+      .update(prepsTable)
+      .set({ result: nextResult })
+      .where(eq(prepsTable.id, prepId))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException('Prep not found');
+    }
+    return updated;
+  }
+
   /** Hard-delete prep and cascaded rows (`agent_steps`, `prep_run_logs`). `memory_facts.source_prep_id` set null. */
   async deleteForUser(prepId: string, userId: string): Promise<void> {
+    const rows = await this.db
+      .select()
+      .from(prepsTable)
+      .where(and(eq(prepsTable.id, prepId), eq(prepsTable.userId, userId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      throw new NotFoundException('Prep not found');
+    }
     const deleted = await this.db
       .delete(prepsTable)
       .where(and(eq(prepsTable.id, prepId), eq(prepsTable.userId, userId)))

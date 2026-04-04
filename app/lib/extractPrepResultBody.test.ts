@@ -65,22 +65,6 @@ describe("extractPrepResultBody", () => {
     expect(out.body).not.toContain("From answer field");
   });
 
-  it("renders compound sections", () => {
-    const out = extractPrepResultBody(
-      {
-        sections: [
-          { type: "Overview", body: "First" },
-          { type: "Next", body: "Second" },
-        ],
-      },
-      "research",
-      "ready",
-    );
-    expect(out.body).toContain("First");
-    expect(out.body).toContain("Second");
-    expect(out.body).not.toContain("###");
-  });
-
   it("maps draft body and subject", () => {
     const out = extractPrepResultBody(
       { subject: "Hi", body: "Text", tone: "brief" },

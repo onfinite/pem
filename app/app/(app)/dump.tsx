@@ -1,6 +1,7 @@
 import DumpBottomBar from "@/components/sections/dump-sections/DumpBottomBar";
 import DumpCloseBar from "@/components/sections/dump-sections/DumpCloseBar";
 import DumpMainStage from "@/components/sections/dump-sections/DumpMainStage";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import { amber, surfacePage } from "@/constants/theme";
 import { space } from "@/constants/typography";
 import { usePrepHub } from "@/contexts/PrepHubContext";
@@ -8,11 +9,10 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { createDump } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
@@ -39,6 +39,13 @@ export default function DumpScreen() {
   const { colors, resolved } = useTheme();
   const { getToken } = useAuth();
   const { refresh: refreshPreps } = usePrepHub();
+  const { prefill: prefillParam } = useLocalSearchParams<{ prefill?: string | string[] }>();
+  const prefill =
+    typeof prefillParam === "string"
+      ? prefillParam
+      : Array.isArray(prefillParam) && prefillParam[0]
+        ? prefillParam[0]
+        : "";
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const draftInputRef = useRef<TextInput>(null);
@@ -67,6 +74,11 @@ export default function DumpScreen() {
     const t = setTimeout(() => draftInputRef.current?.focus(), 100);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    const p = prefill.trim();
+    if (p) setDraft(p);
+  }, [prefill]);
 
   useEffect(() => {
     return () => Keyboard.dismiss();
@@ -110,7 +122,7 @@ export default function DumpScreen() {
 
             {submitting ? (
               <View style={styles.submittingOverlay} accessibilityLabel="Sending dump">
-                <ActivityIndicator size="large" color={colors.pemAmber} />
+                <PemLoadingIndicator placement="overlayLarge" />
               </View>
             ) : null}
 

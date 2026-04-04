@@ -9,6 +9,8 @@ export type AppConfig = {
   };
   cors: { origins: string[] };
   tavily: { apiKey: string | undefined };
+  /** SerpAPI (Google Shopping, Maps, organic) — structured search. */
+  serpApi: { apiKey: string | undefined };
   openai: {
     apiKey: string | undefined;
     model: string;
@@ -48,6 +50,9 @@ export default (): AppConfig => {
     cors: { origins },
     tavily: {
       apiKey: process.env.TAVILY_API_KEY,
+    },
+    serpApi: {
+      apiKey: process.env.SERP_API_KEY,
     },
     openai: {
       apiKey: process.env.OPENAI_API_KEY,

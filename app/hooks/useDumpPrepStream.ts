@@ -8,9 +8,10 @@ type StreamPayload = {
   prep?: {
     id: string;
     thought?: string;
+    title?: string;
     intent?: string | null;
     status?: string;
-    render_type?: string | null;
+    prep_type?: string;
     summary?: string | null;
     result?: Record<string, unknown> | null;
     /** ISO — from API; required for stable DESC order vs fake “now”. */
@@ -29,9 +30,9 @@ function sortPrepsByCreatedAtDesc(rows: ApiPrep[]): ApiPrep[] {
 }
 
 function partialToApiPrep(p: NonNullable<StreamPayload["prep"]>, dumpId: string): ApiPrep {
-  const thought = p.thought ?? "";
+  const thought = (p.thought ?? p.title ?? "").trim();
   const st = p.status ?? "prepping";
-  const rt = p.render_type ?? "search";
+  const pt = p.prep_type ?? "search";
   const created =
     typeof p.created_at === "string" && p.created_at.length > 0
       ? p.created_at
@@ -42,8 +43,7 @@ function partialToApiPrep(p: NonNullable<StreamPayload["prep"]>, dumpId: string)
     title: thought.slice(0, 200),
     thought,
     intent: p.intent ?? null,
-    prep_type: rt,
-    render_type: p.render_type ?? null,
+    prep_type: pt,
     status: st as ApiPrep["status"],
     summary: p.summary ?? null,
     result: p.result ?? null,
@@ -88,7 +88,9 @@ export function useDumpPrepStream(
       status: "prepping",
       limit: 100,
     })
-      .then((r) => setDumpScopedRows(sortPrepsByCreatedAtDesc(r.items)))
+      .then((preps) => {
+        setDumpScopedRows(sortPrepsByCreatedAtDesc(preps.items));
+      })
       .catch(() => {
         setDumpScopedRows([]);
       })
@@ -134,19 +136,24 @@ export function useDumpPrepStream(
         esRef.current = null;
         return;
       }
+      const d = payload.dumpId ?? fallbackDumpId;
       if (
         payload.prep &&
         (payload.type === "prep.created" ||
           payload.type === "prep.ready" ||
-          payload.type === "prep.failed")
+          payload.type === "prep.failed" ||
+          payload.type === "prep.updated")
       ) {
-        const d = payload.dumpId ?? fallbackDumpId;
-        const row = partialToApiPrep(payload.prep, d);
+        const partial = payload.prep;
+        const row = partialToApiPrep(partial, d);
         upsertPrepRow(row);
         mergeDumpScoped(row);
+        if (payload.type === "prep.updated") {
+          void refetchDumpPreps();
+        }
       }
     },
-    [upsertPrepRow, mergeDumpScoped],
+    [upsertPrepRow, mergeDumpScoped, refetchDumpPreps],
   );
 
   const onDataRef = useRef(onData);
@@ -173,9 +180,9 @@ export function useDumpPrepStream(
         esRef.current = es;
 
         const listener: (event: { data?: string | null }) => void = (event) => {
-          const d = event.data;
-          if (typeof d === "string" && d.length > 0) {
-            onDataRef.current(d, dumpId);
+          const ev = event.data;
+          if (typeof ev === "string" && ev.length > 0) {
+            onDataRef.current(ev, dumpId);
           }
         };
 
@@ -193,5 +200,10 @@ export function useDumpPrepStream(
     };
   }, [dumpId]);
 
-  return { streamDone, dumpPreps: dumpScopedRows, loadingDumpPreps, refetchDumpPreps };
+  return {
+    streamDone,
+    dumpPreps: dumpScopedRows,
+    loadingDumpPreps,
+    refetchDumpPreps,
+  };
 }

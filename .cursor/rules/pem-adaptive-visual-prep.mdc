@@ -1,0 +1,27 @@
+---
+description: Adaptive prep cards — intent-scoped UI + backend schema registry
+globs:
+  - backend/src/agents/schemas/adaptive-prep*.ts
+  - backend/src/agents/prep-runner-adaptive.ts
+  - app/components/sections/prep-detail-sections/PrepAdaptiveStack.tsx
+  - app/lib/adaptivePrep.ts
+alwaysApply: false
+---
+
+# Pem — Adaptive visual prep
+
+## What ships today
+
+1. **Intent** from `IntentClassifierAgent` (`prep.intent`).
+2. **Tool loop** — `PrepRunnerService` runs the prep agent (Tavily, SerpAPI `google()`, fetch, draft, etc.).
+3. **Adaptive formatter** — `tryPersistAdaptiveFormat()` in `prep-runner-adaptive.ts` maps intent → Zod schema + mini-model prompt → structured JSON with `schema: "…"`.
+4. **Fallback** — if adaptive formatting fails, generic `structureModelSchema` composable blocks run as before.
+5. **App** — `parseAdaptiveFromResult()` + `PrepAdaptiveStack` picks the right screen (shopping, places, draft, comparison swipe, research article, person profile, meeting brief, decision verdict, legal toggle, explain, summary highlights, idea deck).
+
+## Planner / 5-stage loop (not implemented)
+
+The product brief’s **Plan → parallel execute → synthesize** stage is **not** a separate LLM call yet; the **prep agent + tools** approximate execution, and the **adaptive formatter** is the structured synthesis step. Adding an explicit planner JSON step would be a follow-up (latency/cost tradeoff).
+
+## External integrations
+
+No additional APIs beyond **OpenAI**, **Tavily**, **SerpAPI**, and existing **fetch** — unless you add image/CDN or map SDKs later.

@@ -101,7 +101,7 @@ npm install
 npm run start:dev
 ```
 
-Configure **`.env`** in `backend/` (see `backend/.env.example`). Required: **`DATABASE_URL`** (or **`DATABASE_URL_SYNC`**), **`REDIS_URL`** (BullMQ + SSE pub/sub), **`OPENAI_API_KEY`**, and for Clerk-backed routes and webhooks **`CLERK_JWKS_URL`**, **`CLERK_JWT_ISSUER`**, **`CLERK_WEBHOOK_SECRET`**. Use **`TAVILY_API_KEY`** for web search in prep agents. Optional: **`PORT`** (default `8000`), **`ALLOWED_ORIGINS`** (comma-separated), **`ENV`**, **`OPENAI_MODEL`** (split/summary; default `gpt-4o-mini`), **`OPENAI_AGENT_MODEL`** (tool-loop prep agent; default `gpt-4o`), **`AGENT_MAX_STEPS`**.
+Configure **`.env`** in `backend/` (see `backend/.env.example`). Required: **`DATABASE_URL`** (or **`DATABASE_URL_SYNC`**), **`REDIS_URL`** (BullMQ + SSE pub/sub), **`OPENAI_API_KEY`**, and for Clerk-backed routes and webhooks **`CLERK_JWKS_URL`**, **`CLERK_JWT_ISSUER`**, **`CLERK_WEBHOOK_SECRET`**. Use **`TAVILY_API_KEY`** for web search in prep agents and **`SERP_API_KEY`** for SerpAPI (Google Shopping, Maps, organic) where structured product or place data is needed. Optional: **`PORT`** (default `8000`), **`ALLOWED_ORIGINS`** (comma-separated), **`ENV`**, **`OPENAI_MODEL`** (split/summary; default `gpt-4o-mini`), **`OPENAI_AGENT_MODEL`** (tool-loop prep agent; default `gpt-4o`), **`AGENT_MAX_STEPS`**.
 
 **Clerk users in Postgres:** The API **creates a `users` row on first authenticated request** from claims in the session JWT (`sub`, and `email` / `name` when present). The Clerk webhook still syncs updates; you can also add **`email`** / **`name`** to your session token template in Clerk for richer first inserts.
 

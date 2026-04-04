@@ -1,20 +1,29 @@
 import type { Prep, PrepKind } from "@/components/sections/home-sections/homePrepData";
 import { extractPrepResultBody } from "@/lib/extractPrepResultBody";
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
-import { parseAdaptiveFromResult } from "@/lib/adaptivePrep";
+import { hasAnyAdaptiveCard, parseAdaptiveFromResult } from "@/lib/adaptivePrep";
+import { cardLayoutFromResult, type CardLayoutId } from "@/lib/prepCardLayout";
 import {
-  getPrimaryKindFromResult,
+  primaryKindFromResult,
   parsePrepBlocksFromResult,
   type PrepResultBlock,
 } from "@/lib/prepBlocks";
 import {
+  BookOpen,
+  Calendar,
   FileText,
+  Gavel,
   Gift,
+  GitCompare,
   Layers,
+  Lightbulb,
   Mail,
+  MapPin,
   Scale,
   Search,
   ShoppingBag,
+  StickyNote,
+  User,
   type LucideIcon,
 } from "lucide-react-native";
 
@@ -23,10 +32,9 @@ export type ApiPrep = {
   dump_id: string;
   title: string;
   thought?: string;
-  /** Fine-grained classifier intent (coarse UI bucket is `prep_type` / `render_type`). */
+  /** Classifier intent; hub bucket is `prep_type` (and `result.schema` when adaptive). */
   intent?: string | null;
   prep_type: string;
-  render_type?: string | null;
   context?: Record<string, unknown> | null;
   status: "prepping" | "ready" | "archived" | "failed";
   summary: string | null;
@@ -38,6 +46,9 @@ export type ApiPrep = {
   archived_at: string | null;
   /** Set when user opened detail; omitted/null = unread (ready tab). */
   opened_at?: string | null;
+  bundle_type?: string | null;
+  display_emoji?: string | null;
+  bundle_detection_reason?: string | null;
 };
 
 export async function apiFetch<T>(
@@ -78,6 +89,7 @@ export async function apiFetch<T>(
   return (await res.json()) as T;
 }
 
+/** Hub bucket from API (`prep_type` + optional `result.primaryKind`). Adaptive UX uses `layout`. */
 function prepTypeToKind(prepType: string): PrepKind {
   switch (prepType) {
     case "search":
@@ -90,10 +102,47 @@ function prepTypeToKind(prepType: string): PrepKind {
       return "draft";
     case "mixed":
       return "mixed";
-    case "compound":
-      return "deep_research";
     default:
       return "web";
+  }
+}
+
+function prepKindForHub(
+  blocks: PrepResultBlock[] | undefined,
+  layout: CardLayoutId | null,
+  prepType: string,
+): PrepKind {
+  if (blocks?.some((b) => b.type === "follow_up")) return "follow_up";
+  if (layout === "decision_card") return "decide";
+  return prepTypeToKind(prepType);
+}
+
+function iconForLayout(layout: CardLayoutId): LucideIcon {
+  switch (layout) {
+    case "shopping_card":
+      return ShoppingBag;
+    case "place_card":
+      return MapPin;
+    case "comparison_card":
+      return GitCompare;
+    case "research_card":
+      return BookOpen;
+    case "person_card":
+      return User;
+    case "meeting_brief_card":
+      return Calendar;
+    case "decision_card":
+      return Scale;
+    case "legal_financial_card":
+      return Gavel;
+    case "explain_card":
+      return Lightbulb;
+    case "summary_card":
+      return FileText;
+    case "idea_cards_card":
+      return StickyNote;
+    case "draft_card":
+      return Mail;
   }
 }
 
@@ -117,8 +166,6 @@ function tagForPrimaryKind(prepType: string): string {
     case "draft":
       return "Draft";
     case "mixed":
-      return "Prep";
-    case "compound":
       return "Prep";
     default:
       return "Prep";
@@ -145,12 +192,11 @@ function viewLabelForKind(kind: PrepKind): string {
 }
 
 function extractBodyAndDraft(row: ApiPrep): ReturnType<typeof extractPrepResultBody> {
-  const renderOrPrep = row.render_type ?? row.prep_type;
-  return extractPrepResultBody(row.result, renderOrPrep, row.status);
+  return extractPrepResultBody(row.result, row.prep_type, row.status);
 }
 
 function extractOptions(row: ApiPrep): Prep["options"] {
-  const pt = row.render_type ?? row.prep_type;
+  const pt = row.prep_type;
   if (pt !== "options" || !row.result || !Array.isArray(row.result.options)) {
     return undefined;
   }
@@ -230,16 +276,14 @@ function optionsFromShoppingCard(
 /** Maps API prep row to hub `Prep` for lists and detail. */
 export function apiPrepToPrep(row: ApiPrep): Prep {
   const adaptive = parseAdaptiveFromResult(row.result);
-  const blocks =
-    adaptive.shoppingCard || adaptive.draftCard
-      ? undefined
-      : parsePrepBlocksFromResult(row.result);
-  const pk =
-    getPrimaryKindFromResult(row.result) ?? row.render_type ?? row.prep_type;
-  const kind = prepTypeToKind(pk);
-  const useAdaptive = Boolean(adaptive.shoppingCard || adaptive.draftCard);
-  const Icon: LucideIcon =
-    row.render_type === "shopping_card" ? ShoppingBag : iconForKind(kind);
+  const blocks = hasAnyAdaptiveCard(adaptive)
+    ? undefined
+    : parsePrepBlocksFromResult(row.result);
+  const layout = cardLayoutFromResult(row.result);
+  const pk = primaryKindFromResult(row.result) ?? row.prep_type;
+  const kind = prepKindForHub(blocks, layout, pk);
+  const useAdaptive = hasAnyAdaptiveCard(adaptive);
+  const Icon: LucideIcon = layout ? iconForLayout(layout) : iconForKind(kind);
   const { body, draftText, detailIntro, draftSubject } =
     blocks?.length || useAdaptive ? {} : extractBodyAndDraft(row);
   const options = blocks?.length
@@ -262,17 +306,38 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
       : row.status === "failed"
         ? "Failed"
         : tagForPrimaryKind(pk);
-  if (row.status === "ready") {
-    if (row.render_type === "shopping_card") tag = "Shop picks";
-    else if (row.render_type === "draft_card") tag = "Draft ready";
+  if (row.status === "ready" && layout) {
+    if (layout === "shopping_card") tag = "Shop picks";
+    else if (layout === "draft_card") tag = "Draft ready";
+    else if (layout === "place_card") tag = "Places";
+    else if (layout === "comparison_card") tag = "Compare";
+    else if (layout === "research_card") tag = "Research";
+    else if (layout === "person_card") tag = "Profile";
+    else if (layout === "meeting_brief_card") tag = "Brief";
+    else if (layout === "decision_card") tag = "Verdict";
+    else if (layout === "legal_financial_card") tag = "Legal & money";
+    else if (layout === "explain_card") tag = "Explained";
+    else if (layout === "summary_card") tag = "Summary";
+    else if (layout === "idea_cards_card") tag = "Ideas";
   }
 
   let viewLabel = viewLabelForKind(kind);
-  if (row.render_type === "shopping_card") viewLabel = "View picks";
+  if (layout === "shopping_card") viewLabel = "View picks";
+  else if (layout === "place_card") viewLabel = "View places";
+  else if (layout === "comparison_card") viewLabel = "Compare";
+  else if (layout === "research_card") viewLabel = "Read";
+  else if (layout === "person_card") viewLabel = "View profile";
+  else if (layout === "meeting_brief_card") viewLabel = "Open brief";
+  else if (layout === "decision_card") viewLabel = "See verdict";
+  else if (layout === "legal_financial_card") viewLabel = "Read";
+  else if (layout === "explain_card") viewLabel = "Read";
+  else if (layout === "summary_card") viewLabel = "Read";
+  else if (layout === "idea_cards_card") viewLabel = "Browse ideas";
 
   return {
     id: row.id,
     dumpId: row.dump_id,
+    createdAt: row.created_at,
     intent: row.intent ?? undefined,
     Icon,
     tag,
@@ -291,6 +356,16 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     blocks: blocks ?? undefined,
     shoppingCard: adaptive.shoppingCard,
     draftCard: adaptive.draftCard,
+    placeCard: adaptive.placeCard,
+    comparisonCard: adaptive.comparisonCard,
+    researchCard: adaptive.researchCard,
+    personCard: adaptive.personCard,
+    meetingBrief: adaptive.meetingBrief,
+    decisionCard: adaptive.decisionCard,
+    legalFinancialCard: adaptive.legalFinancialCard,
+    explainCard: adaptive.explainCard,
+    summaryCard: adaptive.summaryCard,
+    ideaCards: adaptive.ideaCards,
   };
 }
 
@@ -342,6 +417,51 @@ export async function listPrepsPage(
   if (params.cursor) q.set("cursor", params.cursor);
   if (params.dumpId) q.set("dumpId", params.dumpId);
   return apiFetch(`/preps?${q.toString()}`, { method: "GET", getToken });
+}
+
+export type PrepCountsResponse = {
+  ready: number;
+  preparing: number;
+  archived: number;
+};
+
+/** Exact totals per hub tab (separate from paginated list). */
+export async function fetchPrepCounts(
+  getToken: () => Promise<string | null>,
+): Promise<PrepCountsResponse> {
+  return apiFetch("/preps/counts", { method: "GET", getToken });
+}
+
+export type SearchPrepsParams = {
+  q: string;
+  status: "ready" | "prepping" | "archived";
+  limit: number;
+  cursor?: string | null;
+};
+
+export async function searchPrepsPage(
+  getToken: () => Promise<string | null>,
+  params: SearchPrepsParams,
+): Promise<ListPrepsPageResponse> {
+  const q = new URLSearchParams();
+  q.set("q", params.q);
+  q.set("status", params.status);
+  q.set("limit", String(params.limit));
+  if (params.cursor) q.set("cursor", params.cursor);
+  return apiFetch(`/preps/search?${q.toString()}`, { method: "GET", getToken });
+}
+
+/** Append Serp shopping rows (max 25 on prep). */
+export async function appendShoppingMore(
+  getToken: () => Promise<string | null>,
+  prepId: string,
+  body: { query?: string; batchSize?: number },
+): Promise<ApiPrep> {
+  return apiFetch(`/preps/${encodeURIComponent(prepId)}/shopping/more`, {
+    method: "POST",
+    getToken,
+    body: JSON.stringify(body),
+  });
 }
 
 export async function getPrepById(

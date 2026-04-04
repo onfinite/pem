@@ -19,7 +19,9 @@ import { ProfileService } from '../profile/profile.service';
 import { SplitAgent } from '../agents/split.agent';
 
 /**
- * Runs after POST /dumps: split transcript → classify intent per thought → prep rows → queue BullMQ prep jobs → SSE prep.created.
+ * After POST /dumps: **split** transcript → per-thought intent + prep row → queue jobs → SSE.
+ * Split + intent classification decide granularity; rich multi-topic work is one prep with
+ * structured / mixed result — not separate “bundle” parent/child rows.
  */
 @Injectable()
 export class DumpSplitService {
@@ -46,9 +48,14 @@ export class DumpSplitService {
     }
 
     const thoughts = await this.split.splitTranscript(dump.transcript);
-    const intents = await Promise.all(
-      thoughts.map((t) => this.intentClassifier.classifyThought(t)),
-    );
+
+    if (thoughts.length === 0) {
+      await this.prepEvents.setPendingCount(dumpId, 0);
+      await this.prepEvents.publish(dumpId, { type: 'stream.done', dumpId });
+      return;
+    }
+
+    await this.prepEvents.setPendingCount(dumpId, thoughts.length);
 
     const profileMap = await this.profile.getProfileMap(dump.userId);
     const [userRow] = await this.db
@@ -64,16 +71,8 @@ export class DumpSplitService {
       profile: profileMap,
     };
 
-    await this.prepEvents.setPendingCount(dumpId, thoughts.length);
-
-    if (thoughts.length === 0) {
-      await this.prepEvents.publish(dumpId, { type: 'stream.done', dumpId });
-      return;
-    }
-
-    for (let i = 0; i < thoughts.length; i++) {
-      const thought = thoughts[i];
-      const intent = intents[i];
+    for (const thought of thoughts) {
+      const intent = await this.intentClassifier.classifyThought(thought);
       const prepType = initialPrepTypeForIntent(intent);
       const context = {
         ...baseContext,
@@ -110,7 +109,9 @@ export class DumpSplitService {
       });
     }
 
-    this.log.log(`dump ${dumpId} → ${thoughts.length} prep job(s) queued`);
+    this.log.log(
+      `dump ${dumpId} → ${thoughts.length} thought(s), ${thoughts.length} pending job(s)`,
+    );
   }
 
   private prepEventPayload(p: PrepRow) {
@@ -119,7 +120,7 @@ export class DumpSplitService {
       thought: p.thought || p.title,
       intent: p.intent ?? null,
       status: p.status,
-      render_type: p.renderType,
+      prep_type: p.prepType,
       summary: p.summary,
       result: p.result,
       created_at: p.createdAt.toISOString(),

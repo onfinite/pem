@@ -1,10 +1,12 @@
 import PrepDetailBody from "@/components/sections/prep-detail-sections/PrepDetailBody";
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import PemButton from "@/components/ui/PemButton";
+import PemConfirmModal from "@/components/ui/PemConfirmModal";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
+import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { prepKindCompanionLabel } from "@/lib/prepDetailLabels";
 import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
 import { apiPrepToPrep, markPrepOpened } from "@/lib/pemApi";
@@ -12,14 +14,7 @@ import { useAuth } from "@clerk/expo";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Archive, ArchiveRestore, Trash2, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /** Full prep content — close returns to hub. */
@@ -35,6 +30,7 @@ export default function PrepDetailScreen() {
     unarchivePrep,
     deletePrep,
     scheduleHomeNavigationIntent,
+    showHubToast,
     retryPrep,
     refresh,
     upsertPrepRow,
@@ -126,7 +122,7 @@ export default function PrepDetailScreen() {
   if (!prep) {
     return (
       <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: colors.pageBackground }]}>
-        <ActivityIndicator style={{ marginTop: space[8] }} color={colors.pemAmber} />
+        <PemLoadingIndicator placement="pageCenter" />
       </View>
     );
   }
@@ -153,7 +149,7 @@ export default function PrepDetailScreen() {
     pemSelection();
     try {
       await archivePrep(prep.id);
-      scheduleHomeNavigationIntent("ready", "Archived");
+      scheduleHomeNavigationIntent("ready");
       router.replace("/home");
     } catch {
       /* hub refresh will surface errors on next poll */
@@ -181,7 +177,7 @@ export default function PrepDetailScreen() {
     pemSelection();
     try {
       await deletePrep(prep.id);
-      scheduleHomeNavigationIntent("ready", "Prep deleted");
+      scheduleHomeNavigationIntent("ready");
       router.replace("/home");
     } catch {
       /* refresh on next visit */
@@ -192,6 +188,7 @@ export default function PrepDetailScreen() {
     setRetrying(true);
     try {
       await retryPrep(prep.id);
+      showHubToast("Prep queued again");
       const next = await fetchPrepById(prep.id);
       if (next) setPrep(next);
     } catch {
@@ -281,91 +278,27 @@ export default function PrepDetailScreen() {
         </View>
       </View>
 
-      <Modal
+      <PemConfirmModal
         visible={archiveModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setArchiveModalVisible(false)}
-      >
-        <Pressable
-          style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}
-          onPress={() => {
-            pemImpactLight();
-            setArchiveModalVisible(false);
-          }}
-        >
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            style={[styles.modalCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}
-          >
-            <PemText style={[styles.modalTitle, { color: colors.textPrimary }]}>Archive this prep?</PemText>
-            <PemText style={[styles.modalBody, { color: colors.textSecondary }]}>
-              It will move to Archived. You can restore it to Ready anytime from there or from this prep.
-            </PemText>
-            <View style={styles.modalActions}>
-              <PemButton
-                variant="secondary"
-                onPress={() => {
-                  pemImpactLight();
-                  setArchiveModalVisible(false);
-                }}
-              >
-                Cancel
-              </PemButton>
-              <PemButton
-                onPress={() => {
-                  void confirmArchive();
-                }}
-              >
-                Archive
-              </PemButton>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        title="Archive this prep?"
+        body="It will move to Archived. You can restore it to Ready anytime from there or from this prep."
+        confirmLabel="Archive"
+        onCancel={() => setArchiveModalVisible(false)}
+        onConfirm={() => {
+          void confirmArchive();
+        }}
+      />
 
-      <Modal
+      <PemConfirmModal
         visible={deleteModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDeleteModalVisible(false)}
-      >
-        <Pressable
-          style={[styles.modalBackdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}
-          onPress={() => {
-            pemImpactLight();
-            setDeleteModalVisible(false);
-          }}
-        >
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            style={[styles.modalCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}
-          >
-            <PemText style={[styles.modalTitle, { color: colors.textPrimary }]}>Delete this prep?</PemText>
-            <PemText style={[styles.modalBody, { color: colors.textSecondary }]}>
-              This can&apos;t be undone. Pem will remove it from your hub and stop any in-progress work for this prep.
-            </PemText>
-            <View style={styles.modalActions}>
-              <PemButton
-                variant="secondary"
-                onPress={() => {
-                  pemImpactLight();
-                  setDeleteModalVisible(false);
-                }}
-              >
-                Cancel
-              </PemButton>
-              <PemButton
-                onPress={() => {
-                  void confirmDelete();
-                }}
-              >
-                Delete
-              </PemButton>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        title="Delete this prep?"
+        body="This can't be undone. Pem will remove it from your hub and stop any in-progress work for this prep."
+        confirmLabel="Delete"
+        onCancel={() => setDeleteModalVisible(false)}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
 
       <ScrollView
         contentContainerStyle={[
@@ -396,12 +329,24 @@ export default function PrepDetailScreen() {
         </View>
         {prep.status === "failed" ? (
           retrying ? (
-            <ActivityIndicator style={{ alignSelf: "flex-start" }} color={colors.pemAmber} />
+            <PemLoadingIndicator placement="inlineStart" />
           ) : (
             <PemButton onPress={() => void onRetry()}>Retry</PemButton>
           )
         ) : null}
-        <PrepDetailBody prep={prep} />
+        <PrepDetailBody
+          prep={prep}
+          onPrepRefresh={async (row) => {
+            if (!id) return;
+            if (row) {
+              upsertPrepRow(row);
+              setPrep(apiPrepToPrep(row));
+              return;
+            }
+            const p = await fetchPrepById(id);
+            if (p) setPrep(p);
+          }}
+        />
       </ScrollView>
     </View>
   );
@@ -469,32 +414,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xxl,
     lineHeight: lh(fontSize.xxl, lineHeight.snug),
     letterSpacing: -0.3,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: space[6],
-  },
-  modalCard: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[5],
-    gap: space[4],
-  },
-  modalTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.xl,
-    lineHeight: lh(fontSize.xl, lineHeight.snug),
-  },
-  modalBody: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.relaxed),
-  },
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: space[3],
-    flexWrap: "wrap",
   },
 });

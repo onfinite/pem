@@ -8,6 +8,7 @@ export function buildShoppingCardFormatterPrompt(
   const clipped = agentText.slice(0, 28_000);
   const mem = ctx?.memorySection?.trim() ?? '';
   const thought = ctx?.thoughtLine?.trim() ?? '';
+  const rel = ctx?.relevantContextSection?.trim() ?? '';
   const memoryBlock =
     mem.length > 0
       ? `\n## User memory (constraints — never invent beyond this + agent output)\n${mem.slice(0, 6_000)}\n`
@@ -16,10 +17,14 @@ export function buildShoppingCardFormatterPrompt(
     thought.length > 0
       ? `\n## What they want to buy / compare\n${thought.slice(0, 800)}\n`
       : '';
+  const historyBlock =
+    rel.length > 0
+      ? `\n## Relevant history (past preps / older dumps)\n${rel.slice(0, 4_000)}\n`
+      : '';
 
   return `You format a SHOPPING prep for Pem — a mobile app. The agent already searched and (maybe) fetched pages. Your job: turn that into a tight **shopping card** JSON — not chat prose.
 
-${thoughtBlock}${memoryBlock}
+${thoughtBlock}${memoryBlock}${historyBlock}
 ## Agent output (raw)
 """
 ${clipped}
@@ -41,8 +46,12 @@ One punchy line: "Best overall: …" or "Pem's pick: …" — must follow from a
 
 ## products (1–3 rows)
 - Real products only — names, prices, URLs, images from the agent output **only**. If the agent lacked an image URL, use "" for image.
+- **Minimum count:** If \`google_shopping\` **or** \`amazon_search\` in the agent trace has **2+ rows** with \`link\` + \`title\`, you **must** output **2 or 3** \`products\` rows (never just one). If both arrays combined have 3+ viable rows, output **3**. Only output a single product when the trace truly has **one** usable retailer row.
+- **Never** use **news, TV, or magazine sites** as **url** (e.g. today.com, nbcnews.com, cnn.com, forbes.com, wired.com) — those are articles, not checkout pages. If the only link in the trace is editorial, take product rows from \`google_shopping\` / \`amazon_search\` instead.
+- **Pick offers** — **prefer major retailers** in this order: Amazon, Walmart, Target, Best Buy, Costco, Home Depot, Lowe's, Wayfair, then other well-known stores. Use \`amazon_search\` for Amazon-native links and \`google_shopping\` for mixed merchants; **do not** collapse everything into one affiliate blog pick.
 - **url** must be a **direct retailer product page** where someone can add-to-cart or buy (e.g. amazon.com/dp/…, target.com/p/…, walmart.com/ip/…, bestbuy.com/site/…, brand.com product URL).
 - **Never** put in **url**: Google Shopping (shopping.google.com), Google Maps, Yelp, TripAdvisor, Yellow Pages, Facebook Marketplace browse, or generic Google/Bing **search** result URLs — use "" if the agent only had those; do not guess a retailer URL.
+- **image** — from the same product row as the chosen **url**. Prefer **\`serpapi_thumbnail\`** from \`google_shopping\` JSON when present (mobile-friendly); otherwise **\`thumbnail\`**. Also allow retailer CDN / https URLs from **fetch** or the agent trace. If the only image URLs are **LinkedIn** (licdn.com / media.licdn.com) or other hotlink-blocked hosts, use **""** — the app cannot display them.
 - rating: 0–5 number; use 0 if unknown.
 - pros / cons: short bullets (arrays can be empty).
 - badge: "" or one of Best Value | Top Rated | Pem's Pick when justified.
@@ -59,14 +68,19 @@ export function buildDraftCardFormatterPrompt(
   const clipped = agentText.slice(0, 28_000);
   const mem = ctx?.memorySection?.trim() ?? '';
   const thought = ctx?.thoughtLine?.trim() ?? '';
+  const rel = ctx?.relevantContextSection?.trim() ?? '';
   const memoryBlock =
     mem.length > 0 ? `\n## User memory\n${mem.slice(0, 6_000)}\n` : '';
   const thoughtBlock =
     thought.length > 0 ? `\n## Writing task\n${thought.slice(0, 800)}\n` : '';
+  const historyBlock =
+    rel.length > 0
+      ? `\n## Relevant history (past preps / older dumps)\n${rel.slice(0, 4_000)}\n`
+      : '';
 
   return `You format a DRAFT prep for Pem — paste-ready text for the user to send themselves.
 
-${thoughtBlock}${memoryBlock}
+${thoughtBlock}${memoryBlock}${historyBlock}
 ## Agent output (raw)
 """
 ${clipped}
@@ -91,4 +105,59 @@ professional | casual | friendly | firm
 
 ## assumptions
 One short line listing what you assumed (names, dates), or "" if none.`;
+}
+
+/** Synthesize agent trace into PLACE_CARD JSON (maps + local results from google()). */
+export function buildPlaceCardFormatterPrompt(
+  agentText: string,
+  ctx?: StructuredFormatterContext,
+): string {
+  const clipped = agentText.slice(0, 28_000);
+  const mem = ctx?.memorySection?.trim() ?? '';
+  const thought = ctx?.thoughtLine?.trim() ?? '';
+  const rel = ctx?.relevantContextSection?.trim() ?? '';
+  const memoryBlock =
+    mem.length > 0
+      ? `\n## User memory (constraints — never invent beyond this + agent output)\n${mem.slice(0, 6_000)}\n`
+      : '';
+  const thoughtBlock =
+    thought.length > 0
+      ? `\n## Place / local search ask\n${thought.slice(0, 800)}\n`
+      : '';
+  const historyBlock =
+    rel.length > 0
+      ? `\n## Relevant history (past preps / older dumps)\n${rel.slice(0, 4_000)}\n`
+      : '';
+
+  return `You format a FIND_PLACE prep for Pem — places to go or businesses to consider. The agent used google() (Maps + Tavily). Your job: turn that into **PLACE_CARD** JSON — not chat prose.
+
+${thoughtBlock}${memoryBlock}${historyBlock}
+## Agent output (raw)
+"""
+${clipped}
+"""
+
+Return JSON matching the schema exactly.
+
+## summary
+One warm line for the hub card (first person or direct "you").
+
+## query
+Short restatement of what we looked for (subtitle).
+
+## recommendation
+One line: Pem's pick or how to choose among the options — from agent data only.
+
+## places (1–5 rows)
+- **name**, **address**, **rating** (0–5), **reviewCount** (integer) — from google_maps / agent only; use 0 if unknown.
+- **photo** — image URL from results if present; otherwise "".
+- **lat**, **lng** — from Serp/maps data when present; use **0** and **0** if unknown (never guess coordinates).
+- **priceRange**, **hours**, **phone** — from results or ""; never invent.
+- **url** — Google Maps place link or official site from results; "" if none.
+- **pemNote** — one short line why this place fits the ask (from context).
+
+## mapCenterLat / mapCenterLng
+Approximate center for a map preview: average of non-zero lat/lng among places, or first non-zero pair, or 0/0 if none.
+
+Forbidden in any string: "Explore", "Discover", "I'd be happy to help".`;
 }

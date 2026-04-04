@@ -10,7 +10,7 @@ import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { useClerk, useUser } from "@clerk/expo";
 import { router } from "expo-router";
-import { Check, ChevronRight, Monitor, Moon, Sparkles, Sun, UserRound, X } from "lucide-react-native";
+import { Bookmark, Check, ChevronRight, Monitor, Moon, Sun, UserRound, X } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -240,7 +240,7 @@ export default function SettingsScreen() {
             ]}
           >
             <View style={[styles.memoryIconWell, { backgroundColor: colors.brandMutedSurface }]}>
-              <Sparkles size={22} stroke={colors.pemAmber} strokeWidth={2} />
+              <Bookmark size={22} stroke={colors.pemAmber} strokeWidth={2} />
             </View>
             <View style={styles.memoryText}>
               <PemText variant="body" style={{ color: colors.textPrimary }}>

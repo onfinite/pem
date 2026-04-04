@@ -1,0 +1,51 @@
+---
+description: Pem search provider routing v2 — Tavily, SerpAPI, intent bundles
+globs:
+  - backend/src/agents/**/*.ts
+  - backend/src/integrations/**/*.ts
+alwaysApply: false
+---
+
+# Pem: Search provider routing
+
+## Providers
+
+- **Tavily** — Web search tuned for excerpts and synthesis. Best for **understanding**, research, comparisons (non-product), legal/financial nuance.
+- **SerpAPI** — Structured Google (Shopping, Maps, organic). Best for **prices, images, map pins, ratings, direct store links**.
+- **YouTube Data API** — reserved for future **video grid** intents (primary YouTube metadata when implemented).
+
+Implementation: `TavilyService`, `SerpApiService`; agent **`google()`** runs `executeGoogleBundle()` in `prep-google-bundle.ts` (parallel Serp + Tavily by intent). **`search()`** is Tavily.
+
+## Shopping: thumbnails + retailers
+
+- SerpAPI `shopping_results` may include **`serpapi_thumbnail`** (proxied, reliable in React Native) and **`thumbnail`**. **`SerpApiService.googleShopping`** prefers **`serpapi_thumbnail`** when set, then sorts rows with **`sortShoppingByPreferredRetailers`** (Amazon, Walmart, Target, Best Buy, Costco, Home Depot, Lowe's, Wayfair, …).
+- **SHOPPING** `google()` bundle also runs **`SerpApiService.amazonSearch`** in parallel and returns **`amazon_search`** next to **`google_shopping`** (`prep-google-bundle.ts`).
+- Formatter prompt (`prep-adaptive.prompt.ts`) tells the model to pass **`serpapi_thumbnail`** into SHOPPING_CARD **`image`** when present, emit **2–3 products** when structured rows allow, and to prefer major retailer product URLs — not editorial “deal” articles.
+
+## Intent → bundle (summary)
+
+| Intent | Serp | Tavily |
+|--------|------|--------|
+| `SHOPPING` | `google_shopping` | buying guide / reviews (exclude aggregator domains — see `shopping-search.constants.ts`) |
+| `FIND_PLACE` | `google_maps` | short context |
+| `FIND_PERSON` | organic | background |
+| `SCHEDULE_PREP` | organic (past month) | synthesis |
+| `LIFE_ADMIN` | maps **or** organic by `vertical` | context / process |
+
+When **`SERP_API_KEY`** is unset, the bundle falls back to Tavily-only with a warning in JSON.
+
+## Parallel calls
+
+Independent Serp + Tavily legs run in **`Promise.all`** inside `executeGoogleBundle` — do not serialize when adding new intents.
+
+Broader intent × provider coverage (news `tbm=nws`, flights/hotels/jobs engines, etc.) is product direction; extend **`executeGoogleBundle`** / **`SerpApiService`** when those engines are wired — keep independent legs parallel per **`pem-core-loop.mdc`**.
+
+## UI
+
+Adaptive **`PLACE_CARD`** (`render_type: place_card`) is formatted after the agent; the app renders **`PrepPlaceExperience`**. **`SHOPPING_CARD`** uses **`RemoteImageOrPlaceholder`** with **`normalizeRemoteImageUri`** (protocol-relative `//` → `https:`).
+
+## Env
+
+- `TAVILY_API_KEY` — required for Tavily.
+- `SERP_API_KEY` — SerpAPI key for Shopping / Maps / Google organic.
+- `YOUTUBE_API_KEY` — when YouTube tool is added.

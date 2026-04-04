@@ -1,13 +1,11 @@
 import { formatKeyPointsMarkdown, formatSourcesMarkdown } from "./prepBodyMarkdown";
 
 /**
- * Maps API `result` JSON to detail body / draft fields. Kept pure for tests.
- * Handles search shape `{ answer, sources }` even when prep is research (Zod union + formatter quirks).
- * Key points / sources use markdown links for URLs so the detail view shows tappable links.
+ * Fallback body text when a prep has no `result.blocks` (should be rare — prefer composable blocks).
  */
 export function extractPrepResultBody(
   result: Record<string, unknown> | null | undefined,
-  renderOrPrep: string,
+  prepType: string,
   status: string,
 ): {
   body?: string;
@@ -24,12 +22,12 @@ export function extractPrepResultBody(
     return {};
   }
 
-  if (renderOrPrep === "draft") {
+  if (prepType === "draft") {
     const body = typeof r.body === "string" ? r.body : "";
     const subject = r.subject === null || typeof r.subject === "string" ? r.subject : null;
     const tone = typeof r.tone === "string" ? r.tone : "";
     const detailIntro =
-      [subject ? `Subject: ${subject}` : null, tone ? `Tone: ${tone}` : null].filter(Boolean).join("\n") ||
+      [subject ? `Subject: ${subject}` : null, tone ? `Tone: ${tone}` : null].filter(Boolean).join("\n\n") ||
       undefined;
     return {
       draftText: body,
@@ -38,25 +36,8 @@ export function extractPrepResultBody(
     };
   }
 
-  if (renderOrPrep === "options") {
+  if (prepType === "options") {
     return {};
-  }
-
-  if (Array.isArray(r.sections)) {
-    const sections = r.sections.filter(
-      (s): s is { type: string; body: string } =>
-        s !== null &&
-        typeof s === "object" &&
-        typeof (s as { body?: unknown }).body === "string" &&
-        typeof (s as { type?: unknown }).type === "string",
-    );
-    if (sections.length) {
-      const text = sections
-        .map((s) => s.body.trim())
-        .filter(Boolean)
-        .join("\n\n");
-      return { body: text };
-    }
   }
 
   const summaryFromResult = typeof r.summary === "string" ? r.summary : "";
@@ -70,7 +51,7 @@ export function extractPrepResultBody(
     ? r.sources.filter((x): x is string => typeof x === "string")
     : [];
 
-  const isResearch = renderOrPrep === "research";
+  const isResearch = prepType === "research";
   const parts: string[] = [];
   if (mainText) parts.push(mainText);
   if (keyPoints.length) {

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { sanitizeShoppingProductUrl } from './shopping-product-url';
+
 /** Real URLs and numbers only from agent output — never invented. */
 const shoppingProductSchema = z.object({
   name: z.string(),
@@ -62,7 +64,7 @@ export function normalizeShoppingCard(
     name: p.name.trim(),
     price: p.price.trim(),
     image: p.image.trim(),
-    url: p.url.trim(),
+    url: sanitizeShoppingProductUrl(p.url),
     store: p.store.trim(),
     why: p.why.trim(),
     badge: p.badge.trim(),
@@ -92,5 +94,71 @@ export function normalizeDraftCard(
     body: raw.body.trim(),
     tone: raw.tone,
     assumptions: raw.assumptions.trim(),
+  };
+}
+
+const placeRowSchema = z.object({
+  name: z.string(),
+  address: z.string(),
+  rating: z.number(),
+  reviewCount: z.number(),
+  photo: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+  priceRange: z.string(),
+  hours: z.string(),
+  phone: z.string(),
+  url: z.string(),
+  pemNote: z.string(),
+});
+
+export const placeCardModelSchema = z.object({
+  summary: z.string(),
+  query: z.string(),
+  recommendation: z.string(),
+  places: z.array(placeRowSchema).min(1).max(5),
+  mapCenterLat: z.number(),
+  mapCenterLng: z.number(),
+});
+
+export type PlaceCardModelOutput = z.infer<typeof placeCardModelSchema>;
+
+export type PlaceCardPayload = PlaceCardModelOutput & {
+  schema: 'PLACE_CARD';
+};
+
+export function normalizePlaceCard(
+  raw: PlaceCardModelOutput,
+): PlaceCardPayload {
+  const places = raw.places.slice(0, 5).map((p) => ({
+    ...p,
+    name: p.name.trim(),
+    address: p.address.trim(),
+    photo: p.photo.trim(),
+    priceRange: p.priceRange.trim(),
+    hours: p.hours.trim(),
+    phone: p.phone.trim(),
+    url: p.url.trim(),
+    pemNote: p.pemNote.trim(),
+    rating: Math.min(5, Math.max(0, p.rating)),
+    reviewCount: Math.max(0, Math.floor(p.reviewCount)),
+    lat: p.lat,
+    lng: p.lng,
+  }));
+  let mapCenterLat = raw.mapCenterLat;
+  let mapCenterLng = raw.mapCenterLng;
+  const withGps = places.filter((p) => p.lat !== 0 && p.lng !== 0);
+  if (withGps.length > 0) {
+    mapCenterLat = withGps.reduce((s, p) => s + p.lat, 0) / withGps.length;
+    mapCenterLng = withGps.reduce((s, p) => s + p.lng, 0) / withGps.length;
+  }
+  return {
+    schema: 'PLACE_CARD',
+    summary: raw.summary.trim(),
+    query: raw.query.trim(),
+    recommendation: raw.recommendation.trim(),
+    places,
+    mapCenterLat,
+    mapCenterLng,
   };
 }

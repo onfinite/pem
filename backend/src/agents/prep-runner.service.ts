@@ -6,19 +6,9 @@ import { and, eq } from 'drizzle-orm';
 
 import { createPrepAgentTools } from './agent-tools/prep-tools.factory';
 import { buildPrepAgentSystemPrompt } from './prompts/prep-agent.system';
-import {
-  buildDraftCardFormatterPrompt,
-  buildShoppingCardFormatterPrompt,
-} from './prompts/prep-adaptive.prompt';
 import { buildStructuredFormatterPrompt } from './prompts/prep-structured.prompt';
 import { buildPrepUserPrompt } from './prompts/prep-user.prompt';
 import { appendPrepAgentStep } from './prep-runner-step';
-import {
-  draftCardModelSchema,
-  normalizeDraftCard,
-  normalizeShoppingCard,
-  shoppingCardModelSchema,
-} from './schemas/adaptive-prep.schema';
 import {
   normalizeStructuredPrepOutput,
   type StructuredPrepOutput,
@@ -39,15 +29,16 @@ import {
 } from '../database/schemas';
 import type { PrimaryKind } from './schemas/prep-result.schema';
 import { PrepEventsService } from '../events/prep-events.service';
+import { SerpApiService } from '../integrations/serpapi.service';
 import { TavilyService } from '../integrations/tavily.service';
 import { ProfileService } from '../profile/profile.service';
 import { PrepsService } from '../preps/preps.service';
 import { PushService } from '../push/push.service';
 import { StepsService } from '../steps/steps.service';
+import { tryPersistAdaptiveFormat } from './prep-runner-adaptive';
 
-/** Stored `prep_type` — `mixed` maps to research (closest product bucket). */
+/** Stored `prep_type` matches structured `primaryKind` (including `mixed`). */
 function prepTypeFromPrimaryKind(pk: PrimaryKind): PrepType {
-  if (pk === 'mixed') return 'research';
   return pk;
 }
 
@@ -59,6 +50,7 @@ export class PrepRunnerService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly config: ConfigService,
     private readonly tavily: TavilyService,
+    private readonly serp: SerpApiService,
     private readonly push: PushService,
     private readonly profile: ProfileService,
     private readonly preps: PrepsService,
@@ -71,7 +63,7 @@ export class PrepRunnerService {
    *        so Redis pending count for the dump still decrements once.
    */
   async run(prepId: string, dumpIdFromJob?: string): Promise<void> {
-    let dumpId: string | null = null;
+    let dumpId: string | undefined;
     try {
       const rows = await this.db
         .select({
@@ -94,8 +86,14 @@ export class PrepRunnerService {
 
       dumpId = row.prep.dumpId;
       const { prep, transcript } = row;
+      const dumpIdStr = dumpId;
 
       if (prep.status !== 'prepping') {
+        return;
+      }
+
+      if (prep.isBundle) {
+        this.log.warn(`bundle parent prep ${prepId} skipped (legacy row)`);
         return;
       }
 
@@ -106,7 +104,7 @@ export class PrepRunnerService {
 
       const apiKey = this.config.get<string>('openai.apiKey');
       if (!apiKey) {
-        await this.failPrep(prepId, dumpId, 'OPENAI_API_KEY not configured');
+        await this.failPrep(prepId, dumpIdStr, 'OPENAI_API_KEY not configured');
         return;
       }
 
@@ -130,7 +128,7 @@ export class PrepRunnerService {
             },
           ],
         };
-        await this.persistPrepReady(prepId, dumpId, prep, shortcut);
+        await this.persistPrepReady(prepId, dumpIdStr, prep, shortcut);
         return;
       }
 
@@ -150,15 +148,23 @@ export class PrepRunnerService {
         .where(eq(usersTable.id, userId))
         .limit(1);
 
-      const [memorySection, relevantBlock, profileMap] = await Promise.all([
-        this.profile.buildMemoryPromptSection(userId),
-        this.preps.relevantPastPrepsBlock(
-          userId,
-          prep.thought || prep.title,
-          5,
-        ),
-        this.profile.getProfileMap(userId),
-      ]);
+      const thoughtLine = prep.thought || prep.title;
+      const [memorySection, pastPrepsBlock, pastDumpsBlock, profileMap] =
+        await Promise.all([
+          this.profile.buildMemoryPromptSection(userId),
+          this.preps.relevantPastPrepsBlock(userId, thoughtLine, 5),
+          this.preps.relevantPastDumpsBlock(
+            userId,
+            dumpIdStr,
+            thoughtLine,
+            transcript,
+            4,
+          ),
+          this.profile.getProfileMap(userId),
+        ]);
+      const relevantBlock = [pastPrepsBlock, pastDumpsBlock]
+        .filter((s) => s.trim().length > 0)
+        .join('\n\n');
 
       const prior =
         prep.context && typeof prep.context === 'object' ? prep.context : {};
@@ -175,7 +181,7 @@ export class PrepRunnerService {
 
       const userPrompt = buildPrepUserPrompt({
         transcript,
-        thoughtLine: prep.thought || prep.title,
+        thoughtLine,
         memorySection,
         relevantBlock,
         enrichedContextJson: ctx,
@@ -187,10 +193,11 @@ export class PrepRunnerService {
 
       const tools = createPrepAgentTools({
         tavily: this.tavily,
+        serp: this.serp,
         profile: this.profile,
         userId,
         prepId,
-        dumpId,
+        dumpId: dumpIdStr,
         agentModel,
         userPrompt,
         displayName,
@@ -221,63 +228,23 @@ export class PrepRunnerService {
       const agentText = agentResult.text;
       const structuredFormatterCtx = {
         memorySection,
-        thoughtLine: prep.thought || prep.title,
+        thoughtLine,
+        relevantContextSection: relevantBlock,
       };
 
-      if (intent === 'SHOPPING') {
-        try {
-          const adaptive = await generateText({
-            model: miniModel,
-            output: Output.object({ schema: shoppingCardModelSchema }),
-            prompt: buildShoppingCardFormatterPrompt(
-              agentText,
-              structuredFormatterCtx,
-            ),
-            timeout: structureTimeoutMs,
-          });
-          if (adaptive.output) {
-            const payload = normalizeShoppingCard(adaptive.output);
-            await this.persistReadyResult(prepId, dumpId, prep, {
-              summary: payload.summary,
-              prepType: 'options',
-              renderType: 'shopping_card',
-              result: { ...payload } as Record<string, unknown>,
-              logMeta: { schema: payload.schema },
-            });
-            return;
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          this.log.warn(`adaptive SHOPPING formatter failed, fallback: ${msg}`);
-        }
-      }
-
-      if (intent === 'DRAFT') {
-        try {
-          const adaptive = await generateText({
-            model: miniModel,
-            output: Output.object({ schema: draftCardModelSchema }),
-            prompt: buildDraftCardFormatterPrompt(
-              agentText,
-              structuredFormatterCtx,
-            ),
-            timeout: structureTimeoutMs,
-          });
-          if (adaptive.output) {
-            const payload = normalizeDraftCard(adaptive.output);
-            await this.persistReadyResult(prepId, dumpId, prep, {
-              summary: payload.summary,
-              prepType: 'draft',
-              renderType: 'draft_card',
-              result: { ...payload } as Record<string, unknown>,
-              logMeta: { schema: payload.schema },
-            });
-            return;
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          this.log.warn(`adaptive DRAFT formatter failed, fallback: ${msg}`);
-        }
+      const adaptiveDone = await tryPersistAdaptiveFormat({
+        intent,
+        agentText,
+        ctx: structuredFormatterCtx,
+        miniModel,
+        structureTimeoutMs,
+        log: this.log,
+        persist: async (p) => {
+          await this.persistReadyResult(prepId, dumpIdStr, prep, p);
+        },
+      });
+      if (adaptiveDone) {
+        return;
       }
 
       const structured = await generateText({
@@ -297,7 +264,7 @@ export class PrepRunnerService {
 
       const out = normalizeStructuredPrepOutput(rawStructured);
 
-      await this.persistPrepReady(prepId, dumpId, prep, out);
+      await this.persistPrepReady(prepId, dumpIdStr, prep, out);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.log.error(`prep ${prepId} failed: ${msg}`);
@@ -324,7 +291,6 @@ export class PrepRunnerService {
     await this.persistReadyResult(prepId, dumpId, prep, {
       summary: out.summary,
       prepType: prepTypeFromPrimaryKind(out.primaryKind),
-      renderType: out.primaryKind,
       result,
       logMeta: { primaryKind: out.primaryKind },
     });
@@ -338,13 +304,12 @@ export class PrepRunnerService {
     params: {
       summary: string;
       prepType: PrepType;
-      renderType: string;
       result: Record<string, unknown>;
       logMeta?: Record<string, unknown>;
     },
   ): Promise<void> {
     const now = new Date();
-    const { summary, prepType, renderType, result, logMeta } = params;
+    const { summary, prepType, result, logMeta } = params;
 
     const [updated] = await this.db
       .update(prepsTable)
@@ -352,7 +317,6 @@ export class PrepRunnerService {
         status: 'ready',
         summary,
         prepType,
-        renderType,
         result,
         readyAt: now,
         errorMessage: null,
@@ -376,14 +340,19 @@ export class PrepRunnerService {
         thought: updated.thought || updated.title,
         intent: updated.intent ?? null,
         status: updated.status,
-        render_type: updated.renderType,
+        prep_type: updated.prepType,
         summary: updated.summary,
         result: updated.result,
         created_at: updated.createdAt.toISOString(),
       },
     });
 
-    await this.push.notifyPrepReady(prep.userId, prep.thought || prep.title);
+    if (!updated.parentPrepId) {
+      await this.push.notifyPrepReady(
+        updated.userId,
+        prep.thought || prep.title,
+      );
+    }
   }
 
   private async maybeEmitStreamDone(dumpId: string): Promise<void> {
@@ -424,7 +393,7 @@ export class PrepRunnerService {
           thought: p.thought || p.title,
           intent: p.intent ?? null,
           status: p.status,
-          render_type: p.renderType,
+          prep_type: p.prepType,
           summary: p.summary,
           result: p.result,
           created_at: p.createdAt.toISOString(),

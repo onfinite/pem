@@ -11,7 +11,20 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react-native";
-import type { DraftCardPayload, ShoppingCardPayload } from "@/lib/adaptivePrep";
+import type {
+  ComparisonCardPayload,
+  DecisionCardPayload,
+  DraftCardPayload,
+  ExplainCardPayload,
+  IdeaCardsPayload,
+  LegalFinancialCardPayload,
+  MeetingBriefPayload,
+  PersonCardPayload,
+  PlaceCardPayload,
+  ResearchCardPayload,
+  ShoppingCardPayload,
+  SummaryCardPayload,
+} from "@/lib/adaptivePrep";
 import type { PrepResultBlock } from "@/lib/prepBlocks";
 
 /**
@@ -87,6 +100,8 @@ export type Prep = {
   status?: "prepping" | "ready" | "archived" | "failed";
   /** Present for API-backed preps; used to scope the post-dump “Pem’s got it” list. */
   dumpId?: string;
+  /** ISO from API — hub sort key. */
+  createdAt?: string;
   /** Fine-grained classifier intent when present (API). */
   intent?: string;
   /** Ready prep not yet opened in detail (inbox-style). */
@@ -97,6 +112,17 @@ export type Prep = {
   shoppingCard?: ShoppingCardPayload;
   /** Adaptive layout — `DRAFT_CARD` from API `result.schema`. */
   draftCard?: DraftCardPayload;
+  /** Adaptive layout — `PLACE_CARD` from API `result.schema`. */
+  placeCard?: PlaceCardPayload;
+  comparisonCard?: ComparisonCardPayload;
+  researchCard?: ResearchCardPayload;
+  personCard?: PersonCardPayload;
+  meetingBrief?: MeetingBriefPayload;
+  decisionCard?: DecisionCardPayload;
+  legalFinancialCard?: LegalFinancialCardPayload;
+  explainCard?: ExplainCardPayload;
+  summaryCard?: SummaryCardPayload;
+  ideaCards?: IdeaCardsPayload;
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [
@@ -247,8 +273,8 @@ export function getPrepById(id: string): Prep | undefined {
 export type PrepTab = "ready" | "prepping" | "archived";
 
 export const TABS: { id: PrepTab; label: string; Icon: LucideIcon }[] = [
-  { id: "ready", label: "Ready", Icon: CheckCircle2 },
-  { id: "prepping", label: "Prepping", Icon: Loader2 },
+  { id: "ready", label: "For you", Icon: CheckCircle2 },
+  { id: "prepping", label: "In progress", Icon: Loader2 },
   { id: "archived", label: "Archived", Icon: Archive },
 ];
 

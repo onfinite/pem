@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -25,6 +26,8 @@ import { Observable } from 'rxjs';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { PrepRow, PrepStatus, UserRow } from '../database/schemas';
+import { ShoppingMoreDto } from './dto/shopping-more.dto';
+import { serializePrepForApi } from './prep-serialization';
 import { PrepsStreamService } from './preps-stream.service';
 import { PrepsService } from './preps.service';
 
@@ -79,7 +82,7 @@ export class PrepsController {
         },
       );
       return {
-        items: rows.map((p) => this.serializePrep(p)),
+        items: this.serializePrepRows(rows),
         next_cursor: nextCursor,
       };
     }
@@ -87,7 +90,55 @@ export class PrepsController {
       throw new BadRequestException('dumpId requires limit (paginated list)');
     }
     const rows = await this.preps.listForUser(user.id, status);
-    return rows.map((p) => this.serializePrep(p));
+    return this.serializePrepRows(rows);
+  }
+
+  @Get('counts')
+  @ApiOperation({
+    summary: 'Exact prep counts per hub tab (ready / preparing / archived)',
+  })
+  async counts(@CurrentUser() user: UserRow) {
+    return this.preps.countByTabBuckets(user.id);
+  }
+
+  @Get('search')
+  @ApiOperation({
+    summary: 'Search preps by thought, title, or summary (paginated)',
+  })
+  @ApiQuery({ name: 'q', required: true })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'cursor', required: false })
+  async search(
+    @CurrentUser() user: UserRow,
+    @Query('q') q: string,
+    @Query('status') status?: PrepStatus,
+    @Query('limit') limitRaw?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const lim = Math.min(Math.max(Number(limitRaw) || 12, 1), 50);
+    if (!q?.trim()) {
+      throw new BadRequestException('q is required');
+    }
+    const st: 'ready' | 'prepping' | 'archived' =
+      status === 'archived'
+        ? 'archived'
+        : status === 'prepping' || status === 'failed'
+          ? 'prepping'
+          : 'ready';
+    const { rows, nextCursor } = await this.preps.searchPrepsPaginated(
+      user.id,
+      {
+        q: q.trim(),
+        status: st,
+        limit: lim,
+        cursor: cursor || undefined,
+      },
+    );
+    return {
+      items: this.serializePrepRows(rows),
+      next_cursor: nextCursor,
+    };
   }
 
   @Sse('stream')
@@ -142,7 +193,7 @@ export class PrepsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
     const p = await this.preps.retry(id, user.id);
-    return this.serializePrep(p);
+    return serializePrepForApi(p);
   }
 
   @Patch(':id/opened')
@@ -152,17 +203,34 @@ export class PrepsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
     const p = await this.preps.markOpened(id, user.id);
-    return this.serializePrep(p);
+    return serializePrepForApi(p);
+  }
+
+  @Post(':id/shopping/more')
+  @ApiOperation({
+    summary:
+      'Append shopping products via Serp (deduped URLs, max 25 on prep). Body: optional query, batchSize.',
+  })
+  async shoppingMore(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: ShoppingMoreDto,
+  ) {
+    const p = await this.preps.appendShoppingProducts(user.id, id, {
+      query: body.query,
+      batchSize: body.batchSize,
+    });
+    return serializePrepForApi(p);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Single prep with full result' })
+  @ApiOperation({ summary: 'Single prep with full structured result' })
   async getOne(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
     const p = await this.preps.getByIdForUser(id, user.id);
-    return this.serializePrep(p);
+    return serializePrepForApi(p);
   }
 
   @Patch(':id/archive')
@@ -172,7 +240,7 @@ export class PrepsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
     const p = await this.preps.archive(id, user.id);
-    return this.serializePrep(p);
+    return serializePrepForApi(p);
   }
 
   @Patch(':id/unarchive')
@@ -182,7 +250,7 @@ export class PrepsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
     const p = await this.preps.unarchive(id, user.id);
-    return this.serializePrep(p);
+    return serializePrepForApi(p);
   }
 
   @Delete(':id')
@@ -195,25 +263,7 @@ export class PrepsController {
     await this.preps.deleteForUser(id, user.id);
   }
 
-  private serializePrep(p: PrepRow) {
-    const prepType = p.renderType || p.prepType || 'search';
-    return {
-      id: p.id,
-      dump_id: p.dumpId,
-      title: p.title,
-      thought: p.thought || p.title,
-      intent: p.intent ?? null,
-      prep_type: prepType,
-      render_type: p.renderType,
-      context: p.context,
-      status: p.status,
-      summary: p.summary,
-      result: p.result,
-      error_message: p.errorMessage,
-      created_at: p.createdAt?.toISOString?.() ?? p.createdAt,
-      ready_at: p.readyAt?.toISOString?.() ?? p.readyAt,
-      archived_at: p.archivedAt?.toISOString?.() ?? p.archivedAt,
-      opened_at: p.openedAt?.toISOString?.() ?? p.openedAt ?? null,
-    };
+  private serializePrepRows(rows: PrepRow[]) {
+    return rows.map((p) => serializePrepForApi(p));
   }
 }

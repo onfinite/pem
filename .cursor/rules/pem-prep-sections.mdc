@@ -1,0 +1,36 @@
+---
+description: Pem prep detail — composable section types, sort order, UI contract
+globs:
+  - app/lib/prepBlocks.ts
+  - app/lib/prepSections.ts
+  - app/components/sections/prep-detail-sections/PrepSectionStack.tsx
+alwaysApply: false
+---
+
+# Prep detail sections (product spec)
+
+## Order
+
+Frontend **sorts** sections into this order regardless of API order (`SECTION_ORDER` in `app/lib/prepSections.ts`):
+
+1. `summary` — always first when present (card summary + optional detail intro)
+2. `research` — “What I found” (narrative, amber-dot bullets, source chips)
+3. `pros_cons`
+4. `options` — horizontal product cards (snap scroll; single card full width)
+5. `comparison` — side-by-side table (scroll if many columns)
+6. `draft` — tone pill, bubble, Copy / Send with… / Edit
+7. `action_steps`
+8. `tips` — stacked cards; warnings tinted
+9. `limitations` — honest limits + “what I can do instead”
+10. `sources` — standalone pill chips (when emitted as own block)
+11. `follow_up` — last; tap → `/dump?prefill=…`
+
+Legacy `search` blocks render like research with title “Here’s the gist.”
+
+## API shapes
+
+Extended `result.blocks` types are parsed in `parsePrepBlocksFromResult` (`app/lib/prepBlocks.ts`). Backend structured output (`prep-result.schema.ts`) still uses the **original** block union; new types appear when the agent/API adds them to JSON. **Normalize + sort** happens in `buildCanonicalSectionsFromPrep`.
+
+## Competitive edge
+
+Dump UX + **this stack** are the primary differentiator: amber system, scannable sections, real product cards, honest limitations, follow-up back into dump.

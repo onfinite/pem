@@ -28,6 +28,8 @@ type Props = {
   resolved: "light" | "dark";
   onOpenDetail: () => void;
   archivedVisual?: boolean;
+  /** Warm inbox line, e.g. time · Pem prepared… — hub ready cards only. */
+  inboxMeta?: string | null;
 };
 
 /** Full card is tappable — chevron only; no separate CTA strip. */
@@ -36,17 +38,23 @@ export default function PrepHubCard({
   resolved,
   onOpenDetail,
   archivedVisual = false,
+  inboxMeta,
 }: Props) {
   const { colors } = useTheme();
   const tagColor = archivedVisual
     ? colors.textSecondary
     : prepKindTagColor(prep.kind, resolved);
+  const inbox = Boolean(inboxMeta);
+  const showUnreadStripe = inbox && prep.unread;
 
   const cardChrome = [
     styles.card,
     {
       backgroundColor: colors.cardBackground,
+      borderWidth: 1,
       borderColor: colors.borderMuted,
+      borderLeftWidth: showUnreadStripe ? 3 : 1,
+      borderLeftColor: showUnreadStripe ? colors.pemAmber : colors.borderMuted,
       opacity: archivedVisual ? 0.92 : 1,
       ...Platform.select({
         ios: {
@@ -61,7 +69,7 @@ export default function PrepHubCard({
               : 0.06,
           shadowRadius: archivedVisual ? 8 : 12,
         },
-        android: { elevation: archivedVisual ? 1 : 2 },
+        android: { elevation: archivedVisual ? 1 : inbox ? 3 : 2 },
       }),
     },
   ];
@@ -77,11 +85,15 @@ export default function PrepHubCard({
       style={({ pressed }) => [...cardChrome, pressed && { opacity: 0.94 }]}
     >
       <View style={styles.cardRow}>
-        {prep.unread ? (
-          <View
-            style={[styles.unreadDot, { backgroundColor: colors.pemAmber }]}
-            accessibilityLabel="Unread"
-          />
+        {!inbox ? (
+          prep.unread ? (
+            <View
+              style={[styles.unreadDot, { backgroundColor: colors.pemAmber }]}
+              accessibilityLabel="Unread"
+            />
+          ) : (
+            <View style={styles.unreadSpacer} />
+          )
         ) : (
           <View style={styles.unreadSpacer} />
         )}
@@ -91,6 +103,15 @@ export default function PrepHubCard({
           surfaceColor={colors.secondarySurface}
         />
         <View style={styles.cardHeadText}>
+          {inboxMeta ? (
+            <PemText
+              variant="caption"
+              numberOfLines={1}
+              style={[styles.inboxMeta, { color: colors.textSecondary }]}
+            >
+              {inboxMeta}
+            </PemText>
+          ) : null}
           <PemText style={[styles.cardTag, { color: tagColor }]}>{prep.tag}</PemText>
           <PemText style={[styles.cardTitle, { color: colors.textPrimary }]} numberOfLines={2}>
             {prep.title}
@@ -112,7 +133,7 @@ export default function PrepHubCard({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     borderWidth: 1,
     overflow: "hidden",
   },
@@ -146,6 +167,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: space[1],
+  },
+  inboxMeta: {
+    fontFamily: fontFamily.sans.regular,
+    letterSpacing: 0.2,
+    marginBottom: space[1],
   },
   chevron: {
     opacity: 0.65,

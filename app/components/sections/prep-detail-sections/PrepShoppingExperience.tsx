@@ -1,17 +1,32 @@
 import PemMarkdown from "@/components/ui/PemMarkdown";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemText from "@/components/ui/PemText";
+import PemButton from "@/components/ui/PemButton";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import type { ShoppingCardPayload } from "@/lib/adaptivePrep";
+import { SHOPPING_PRODUCTS_MAX } from "@/constants/shopping";
+import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
+import type { ShoppingCardPayload, ShoppingProduct } from "@/lib/adaptivePrep";
+import { appendShoppingMore, type ApiPrep } from "@/lib/pemApi";
 import { openExternalUrl } from "@/lib/openExternalUrl";
-import { ExternalLink, Sparkles } from "lucide-react-native";
-import { Image, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useAuth } from "@clerk/expo";
+import { ExternalLink, ShoppingBag } from "lucide-react-native";
+import { useCallback, useRef, useState } from "react";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import PrepShareRow from "./PrepShareRow";
 
 type Props = {
+  prepId: string;
   data: ShoppingCardPayload;
   prepTitle: string;
   sharePlainText: string;
+  onPrepUpdated?: (row: ApiPrep) => Promise<void>;
 };
 
 function ratingLabel(r: number): string | null {
@@ -19,8 +34,161 @@ function ratingLabel(r: number): string | null {
   return `${r.toFixed(1)} ★`;
 }
 
-export default function PrepShoppingExperience({ data, prepTitle, sharePlainText }: Props) {
+function ProductTile({
+  p,
+  compact,
+}: {
+  p: ShoppingProduct;
+  compact?: boolean;
+}) {
   const { colors } = useTheme();
+  return (
+    <View
+      style={[
+        compact ? styles.compactTile : styles.tile,
+        {
+          backgroundColor: colors.cardBackground,
+          borderColor: colors.borderMuted,
+          ...Platform.select({
+            ios: {
+              shadowColor: "#1c1a16",
+              shadowOffset: { width: 0, height: compact ? 4 : 8 },
+              shadowOpacity: compact ? 0.05 : 0.08,
+              shadowRadius: compact ? 10 : 16,
+            },
+            android: { elevation: compact ? 1 : 2 },
+          }),
+        },
+      ]}
+    >
+      {!compact ? (
+        <RemoteImageOrPlaceholder
+          uri={p.image.trim()}
+          style={[styles.tileImage, { backgroundColor: colors.secondarySurface }]}
+          placeholderStyle={{ backgroundColor: colors.secondarySurface }}
+        />
+      ) : (
+        <RemoteImageOrPlaceholder
+          uri={p.image.trim()}
+          style={[styles.compactImage, { backgroundColor: colors.secondarySurface }]}
+          placeholderStyle={{ backgroundColor: colors.secondarySurface }}
+        />
+      )}
+      <View style={[styles.tileBody, compact && styles.compactBody]}>
+        {p.badge.trim() && !compact ? (
+          <View style={[styles.badge, { borderColor: colors.pemAmber }]}>
+            <PemText variant="caption" style={[styles.badgeText, { color: colors.pemAmber }]}>
+              {p.badge}
+            </PemText>
+          </View>
+        ) : null}
+        <PemText
+          style={[compact ? styles.compactName : styles.tileName, { color: colors.textPrimary }]}
+          numberOfLines={compact ? 2 : 3}
+        >
+          {p.name}
+        </PemText>
+        {p.store.trim() ? (
+          <PemText variant="caption" style={{ color: colors.textSecondary }} numberOfLines={1}>
+            {p.store}
+          </PemText>
+        ) : null}
+        <View style={styles.priceRow}>
+          {p.price.trim() ? (
+            <PemText style={[styles.price, { color: colors.textPrimary }]}>{p.price}</PemText>
+          ) : null}
+          {ratingLabel(p.rating) ? (
+            <PemText variant="caption" style={{ color: colors.textSecondary }}>
+              {ratingLabel(p.rating)}
+            </PemText>
+          ) : null}
+        </View>
+        {!compact && p.why.trim() ? (
+          <View style={styles.why}>
+            <PemMarkdown variant="companion" selectable>
+              {p.why}
+            </PemMarkdown>
+          </View>
+        ) : null}
+        {!compact && (p.pros.length > 0 || p.cons.length > 0) && (
+          <View style={styles.pc}>
+            {p.pros.length > 0 ? (
+              <PemText variant="caption" style={[styles.pcHead, { color: colors.textSecondary }]}>
+                Pros
+              </PemText>
+            ) : null}
+            {p.pros.map((line, j) => (
+              <PemText key={`pro-${j}`} variant="caption" style={{ color: colors.textPrimary }}>
+                + {line}
+              </PemText>
+            ))}
+            {p.cons.length > 0 ? (
+              <PemText
+                variant="caption"
+                style={[styles.pcHead, { color: colors.textSecondary, marginTop: space[2] }]}
+              >
+                Cons
+              </PemText>
+            ) : null}
+            {p.cons.map((line, j) => (
+              <PemText key={`con-${j}`} variant="caption" style={{ color: colors.textSecondary }}>
+                – {line}
+              </PemText>
+            ))}
+          </View>
+        )}
+        {p.url.trim() ? (
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={`Open link for ${p.name}`}
+            onPress={() => void openExternalUrl(p.url)}
+            style={({ pressed }) => [
+              styles.linkRow,
+              { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted },
+            ]}
+          >
+            <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+            <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
+              {p.url.replace(/^https?:\/\//, "").split("/")[0]}
+            </PemText>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+export default function PrepShoppingExperience({
+  prepId,
+  data,
+  prepTitle,
+  sharePlainText,
+  onPrepUpdated,
+}: Props) {
+  const { colors } = useTheme();
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const hero = data.products.slice(0, 3);
+  const morePicks = data.products.slice(3);
+  const canLoadMore = data.products.length < SHOPPING_PRODUCTS_MAX;
+
+  const onLoadMore = useCallback(async () => {
+    if (loadingMore || !canLoadMore) return;
+    setLoadingMore(true);
+    try {
+      const row = await appendShoppingMore(() => getTokenRef.current(), prepId, {
+        batchSize: 6,
+      });
+      await onPrepUpdated?.(row);
+    } catch {
+      /* optional toast */
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, canLoadMore, prepId, onPrepUpdated]);
 
   return (
     <View style={styles.root}>
@@ -34,7 +202,7 @@ export default function PrepShoppingExperience({ data, prepTitle, sharePlainText
         ]}
       >
         <View style={styles.heroIconRow}>
-          <Sparkles size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
+          <ShoppingBag size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
           <PemText style={[styles.heroKicker, { color: colors.pemAmber }]}>Pem&apos;s pick</PemText>
         </View>
         <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>{data.recommendation}</PemText>
@@ -51,113 +219,38 @@ export default function PrepShoppingExperience({ data, prepTitle, sharePlainText
         contentContainerStyle={styles.hScroll}
         decelerationRate="fast"
       >
-        {data.products.map((p, i) => (
-          <View
-            key={`${p.name}-${i}`}
-            style={[
-              styles.tile,
-              {
-                backgroundColor: colors.cardBackground,
-                borderColor: colors.borderMuted,
-                ...Platform.select({
-                  ios: {
-                    shadowColor: "#1c1a16",
-                    shadowOffset: { width: 0, height: 8 },
-                    shadowOpacity: 0.08,
-                    shadowRadius: 16,
-                  },
-                  android: { elevation: 2 },
-                }),
-              },
-            ]}
-          >
-            {p.image.trim() ? (
-              <Image
-                source={{ uri: p.image }}
-                style={[styles.tileImage, { backgroundColor: colors.secondarySurface }]}
-                resizeMode="cover"
-                accessibilityIgnoresInvertColors
-              />
-            ) : (
-              <View style={[styles.tileImage, { backgroundColor: colors.secondarySurface }]} />
-            )}
-            <View style={styles.tileBody}>
-              {p.badge.trim() ? (
-                <View style={[styles.badge, { borderColor: colors.pemAmber }]}>
-                  <PemText variant="caption" style={[styles.badgeText, { color: colors.pemAmber }]}>
-                    {p.badge}
-                  </PemText>
-                </View>
-              ) : null}
-              <PemText style={[styles.tileName, { color: colors.textPrimary }]} numberOfLines={3}>
-                {p.name}
-              </PemText>
-              {p.store.trim() ? (
-                <PemText variant="caption" style={{ color: colors.textSecondary }}>
-                  {p.store}
-                </PemText>
-              ) : null}
-              <View style={styles.priceRow}>
-                {p.price.trim() ? (
-                  <PemText style={[styles.price, { color: colors.textPrimary }]}>{p.price}</PemText>
-                ) : null}
-                {ratingLabel(p.rating) ? (
-                  <PemText variant="caption" style={{ color: colors.textSecondary }}>
-                    {ratingLabel(p.rating)}
-                  </PemText>
-                ) : null}
-              </View>
-              {p.why.trim() ? (
-                <View style={styles.why}>
-                  <PemMarkdown variant="companion" selectable>
-                    {p.why}
-                  </PemMarkdown>
-                </View>
-              ) : null}
-              {(p.pros.length > 0 || p.cons.length > 0) && (
-                <View style={styles.pc}>
-                  {p.pros.length > 0 ? (
-                    <PemText variant="caption" style={[styles.pcHead, { color: colors.textSecondary }]}>
-                      Pros
-                    </PemText>
-                  ) : null}
-                  {p.pros.map((line, j) => (
-                    <PemText key={`pro-${j}`} variant="caption" style={{ color: colors.textPrimary }}>
-                      + {line}
-                    </PemText>
-                  ))}
-                  {p.cons.length > 0 ? (
-                    <PemText variant="caption" style={[styles.pcHead, { color: colors.textSecondary, marginTop: space[2] }]}>
-                      Cons
-                    </PemText>
-                  ) : null}
-                  {p.cons.map((line, j) => (
-                    <PemText key={`con-${j}`} variant="caption" style={{ color: colors.textSecondary }}>
-                      – {line}
-                    </PemText>
-                  ))}
-                </View>
-              )}
-              {p.url.trim() ? (
-                <Pressable
-                  accessibilityRole="link"
-                  accessibilityLabel={`Open link for ${p.name}`}
-                  onPress={() => void openExternalUrl(p.url)}
-                  style={({ pressed }) => [
-                    styles.linkRow,
-                    { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted },
-                  ]}
-                >
-                  <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
-                  <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
-                    {p.url.replace(/^https?:\/\//, "").split("/")[0]}
-                  </PemText>
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
+        {hero.map((p, i) => (
+          <ProductTile key={`${p.name}-${p.url}-${i}`} p={p} />
         ))}
       </ScrollView>
+
+      {morePicks.length > 0 ? (
+        <View style={{ gap: space[2] }}>
+          <PemText style={[styles.moreSectionTitle, { color: colors.textSecondary }]}>
+            More options
+          </PemText>
+          <View style={{ gap: space[3] }}>
+            {morePicks.map((p, i) => (
+              <ProductTile key={`more-${p.name}-${p.url}-${i}`} p={p} compact />
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {canLoadMore ? (
+        <View style={{ gap: space[2] }}>
+          <PemText variant="caption" style={{ color: colors.textSecondary }}>
+            Load more from the web (same search as this prep; saved here, max {SHOPPING_PRODUCTS_MAX}).
+          </PemText>
+          {loadingMore ? (
+            <PemLoadingIndicator placement="listFooter" />
+          ) : (
+            <PemButton variant="secondary" onPress={() => void onLoadMore()}>
+              Load more picks
+            </PemButton>
+          )}
+        </View>
+      ) : null}
 
       {data.buyingGuide.trim() ? (
         <View style={[styles.guide, { backgroundColor: colors.secondarySurface, borderColor: colors.borderMuted }]}>
@@ -208,6 +301,12 @@ const styles = StyleSheet.create({
   heroSub: {
     marginTop: space[1],
   },
+  moreSectionTitle: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.sm,
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
   hScroll: {
     gap: space[3],
     paddingVertical: space[1],
@@ -219,13 +318,29 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
   },
+  compactTile: {
+    flexDirection: "row",
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    maxWidth: "100%",
+  },
   tileImage: {
     width: "100%",
     height: 140,
   },
+  compactImage: {
+    width: 88,
+    height: 88,
+  },
   tileBody: {
     padding: space[4],
     gap: space[2],
+    flex: 1,
+  },
+  compactBody: {
+    padding: space[3],
+    minWidth: 0,
   },
   badge: {
     alignSelf: "flex-start",
@@ -241,6 +356,11 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.lg,
     lineHeight: lh(fontSize.lg, lineHeight.snug),
+  },
+  compactName: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize.md,
+    lineHeight: lh(fontSize.md, lineHeight.snug),
   },
   priceRow: {
     flexDirection: "row",

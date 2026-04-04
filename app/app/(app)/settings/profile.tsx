@@ -3,8 +3,11 @@ import {
   TOP_BAR_ROW_PAD,
   TOP_ICON_CHIP,
 } from "@/components/sections/home-sections/homeLayout";
+import HubEmptyState from "@/components/shell/HubEmptyState";
 import ProfileFactEditorModal from "@/components/sections/settings-sections/ProfileFactEditorModal";
 import PemButton from "@/components/ui/PemButton";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
+import PemRefreshControl from "@/components/ui/PemRefreshControl";
 import PemText from "@/components/ui/PemText";
 import { PROFILE_FACTS_PAGE_SIZE } from "@/constants/limits";
 import { useTheme, type ThemeSemantic } from "@/contexts/ThemeContext";
@@ -20,15 +23,13 @@ import { formatProfileValueForDisplay } from "@/lib/profileTimed";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
 import { router } from "expo-router";
-import { Pencil, Sparkles, Trash2, X } from "lucide-react-native";
+import { Bookmark, Pencil, Trash2, X } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Platform,
   Pressable,
-  RefreshControl,
   StyleSheet,
   View,
 } from "react-native";
@@ -495,12 +496,7 @@ export default function SettingsProfileScreen() {
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.pemAmber}
-            colors={[colors.pemAmber]}
-          />
+          <PemRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         onEndReached={onEndReached}
         onEndReachedThreshold={0.4}
@@ -515,7 +511,7 @@ export default function SettingsProfileScreen() {
           <>
             <View style={[styles.hero, { backgroundColor: colors.brandMutedSurface }]}>
               <View style={[styles.heroIcon, { backgroundColor: colors.cardBackground }]}>
-                <Sparkles size={28} stroke={colors.pemAmber} strokeWidth={2} />
+                <Bookmark size={28} stroke={colors.pemAmber} strokeWidth={2} />
               </View>
               <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>
                 Saved for you
@@ -605,33 +601,27 @@ export default function SettingsProfileScreen() {
         ItemSeparatorComponent={() => <View style={{ height: space[3] }} />}
         ListEmptyComponent={
           loading && visibleFacts.length === 0 ? (
-            <ActivityIndicator style={{ marginTop: space[8] }} color={colors.pemAmber} />
+            <PemLoadingIndicator placement="listEmpty" />
           ) : error ? (
-            <View style={styles.emptyError}>
-              <PemText variant="body" style={[styles.errorText, { color: colors.textSecondary }]}>
-                {error}
-              </PemText>
+            <HubEmptyState style={{ paddingHorizontal: 0 }} body={error}>
               <PemButton size="md" onPress={retryLoad} style={styles.retryBtn}>
                 Try again
               </PemButton>
-            </View>
+            </HubEmptyState>
           ) : (
-            <View style={styles.empty}>
-              <PemText style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-                Nothing here yet
-              </PemText>
-              <PemText variant="body" style={[styles.emptySub, { color: colors.textSecondary }]}>
-                {memoryTab === "active"
+            <HubEmptyState
+              style={{ paddingHorizontal: 0 }}
+              title="Nothing here yet"
+              body={
+                memoryTab === "active"
                   ? "Tap “Add a fact” to tell Pem something useful, or let it pick things up when you prep."
-                  : "When Pem replaces something it already knew, the older version appears here."}
-              </PemText>
-            </View>
+                  : "When Pem replaces something it already knew, the older version appears here."
+              }
+            />
           )
         }
         ListFooterComponent={
-          loadingMore ? (
-            <ActivityIndicator style={{ marginTop: space[4] }} color={colors.pemAmber} />
-          ) : null
+          loadingMore ? <PemLoadingIndicator placement="listFooter" /> : null
         }
       />
 
@@ -789,28 +779,9 @@ const styles = StyleSheet.create({
   factMeta: {
     marginTop: space[1],
   },
-  empty: {
-    paddingVertical: space[6],
-    gap: space[2],
-    alignItems: "center",
-  },
-  emptyTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.lg,
-  },
-  emptySub: {
-    textAlign: "center",
-    maxWidth: 320,
-    lineHeight: lh(fontSize.md, lineHeight.relaxed),
-  },
   errorText: {
     marginTop: space[4],
     textAlign: "center",
-  },
-  emptyError: {
-    paddingVertical: space[6],
-    gap: space[4],
-    alignItems: "center",
   },
   retryBtn: {
     alignSelf: "center",

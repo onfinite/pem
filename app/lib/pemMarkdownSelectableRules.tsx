@@ -10,10 +10,57 @@ import { openExternalUrl } from "@/lib/openExternalUrl";
 import {
   hasParents,
   renderRules,
+  type ASTNode,
   type RenderRules,
 } from "react-native-markdown-display";
+import FitImage from "react-native-fit-image";
 import { Platform, StyleSheet, Text, View } from "react-native";
-import type { TextStyle } from "react-native";
+import type { ImageStyle, TextStyle } from "react-native";
+
+/**
+ * React 19: `key` must not be inside a spread object. Library puts `key` on `imageProps`
+ * and spreads into FitImage — fix by passing `key` on the JSX element only.
+ */
+export function makeMarkdownImageRule(): NonNullable<RenderRules["image"]> {
+  return (node: ASTNode, _children, _parent, styles, allowedImageHandlers, defaultImageHandler) => {
+    const handlers = allowedImageHandlers ?? [
+      "data:image/png;base64",
+      "data:image/gif;base64",
+      "data:image/jpeg;base64",
+      "https://",
+      "http://",
+    ];
+    const fallback = defaultImageHandler ?? "https://";
+    const src = typeof node.attributes.src === "string" ? node.attributes.src : "";
+    const alt = node.attributes.alt;
+
+    const show =
+      handlers.filter((value) => src.toLowerCase().startsWith(value.toLowerCase())).length > 0;
+    if (show === false && defaultImageHandler === null) {
+      return null;
+    }
+
+    const imageProps: {
+      indicator: boolean;
+      style: ImageStyle;
+      source: { uri: string };
+      accessible?: boolean;
+      accessibilityLabel?: string;
+    } = {
+      indicator: true,
+      style: styles._VIEW_SAFE_image as ImageStyle,
+      source: {
+        uri: show === true ? src : `${fallback}${src}`,
+      },
+    };
+    if (alt) {
+      imageProps.accessible = true;
+      imageProps.accessibilityLabel = alt;
+    }
+
+    return <FitImage key={node.key} {...imageProps} />;
+  };
+}
 
 /** Same list as `react-native-markdown-display` `textStyleProps` (not exported in typings). */
 const TEXT_STYLE_PROPS: readonly string[] = [
@@ -111,6 +158,7 @@ const selectableListItem: NonNullable<RenderRules["list_item"]> = (
 export function getSelectableMarkdownRules(): RenderRules {
   return {
     ...renderRules,
+    image: makeMarkdownImageRule(),
     paragraph: (node, children, parent, styles) => (
       <Text key={node.key} selectable style={blockSelectableStyle(styles as never, "paragraph")}>
         {children}

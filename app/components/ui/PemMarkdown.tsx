@@ -1,8 +1,8 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight } from "@/constants/typography";
-import { getSelectableMarkdownRules } from "@/lib/pemMarkdownSelectableRules";
+import { getSelectableMarkdownRules, makeMarkdownImageRule } from "@/lib/pemMarkdownSelectableRules";
 import { openExternalUrl } from "@/lib/openExternalUrl";
-import Markdown from "react-native-markdown-display";
+import Markdown, { renderRules } from "react-native-markdown-display";
 import { useMemo } from "react";
 import type { StyleProp, TextStyle } from "react-native";
 
@@ -17,6 +17,7 @@ type Props = {
 };
 
 const selectableRules = getSelectableMarkdownRules();
+const defaultRulesWithFixedImage = { ...renderRules, image: makeMarkdownImageRule() };
 
 /** Renders markdown with Pem typography. With `selectable`, body text is selectable; links are tappable (see `pemMarkdownSelectableRules`). */
 export default function PemMarkdown({
@@ -95,7 +96,7 @@ export default function PemMarkdown({
     <Markdown
       style={markdownStyle}
       mergeStyle
-      rules={selectable ? selectableRules : undefined}
+      rules={selectable ? selectableRules : defaultRulesWithFixedImage}
       onLinkPress={(url) => {
         void openExternalUrl(url);
         /** `false` = skip the library’s extra `Linking.openURL` after our `openExternalUrl`. */

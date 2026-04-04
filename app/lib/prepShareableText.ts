@@ -1,5 +1,18 @@
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
-import type { DraftCardPayload, ShoppingCardPayload } from "@/lib/adaptivePrep";
+import type {
+  ComparisonCardPayload,
+  DecisionCardPayload,
+  DraftCardPayload,
+  ExplainCardPayload,
+  IdeaCardsPayload,
+  LegalFinancialCardPayload,
+  MeetingBriefPayload,
+  PersonCardPayload,
+  PlaceCardPayload,
+  ResearchCardPayload,
+  ShoppingCardPayload,
+  SummaryCardPayload,
+} from "@/lib/adaptivePrep";
 import type { PrepResultBlock } from "@/lib/prepBlocks";
 
 export type PrepOption = NonNullable<Prep["options"]>[number];
@@ -78,6 +91,39 @@ function buildPrepBlockShareLines(blocks: PrepResultBlock[]): string[] {
         out.push(t ? `${t}\n\n${body}` : body);
         break;
       }
+      case "summary":
+        if (b.text.trim()) out.push(b.text.trim());
+        break;
+      case "pros_cons": {
+        for (const p of b.pros) if (p.trim()) out.push(`+ ${p.trim()}`);
+        for (const c of b.cons) if (c.trim()) out.push(`– ${c.trim()}`);
+        if (b.verdict?.trim()) out.push(b.verdict.trim());
+        break;
+      }
+      case "action_steps":
+        for (const s of b.steps) {
+          out.push(`${s.number}. ${s.title}${s.detail?.trim() ? ` — ${s.detail.trim()}` : ""}`);
+        }
+        break;
+      case "tips":
+        for (const t of b.tips) if (t.text.trim()) out.push(t.text.trim());
+        break;
+      case "comparison":
+        out.push(b.headers.join(" | "));
+        for (const r of b.rows) {
+          out.push([r.label, ...r.values].join(" | "));
+        }
+        break;
+      case "limitations":
+        out.push(b.cannotDo.trim());
+        for (const c of b.canDo) if (c.trim()) out.push(`• ${c.trim()}`);
+        break;
+      case "sources":
+        for (const s of b.sources) out.push(s.url);
+        break;
+      case "follow_up":
+        if (b.question.trim()) out.push(b.question.trim());
+        break;
       default:
         break;
     }
@@ -125,6 +171,96 @@ function buildDraftCardShareText(d: DraftCardPayload): string {
   return [...head, body].filter(Boolean).join("\n") + tail;
 }
 
+function ratingLinePlace(r: number, reviews: number): string | null {
+  if (r <= 0 && reviews <= 0) return null;
+  const stars = r > 0 ? `${r.toFixed(1)} ★` : null;
+  const rc = reviews > 0 ? `${reviews} reviews` : null;
+  return [stars, rc].filter(Boolean).join(" · ");
+}
+
+function buildComparisonCardShareText(c: ComparisonCardPayload): string {
+  const lines: string[] = [c.winnerReason, `Winner: ${c.winner}`];
+  for (const o of c.options) {
+    lines.push([o.name, o.price, o.bestFor, ...o.pros.map((p) => `+ ${p}`)].filter(Boolean).join("\n"));
+  }
+  return lines.join("\n\n");
+}
+
+function buildResearchCardShareText(c: ResearchCardPayload): string {
+  const lines: string[] = [c.executiveSummary, ...c.keyFacts];
+  for (const s of c.sources) {
+    if (s.url.trim()) lines.push(s.url);
+  }
+  return lines.join("\n\n");
+}
+
+function buildPersonCardShareText(c: PersonCardPayload): string {
+  return [c.name, c.title, c.company, c.bio, c.linkedin, c.website, c.pemNote].filter((x) => x.trim().length > 0).join("\n\n");
+}
+
+function buildMeetingBriefShareText(c: MeetingBriefPayload): string {
+  return [
+    c.meetingWith,
+    c.about,
+    c.personBackground,
+    ...c.recentNews,
+    ...c.suggestedTalkingPoints,
+    c.pemNote,
+  ]
+    .filter((x) => x.trim().length > 0)
+    .join("\n\n");
+}
+
+function buildDecisionCardShareText(c: DecisionCardPayload): string {
+  const lines: string[] = [c.verdict, c.verdictReason, ...c.keyData];
+  for (const o of c.options) {
+    lines.push(o.name);
+    lines.push(...o.pros.map((p) => `+ ${p}`));
+    lines.push(...o.cons.map((p) => `– ${p}`));
+  }
+  return lines.join("\n\n");
+}
+
+function buildLegalFinancialShareText(c: LegalFinancialCardPayload): string {
+  const lines: string[] = [c.plainEnglish, ...c.caveats, ...c.sources.map((s) => s.url)];
+  return lines.join("\n\n");
+}
+
+function buildExplainCardShareText(c: ExplainCardPayload): string {
+  return [c.tldr, c.explanation, ...c.steps, c.analogy, ...c.commonMistakes].filter((x) => x.trim().length > 0).join("\n\n");
+}
+
+function buildSummaryCardShareText(c: SummaryCardPayload): string {
+  return [c.tldr, ...c.keyPoints, c.pullQuote, c.sourceUrl].filter((x) => x.trim().length > 0).join("\n\n");
+}
+
+function buildIdeaCardsShareText(c: IdeaCardsPayload): string {
+  const lines: string[] = [c.context];
+  for (const i of c.ideas) {
+    lines.push([i.title, i.hook, i.angle].filter(Boolean).join("\n"));
+  }
+  return lines.join("\n\n");
+}
+
+function buildPlaceCardShareText(c: PlaceCardPayload): string {
+  const lines: string[] = [c.recommendation];
+  if (c.query.trim()) lines.push(c.query);
+  for (const p of c.places) {
+    const bits = [
+      p.name,
+      p.address,
+      ratingLinePlace(p.rating, p.reviewCount),
+      p.priceRange,
+      p.hours,
+      p.phone,
+      p.pemNote,
+      p.url,
+    ].filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+    lines.push(bits.join("\n"));
+  }
+  return lines.join("\n\n");
+}
+
 /** Full prep content for detail share (markdown-ish body kept as-is). */
 export function buildPrepShareablePlainText(prep: Prep): string {
   const parts: string[] = [];
@@ -136,8 +272,48 @@ export function buildPrepShareablePlainText(prep: Prep): string {
     parts.push(buildShoppingCardShareText(prep.shoppingCard));
     return parts.filter(Boolean).join("\n\n");
   }
+  if (prep.placeCard) {
+    parts.push(buildPlaceCardShareText(prep.placeCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
   if (prep.draftCard) {
     parts.push(buildDraftCardShareText(prep.draftCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.comparisonCard) {
+    parts.push(buildComparisonCardShareText(prep.comparisonCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.researchCard) {
+    parts.push(buildResearchCardShareText(prep.researchCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.personCard) {
+    parts.push(buildPersonCardShareText(prep.personCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.meetingBrief) {
+    parts.push(buildMeetingBriefShareText(prep.meetingBrief));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.decisionCard) {
+    parts.push(buildDecisionCardShareText(prep.decisionCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.legalFinancialCard) {
+    parts.push(buildLegalFinancialShareText(prep.legalFinancialCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.explainCard) {
+    parts.push(buildExplainCardShareText(prep.explainCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.summaryCard) {
+    parts.push(buildSummaryCardShareText(prep.summaryCard));
+    return parts.filter(Boolean).join("\n\n");
+  }
+  if (prep.ideaCards) {
+    parts.push(buildIdeaCardsShareText(prep.ideaCards));
     return parts.filter(Boolean).join("\n\n");
   }
   if (prep.blocks?.length) {
