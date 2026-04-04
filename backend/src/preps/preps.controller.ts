@@ -26,6 +26,7 @@ import { Observable } from 'rxjs';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { PrepRow, PrepStatus, UserRow } from '../database/schemas';
+import { ClientHintsDto } from './dto/client-hints.dto';
 import { ShoppingMoreDto } from './dto/shopping-more.dto';
 import { StarPrepDto } from './dto/star-prep.dto';
 import { serializePrepForApi } from './prep-serialization';
@@ -251,6 +252,19 @@ export class PrepsController {
       batchSize: body.batchSize,
     });
     return serializePrepForApi(p);
+  }
+
+  @Post(':id/client-hints')
+  @ApiOperation({
+    summary:
+      'Ephemeral device location for one prep run (Redis only — not stored on prep row)',
+  })
+  async submitClientHints(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: ClientHintsDto,
+  ) {
+    return this.preps.submitClientHints(id, user.id, body);
   }
 
   @Get(':id')

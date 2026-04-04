@@ -211,14 +211,26 @@ export class SerpApiService {
     return out;
   }
 
-  /** Google Maps — local results with coordinates when available. */
-  async googleMaps(query: string): Promise<SerpLocalItem[]> {
+  /**
+   * Google Maps — local results with coordinates when available.
+   * When `location` is set, SerpAPI centers the map on that point (`ll`); without it,
+   * queries like "near me" resolve to an arbitrary default region (often wrong).
+   */
+  async googleMaps(
+    query: string,
+    location?: { latitude: number; longitude: number },
+  ): Promise<SerpLocalItem[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const params: Record<string, string> = {
       engine: 'google_maps',
       q,
       type: 'search',
-    });
+    };
+    if (location) {
+      const { latitude: lat, longitude: lng } = location;
+      params.ll = `@${lat},${lng},14z`;
+    }
+    const data = await this.fetchJson(params);
     if (!data) return [];
     const raw = data.local_results;
     if (!Array.isArray(raw)) return [];

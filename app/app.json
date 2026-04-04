@@ -48,6 +48,12 @@
           "backgroundColor": "#e8763a"
         }
       ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Pem uses your location only when a prep needs nearby places or local results — not in the background."
+        }
+      ],
       "expo-web-browser",
       "expo-secure-store"
     ],

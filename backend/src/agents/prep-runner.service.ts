@@ -7,6 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import { createPrepAgentTools } from './agent-tools/prep-tools.factory';
 import { buildPrepAgentSystemPrompt } from './prompts/prep-agent.system';
 import { buildStructuredFormatterPrompt } from './prompts/prep-structured.prompt';
+import { formatLocationHintForPrompt } from './prompts/location-hint-prompt';
 import { buildPrepUserPrompt } from './prompts/prep-user.prompt';
 import { appendPrepAgentStep } from './prep-runner-step';
 import {
@@ -174,17 +175,34 @@ export class PrepRunnerService {
       const ctx = JSON.stringify(mergedContext, null, 2);
       const displayName = userRow?.name?.trim() || null;
 
+      const locationHint =
+        await this.prepEvents.consumeClientLocationHint(prepId);
+      const sessionLocationBlock = formatLocationHintForPrompt(
+        locationHint,
+        intent,
+      );
+
       const userPrompt = buildPrepUserPrompt({
         transcript,
         thoughtLine,
         memorySection,
         relevantBlock,
         enrichedContextJson: ctx,
+        sessionLocationBlock:
+          sessionLocationBlock.length > 0 ? sessionLocationBlock : undefined,
       });
 
       await this.appendLog(prepId, 'run', 'Starting agent loop', {
         model: agentModelId,
       });
+
+      const mapsLocation =
+        locationHint?.kind === 'coords'
+          ? {
+              latitude: locationHint.latitude,
+              longitude: locationHint.longitude,
+            }
+          : null;
 
       const tools = createPrepAgentTools({
         tavily: this.tavily,
@@ -197,6 +215,7 @@ export class PrepRunnerService {
         userPrompt,
         displayName,
         intent,
+        mapsLocation,
       });
 
       const system = buildPrepAgentSystemPrompt(

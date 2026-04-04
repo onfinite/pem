@@ -30,7 +30,13 @@ import {
   type PrepRow,
   type PrepStatus,
 } from '../database/schemas';
+import {
+  LOCATION_PREP_QUEUE_DELAY_MS,
+  prepIntentNeedsLocation,
+} from '../agents/intents/location-intent';
+import { parsePrepIntent } from '../agents/intents/prep-intent';
 import { sanitizeShoppingProductUrl } from '../agents/schemas/shopping-product-url';
+import type { ClientLocationHint } from '../events/prep-events.service';
 import { PrepEventsService } from '../events/prep-events.service';
 import { SerpApiService } from '../integrations/serpapi.service';
 import { StepsService } from '../steps/steps.service';
@@ -274,6 +280,45 @@ export class PrepsService {
     return updated;
   }
 
+  /**
+   * Ephemeral device location for the upcoming agent run (Redis — never persisted on `preps`).
+   */
+  async submitClientHints(
+    prepId: string,
+    userId: string,
+    body: {
+      latitude?: number;
+      longitude?: number;
+      locationUnavailable?: boolean;
+    },
+  ): Promise<{ ok: true }> {
+    const prep = await this.getByIdForUser(prepId, userId);
+    if (prep.status !== 'prepping') {
+      throw new BadRequestException(
+        'Location hints are only accepted while the prep is preparing',
+      );
+    }
+    if (body.locationUnavailable === true) {
+      await this.prepEvents.setClientLocationHint(prepId, {
+        kind: 'unavailable',
+      });
+      return { ok: true };
+    }
+    const { latitude: lat, longitude: lng } = body;
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      throw new BadRequestException(
+        'Send latitude and longitude together, or locationUnavailable: true',
+      );
+    }
+    const hint: ClientLocationHint = {
+      kind: 'coords',
+      latitude: lat,
+      longitude: lng,
+    };
+    await this.prepEvents.setClientLocationHint(prepId, hint);
+    return { ok: true };
+  }
+
   async getByIdForUser(prepId: string, userId: string) {
     const rows = await this.db
       .select()
@@ -322,6 +367,10 @@ export class PrepsService {
     if (!updated) {
       throw new NotFoundException('Prep not found');
     }
+    const intent = parsePrepIntent(prep.intent);
+    const delayMs = prepIntentNeedsLocation(intent)
+      ? LOCATION_PREP_QUEUE_DELAY_MS
+      : 0;
     await this.prepQueue.add(
       'process',
       { prepId, dumpId: prep.dumpId },
@@ -329,6 +378,7 @@ export class PrepsService {
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
         removeOnComplete: true,
+        ...(delayMs > 0 ? { delay: delayMs } : {}),
       },
     );
     await this.prepEvents.publish(prep.dumpId, {

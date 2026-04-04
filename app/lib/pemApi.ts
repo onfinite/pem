@@ -500,6 +500,21 @@ export async function retryPrepApi(
   return apiFetch(`/preps/${encodeURIComponent(id)}/retry`, { method: "POST", getToken });
 }
 
+/** Ephemeral device location for one prep run (server Redis only — not stored on the prep row). */
+export async function postPrepClientHints(
+  getToken: () => Promise<string | null>,
+  id: string,
+  body:
+    | { latitude: number; longitude: number }
+    | { locationUnavailable: true },
+): Promise<{ ok: true }> {
+  return apiFetch(`/preps/${encodeURIComponent(id)}/client-hints`, {
+    method: "POST",
+    getToken,
+    body: JSON.stringify(body),
+  });
+}
+
 /** Permanently removes the prep (204). */
 export async function deletePrepApi(
   getToken: () => Promise<string | null>,

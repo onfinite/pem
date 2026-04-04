@@ -29,6 +29,8 @@ export type PrepToolsFactoryDeps = {
   displayName: string | null;
   /** Routed intent — gates web search/fetch per `pem-intake-routing.mdc`. */
   intent: PrepIntent;
+  /** When set, `google()` maps + bundled Tavily use this point (from client hint). */
+  mapsLocation?: { latitude: number; longitude: number } | null;
 };
 
 export function createPrepAgentTools(d: PrepToolsFactoryDeps) {
@@ -80,7 +82,12 @@ export function createPrepAgentTools(d: PrepToolsFactoryDeps) {
       vertical: GoogleVertical;
     }) => {
       return executeGoogleBundle(
-        { intent: d.intent, serp: d.serp, tavily: d.tavily },
+        {
+          intent: d.intent,
+          serp: d.serp,
+          tavily: d.tavily,
+          mapsLocation: d.mapsLocation ?? null,
+        },
         query,
         vertical,
       );

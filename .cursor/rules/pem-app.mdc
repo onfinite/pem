@@ -17,6 +17,7 @@ alwaysApply: false
 - **Navigation:** Use **expo-router typed routes** (`experiments.typedRoutes` in `app.json` where enabled); keep param lists and `href`s consistent with the file tree.
 - **Testing:** Pure helpers under **`lib/`** (e.g. API → UI mapping) use **Vitest** — `npm test` in **`app/`**.
 - **Hub / Prepping lists:** **Pull-to-refresh** reloads preps from the API (`refresh({ skipCacheHydration: true })` from the hub so disk cache isn’t re-applied before the network returns); ordering is always **newest first** (matches backend `ORDER BY created_at DESC, id DESC`). **Haptics:** **`expo-haptics`** in **`lib/pemHaptics.ts`** — soft impact + selection (UI tap feel, not `Vibration` buzz); use for send, dump, open prep, tab changes — not on pull-to-refresh.
+- **Location:** **`expo-location`** (foreground only) when a prep needs it — **`components/location/LocationPrepCoordinator.tsx`** shows Pem’s explainer sheet, then the system dialog, then **`POST /preps/:id/client-hints`** (ephemeral; not stored on the prep row). Never on app launch. See **`pem-location-permission.mdc`**.
 
 ## JSX readability
 

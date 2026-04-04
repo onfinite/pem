@@ -7,6 +7,8 @@ export function buildPrepUserPrompt(args: {
   memorySection: string;
   relevantBlock: string;
   enrichedContextJson: string;
+  /** Ephemeral device location line — not stored on the prep row. */
+  sessionLocationBlock?: string;
 }): string {
   const {
     transcript,
@@ -14,7 +16,9 @@ export function buildPrepUserPrompt(args: {
     memorySection,
     relevantBlock,
     enrichedContextJson,
+    sessionLocationBlock,
   } = args;
+  const loc = sessionLocationBlock?.trim();
   return `Full dump transcript (context):
 """
 ${transcript}
@@ -26,7 +30,7 @@ ${thoughtLine}
 ${memorySection}
 
 ${relevantBlock ? `${relevantBlock}\n` : ''}
-
+${loc ? `${loc}\n\n` : ''}
 Enriched context (JSON) — structured profile map for tools that still expect key/value:
 ${enrichedContextJson}
 

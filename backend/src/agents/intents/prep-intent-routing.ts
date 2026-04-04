@@ -86,7 +86,9 @@ export function intentSystemAddendum(intent: PrepIntent): string {
       break;
     case 'FIND_PLACE':
       lines.push(
-        'Call **google()** with `vertical: maps` first — structured **Google Maps** results (ratings, address, coordinates, photos). Use **search()** for extra context. Respect user location from memory when they said “near me”. Clear pick when possible.',
+        'Call **google()** with `vertical: maps` first — structured **Google Maps** results (ratings, address, coordinates, photos). When the user message includes **session device coordinates**, the backend **centers SerpAPI Maps on that point** — your query should describe what to find (e.g. "Italian restaurants", "coffee shops") and not rely on the phrase "near me" alone.',
+        'When **device location is unavailable**, lean on **memory_facts** (memory block + **remember()** for city, location, home, work area, etc.) before asking the user for a city — tailor maps/search to that place when present.',
+        'Use **search()** for extra context. If memory has a home city and no session coordinates, use that city in queries. Clear pick when possible.',
         'Phrasing like **find, search, look up, best, top, good** with **restaurants, bars, cafes, hotels, salons, gyms, venues** still means this lane — **maps** is the primary tool, not a generic web article.',
       );
       break;

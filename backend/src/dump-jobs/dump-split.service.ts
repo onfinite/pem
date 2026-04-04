@@ -5,6 +5,10 @@ import { eq } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import { IntentClassifierAgent } from '../agents/intent-classifier.agent';
+import {
+  LOCATION_PREP_QUEUE_DELAY_MS,
+  prepIntentNeedsLocation,
+} from '../agents/intents/location-intent';
 import { initialPrepTypeForIntent } from '../agents/intents/prep-intent-routing';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -93,6 +97,9 @@ export class DumpSplitService {
         })
         .returning();
 
+      const delayMs = prepIntentNeedsLocation(intent)
+        ? LOCATION_PREP_QUEUE_DELAY_MS
+        : 0;
       await this.prepQueue.add(
         'process',
         { prepId: prep.id, dumpId: dump.id },
@@ -100,6 +107,7 @@ export class DumpSplitService {
           attempts: 3,
           backoff: { type: 'exponential', delay: 2000 },
           removeOnComplete: true,
+          ...(delayMs > 0 ? { delay: delayMs } : {}),
         },
       );
 

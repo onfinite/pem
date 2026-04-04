@@ -7,6 +7,8 @@ export type GoogleBundleDeps = {
   intent: PrepIntent;
   serp: SerpApiService;
   tavily: TavilyService;
+  /** SerpAPI `ll` for `google_maps` — device location from client hint (not persisted). */
+  mapsLocation?: { latitude: number; longitude: number } | null;
 };
 
 /** Pass to `google()` — picks SerpAPI engine + Tavily pairing. */
@@ -52,9 +54,14 @@ async function runMapsPlaceBundle(
   d: GoogleBundleDeps,
   q: string,
 ): Promise<string> {
+  const loc = d.mapsLocation ?? undefined;
+  const tavilyQuery =
+    loc !== undefined
+      ? `${q} reviews what to know (${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)})`
+      : `${q} reviews what to know`;
   const [maps, extra] = await Promise.all([
-    d.serp.googleMaps(q),
-    d.tavily.search(`${q} reviews what to know`, 4, {
+    d.serp.googleMaps(q, loc),
+    d.tavily.search(tavilyQuery, 4, {
       searchDepth: 'basic',
     }),
   ]);
