@@ -95,11 +95,13 @@ export default function PemText({
   const { colors } = useTheme();
 
   const color =
-    variant === "bodyMuted" || variant === "label" || variant === "caption"
-      ? colors.textSecondary
-      : variant === "brandItalic" || variant === "link"
-        ? colors.pemAmber
-        : colors.textPrimary;
+    variant === "caption"
+      ? colors.textTertiary
+      : variant === "bodyMuted" || variant === "label"
+        ? colors.textSecondary
+        : variant === "brandItalic" || variant === "link"
+          ? colors.pemAmber
+          : colors.textPrimary;
 
   return (
     <Text style={[layout[variant], { color }, style]} {...rest}>

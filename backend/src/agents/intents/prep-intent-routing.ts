@@ -41,6 +41,7 @@ export function intentSystemAddendum(intent: PrepIntent): string {
       lines.push(
         'Call **google()** with the right **vertical**: `web` (general SERP), `news` (headlines), `images` (visual search), `jobs` (role hiring), `finance` (ticker/price), `maps` (places), `shopping` (products + Amazon). SerpAPI + Tavily run in parallel — pick the vertical that matches the question.',
         'Deliver summary, key facts, cited sources, bullet takeaways.',
+        'If the user really wanted **restaurants, bars, hotels, or local venues** (a list of places to go), use **maps** in a follow-up **google()** call — but this lane is for **topic research**, not a venue shortlist unless the thought was misclassified.',
       );
       break;
     case 'DRAFT':
@@ -86,6 +87,7 @@ export function intentSystemAddendum(intent: PrepIntent): string {
     case 'FIND_PLACE':
       lines.push(
         'Call **google()** with `vertical: maps` first — structured **Google Maps** results (ratings, address, coordinates, photos). Use **search()** for extra context. Respect user location from memory when they said “near me”. Clear pick when possible.',
+        'Phrasing like **find, search, look up, best, top, good** with **restaurants, bars, cafes, hotels, salons, gyms, venues** still means this lane — **maps** is the primary tool, not a generic web article.',
       );
       break;
     case 'SCHEDULE_PREP':

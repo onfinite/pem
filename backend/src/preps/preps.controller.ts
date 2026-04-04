@@ -27,6 +27,7 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { PrepRow, PrepStatus, UserRow } from '../database/schemas';
 import { ShoppingMoreDto } from './dto/shopping-more.dto';
+import { StarPrepDto } from './dto/star-prep.dto';
 import { serializePrepForApi } from './prep-serialization';
 import { PrepsStreamService } from './preps-stream.service';
 import { PrepsService } from './preps.service';
@@ -50,12 +51,19 @@ export class PrepsController {
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'cursor', required: false })
   @ApiQuery({ name: 'dumpId', required: false })
+  @ApiQuery({
+    name: 'starred',
+    required: false,
+    description:
+      'If 1/true, list starred preps only (any status); ignores status',
+  })
   async list(
     @CurrentUser() user: UserRow,
     @Query('status') status?: PrepStatus,
     @Query('limit') limitRaw?: string,
     @Query('cursor') cursor?: string,
     @Query('dumpId') dumpId?: string,
+    @Query('starred') starredRaw?: string,
   ) {
     const hasLimit =
       limitRaw !== undefined &&
@@ -72,10 +80,12 @@ export class PrepsController {
         }
         dumpUuid = dumpId;
       }
+      const starredOnly =
+        starredRaw === '1' || starredRaw === 'true' || starredRaw === 'yes';
       const { rows, nextCursor } = await this.preps.listForUserPaginated(
         user.id,
         {
-          status,
+          ...(starredOnly ? { starredOnly: true as const } : { status }),
           dumpId: dumpUuid,
           limit,
           cursor: cursor || undefined,
@@ -109,12 +119,18 @@ export class PrepsController {
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'cursor', required: false })
+  @ApiQuery({
+    name: 'starred',
+    required: false,
+    description: 'If 1/true, only search starred preps',
+  })
   async search(
     @CurrentUser() user: UserRow,
     @Query('q') q: string,
     @Query('status') status?: PrepStatus,
     @Query('limit') limitRaw?: string,
     @Query('cursor') cursor?: string,
+    @Query('starred') starredRaw?: string,
   ) {
     const lim = Math.min(Math.max(Number(limitRaw) || 12, 1), 50);
     if (!q?.trim()) {
@@ -126,6 +142,8 @@ export class PrepsController {
         : status === 'prepping' || status === 'failed'
           ? 'prepping'
           : 'ready';
+    const starredOnly =
+      starredRaw === '1' || starredRaw === 'true' || starredRaw === 'yes';
     const { rows, nextCursor } = await this.preps.searchPrepsPaginated(
       user.id,
       {
@@ -133,6 +151,7 @@ export class PrepsController {
         status: st,
         limit: lim,
         cursor: cursor || undefined,
+        ...(starredOnly ? { starredOnly: true } : {}),
       },
     );
     return {
@@ -203,6 +222,17 @@ export class PrepsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
     const p = await this.preps.markOpened(id, user.id);
+    return serializePrepForApi(p);
+  }
+
+  @Patch(':id/star')
+  @ApiOperation({ summary: 'Star or unstar a prep (Gmail-style)' })
+  async setStar(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: StarPrepDto,
+  ) {
+    const p = await this.preps.setStarred(id, user.id, body.starred);
     return serializePrepForApi(p);
   }
 

@@ -12,7 +12,7 @@ import {
   eq,
   ilike,
   inArray,
-  isNull,
+  isNotNull,
   lt,
   ne,
   or,
@@ -57,8 +57,8 @@ function decodePrepCursor(raw: string): { c: Date; i: string } | null {
   }
 }
 
-/** Max product rows stored on a shopping prep (initial formatter still returns ≤3). */
-export const SHOPPING_PRODUCTS_MAX = 25;
+/** Max product rows on a shopping prep (3 hero + up to 7 compact in UI; no load-more). */
+export const SHOPPING_PRODUCTS_MAX = 10;
 
 @Injectable()
 export class PrepsService {
@@ -78,22 +78,23 @@ export class PrepsService {
     userId: string,
     opts: {
       status?: PrepStatus;
+      /** Starred preps only (any status); takes precedence over `status`. */
+      starredOnly?: boolean;
       dumpId?: string;
       limit: number;
       cursor?: string | null;
     },
   ): Promise<{ rows: PrepRow[]; nextCursor: string | null }> {
     const lim = Math.min(Math.max(opts.limit, 1), 50);
-    const conditions: SQL[] = [
-      eq(prepsTable.userId, userId),
-      isNull(prepsTable.parentPrepId),
-    ];
+    const conditions: SQL[] = [eq(prepsTable.userId, userId)];
 
     if (opts.dumpId) {
       conditions.push(eq(prepsTable.dumpId, opts.dumpId));
     }
 
-    if (opts.status === 'prepping') {
+    if (opts.starredOnly) {
+      conditions.push(isNotNull(prepsTable.starredAt));
+    } else if (opts.status === 'prepping') {
       conditions.push(inArray(prepsTable.status, ['prepping', 'failed']));
     } else if (opts.status) {
       conditions.push(eq(prepsTable.status, opts.status));
@@ -136,38 +137,29 @@ export class PrepsService {
         .select()
         .from(prepsTable)
         .where(
-          and(
-            eq(prepsTable.userId, userId),
-            isNull(prepsTable.parentPrepId),
-            eq(prepsTable.status, status),
-          ),
+          and(eq(prepsTable.userId, userId), eq(prepsTable.status, status)),
         )
         .orderBy(desc(prepsTable.createdAt));
     }
     return this.db
       .select()
       .from(prepsTable)
-      .where(
-        and(eq(prepsTable.userId, userId), isNull(prepsTable.parentPrepId)),
-      )
+      .where(eq(prepsTable.userId, userId))
       .orderBy(desc(prepsTable.createdAt));
   }
 
-  /** Exact counts for hub tabs (ready / preparing+failed / archived). */
+  /** Exact counts for hub tabs (ready / preparing+failed / archived / starred). */
   async countByTabBuckets(userId: string): Promise<{
     ready: number;
     preparing: number;
     archived: number;
+    starred: number;
   }> {
     const [rReady] = await this.db
       .select({ c: sql<number>`count(*)::int` })
       .from(prepsTable)
       .where(
-        and(
-          eq(prepsTable.userId, userId),
-          isNull(prepsTable.parentPrepId),
-          eq(prepsTable.status, 'ready'),
-        ),
+        and(eq(prepsTable.userId, userId), eq(prepsTable.status, 'ready')),
       );
     const [rPrep] = await this.db
       .select({ c: sql<number>`count(*)::int` })
@@ -175,7 +167,6 @@ export class PrepsService {
       .where(
         and(
           eq(prepsTable.userId, userId),
-          isNull(prepsTable.parentPrepId),
           inArray(prepsTable.status, ['prepping', 'failed']),
         ),
       );
@@ -183,20 +174,26 @@ export class PrepsService {
       .select({ c: sql<number>`count(*)::int` })
       .from(prepsTable)
       .where(
-        and(
-          eq(prepsTable.userId, userId),
-          isNull(prepsTable.parentPrepId),
-          eq(prepsTable.status, 'archived'),
-        ),
+        and(eq(prepsTable.userId, userId), eq(prepsTable.status, 'archived')),
+      );
+    const [rStar] = await this.db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(prepsTable)
+      .where(
+        and(eq(prepsTable.userId, userId), isNotNull(prepsTable.starredAt)),
       );
     return {
       ready: Number(rReady?.c ?? 0),
       preparing: Number(rPrep?.c ?? 0),
       archived: Number(rArch?.c ?? 0),
+      starred: Number(rStar?.c ?? 0),
     };
   }
 
-  /** Search thought / title / summary (same pagination as list). */
+  /**
+   * Search substring across thought, title, summary, intent, result JSON, context JSON, and error text.
+   * (Mid-sentence matches often live only in `result` / `context`, not in the short hub fields.)
+   */
   async searchPrepsPaginated(
     userId: string,
     opts: {
@@ -204,13 +201,11 @@ export class PrepsService {
       status: 'ready' | 'prepping' | 'archived';
       limit: number;
       cursor?: string | null;
+      starredOnly?: boolean;
     },
   ): Promise<{ rows: PrepRow[]; nextCursor: string | null }> {
     const lim = Math.min(Math.max(opts.limit, 1), 50);
-    const conditions: SQL[] = [
-      eq(prepsTable.userId, userId),
-      isNull(prepsTable.parentPrepId),
-    ];
+    const conditions: SQL[] = [eq(prepsTable.userId, userId)];
     const escaped = opts.q
       .replace(/\\/g, '\\\\')
       .replace(/%/g, '\\%')
@@ -221,9 +216,15 @@ export class PrepsService {
         ilike(prepsTable.thought, term),
         ilike(prepsTable.title, term),
         ilike(prepsTable.summary, term),
+        sql`coalesce(${prepsTable.intent}, '') ilike ${term} ESCAPE '\\'`,
+        sql`coalesce(${prepsTable.result}::text, '') ilike ${term} ESCAPE '\\'`,
+        sql`coalesce(${prepsTable.context}::text, '') ilike ${term} ESCAPE '\\'`,
+        sql`coalesce(${prepsTable.errorMessage}, '') ilike ${term} ESCAPE '\\'`,
       )!,
     );
-    if (opts.status === 'prepping') {
+    if (opts.starredOnly) {
+      conditions.push(isNotNull(prepsTable.starredAt));
+    } else if (opts.status === 'prepping') {
       conditions.push(inArray(prepsTable.status, ['prepping', 'failed']));
     } else {
       conditions.push(eq(prepsTable.status, opts.status));
@@ -254,6 +255,23 @@ export class PrepsService {
         ? encodePrepCursor(last.createdAt, last.id)
         : null;
     return { rows: page, nextCursor };
+  }
+
+  async setStarred(
+    prepId: string,
+    userId: string,
+    starred: boolean,
+  ): Promise<PrepRow> {
+    await this.getByIdForUser(prepId, userId);
+    const [updated] = await this.db
+      .update(prepsTable)
+      .set({ starredAt: starred ? new Date() : null })
+      .where(and(eq(prepsTable.id, prepId), eq(prepsTable.userId, userId)))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException('Prep not found');
+    }
+    return updated;
   }
 
   async getByIdForUser(prepId: string, userId: string) {
@@ -409,7 +427,6 @@ export class PrepsService {
         and(
           eq(prepsTable.userId, userId),
           inArray(prepsTable.status, ['ready', 'archived']),
-          isNull(prepsTable.parentPrepId),
           tokenClause,
         ),
       )
@@ -496,9 +513,6 @@ export class PrepsService {
     opts: { query?: string; batchSize?: number },
   ): Promise<PrepRow> {
     const prep = await this.getByIdForUser(prepId, userId);
-    if (prep.parentPrepId) {
-      throw new BadRequestException('Not a leaf prep');
-    }
     if (prep.status !== 'ready') {
       throw new BadRequestException('Prep must be ready');
     }

@@ -27,7 +27,8 @@ export const shoppingCardModelSchema = z.object({
   query: z.string(),
   recommendation: z.string(),
   buyingGuide: z.string(),
-  products: z.array(shoppingProductSchema).min(1).max(3),
+  /** Top 3 are hero picks in the app; up to 7 more render as a compact grid (max 10 total). */
+  products: z.array(shoppingProductSchema).min(1).max(10),
 });
 
 export type ShoppingCardModelOutput = z.infer<typeof shoppingCardModelSchema>;
@@ -59,7 +60,7 @@ export type DraftCardPayload = DraftCardModelOutput & {
 export function normalizeShoppingCard(
   raw: ShoppingCardModelOutput,
 ): ShoppingCardPayload {
-  const products = raw.products.slice(0, 3).map((p) => ({
+  const products = raw.products.slice(0, 10).map((p) => ({
     ...p,
     name: p.name.trim(),
     price: p.price.trim(),

@@ -1,3 +1,5 @@
+import { SHOPPING_CARD_PRODUCTS_MAX } from "@/constants/shopping";
+
 /**
  * Adaptive card payloads from `result.schema` — mirrors backend adaptive prep schemas.
  */
@@ -274,7 +276,7 @@ export function parseAdaptiveFromResult(
         query: typeof result.query === "string" ? result.query : "",
         recommendation: typeof result.recommendation === "string" ? result.recommendation : "",
         buyingGuide: typeof result.buyingGuide === "string" ? result.buyingGuide : "",
-        products: products.slice(0, 3),
+        products: products.slice(0, SHOPPING_CARD_PRODUCTS_MAX),
       },
     };
   }

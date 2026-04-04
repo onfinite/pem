@@ -78,6 +78,20 @@
       "when": 1775088657600,
       "tag": "0010_bundle_prep_simplify",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1775088657700,
+      "tag": "0011_drop_preps_bundle_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775088657800,
+      "tag": "0012_preps_starred_at",
+      "breakpoints": true
     }
   ]
 }

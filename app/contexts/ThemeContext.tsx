@@ -16,56 +16,62 @@ export type ThemePreference = "light" | "dark" | "system";
 
 export type ThemeSemantic = {
   pageBackground: string;
-  /** Welcome / marketing subtle surface */
+  /** Grouped / alternate sections (iOS-style secondary system background). */
   surfacePage: string;
   cardBackground: string;
+  /** Main labels — near-black (light) / near-white (dark). */
   textPrimary: string;
+  /** Subheadlines, secondary labels — solid mid contrast, not “washed out”. */
   textSecondary: string;
+  /** Timestamps, meta, captions — still legible (Apple tertiary / Material on-surface-variant). */
+  textTertiary: string;
   border: string;
   borderMuted: string;
   pemAmber: string;
   onPrimary: string;
   error: string;
-  /** Placeholder / tertiary UI */
+  /** Inputs — same role as textTertiary for placeholder text */
   placeholder: string;
-  /** Neutral inputs / secondary buttons (light: white, dark: elevated surface) */
+  /** Inputs / secondary buttons */
   secondarySurface: string;
-  /** Subtle brand-tinted control surface (e.g. mic beside composer) */
+  /** Subtle brand-tinted control surface */
   brandMutedSurface: string;
 };
 
+/** Light: white canvas, clear grays, solid ink (Apple/Google clarity). */
 const lightSemantic: ThemeSemantic = {
-  pageBackground: "#faf8f4",
-  surfacePage: "#f7f5f1",
-  /** Warm off-white — distinct from page + glass chrome (not pure white). */
-  cardBackground: "#f4f1eb",
-  textPrimary: "#1c1a16",
-  textSecondary: "#6b6560",
-  border: "#d8d0c4",
-  borderMuted: "#e8e2d8",
+  pageBackground: "#ffffff",
+  surfacePage: "#f2f2f7",
+  cardBackground: "#ffffff",
+  textPrimary: "#000000",
+  textSecondary: "#3a3a3c",
+  textTertiary: "#6e6e73",
+  border: "#c6c6c8",
+  borderMuted: "#e5e5ea",
+  pemAmber: "#e8763a",
+  onPrimary: "#ffffff",
+  error: "#d70015",
+  placeholder: "#8e8e93",
+  secondarySurface: "#f2f2f7",
+  brandMutedSurface: "#fff4ed",
+};
+
+/** Dark: true black base, elevated surfaces, light gray text (not muddy brown-gray). */
+const darkSemantic: ThemeSemantic = {
+  pageBackground: "#000000",
+  surfacePage: "#1c1c1e",
+  cardBackground: "#2c2c2e",
+  textPrimary: "#ffffff",
+  textSecondary: "#d1d1d6",
+  textTertiary: "#98989d",
+  border: "#48484a",
+  borderMuted: "#3a3a3c",
   pemAmber: "#e8763a",
   onPrimary: "#ffffff",
   error: "#ff453a",
-  placeholder: "#b8b0a4",
-  /** Inputs / secondary controls — slightly lifted vs cards when needed. */
-  secondarySurface: "#ffffff",
-  brandMutedSurface: "#fdf2ea",
-};
-
-const darkSemantic: ThemeSemantic = {
-  pageBackground: "#181614",
-  surfacePage: "#1c1a18",
-  cardBackground: "#242220",
-  textPrimary: "#f4f1eb",
-  textSecondary: "#a39e97",
-  border: "#3d3834",
-  borderMuted: "#2e2a26",
-  pemAmber: "#e8763a",
-  onPrimary: "#ffffff",
-  error: "#ff6b6b",
-  placeholder: "#7a746c",
-  secondarySurface: "#2a2622",
-  brandMutedSurface: "#332a22",
+  placeholder: "#8e8e93",
+  secondarySurface: "#1c1c1e",
+  brandMutedSurface: "#3a2e26",
 };
 
 function resolveScheme(
@@ -135,7 +141,7 @@ export function useTheme(): ThemeContextValue {
       preference: "system",
       setPreference: () => {},
       resolved: "light",
-      colors: lightSemantic,
+      colors: { ...lightSemantic },
     };
   }
   return ctx;

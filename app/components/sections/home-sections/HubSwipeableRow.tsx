@@ -6,7 +6,7 @@ import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/
 import { success } from "@/constants/theme";
 import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { InteractionManager, Pressable, StyleSheet, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { Archive, ArchiveRestore, Trash2 } from "lucide-react-native";
 
@@ -22,6 +22,8 @@ type Props = {
   canDelete?: boolean;
   /** Gmail list rows — no rounded card chrome. */
   flat?: boolean;
+  /** Multi-select mode — no swipe (row handles tap / long-press). */
+  selectionMode?: boolean;
 };
 
 function deleteModalCopy(): { title: string; body: string; confirmLabel: string } {
@@ -42,6 +44,7 @@ export default function HubSwipeableRow({
   prepId,
   canDelete = true,
   flat = false,
+  selectionMode = false,
 }: Props) {
   const { colors } = useTheme();
   const { archivePrep, unarchivePrep, deletePrep } = usePrepHub();
@@ -108,15 +111,16 @@ export default function HubSwipeableRow({
     [variant, canDelete, prepId, commitArchive, commitRestore, scheduleDeleteModal],
   );
 
-  const handleConfirmDelete = useCallback(async () => {
+  const handleConfirmDelete = useCallback(() => {
     setDeleteModal(false);
     pemSelection();
     if (!prepId) return;
-    try {
-      await deletePrep(prepId);
-    } catch {
-      /* PrepHubContext surfaces errors */
-    }
+    // Defer removal so Modal + Swipeable finish unmounting; immediate list delete + RNGH has crashed the app (no JS error).
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => {
+        void deletePrep(prepId);
+      }, 48);
+    });
   }, [prepId, deletePrep]);
 
   const destructiveBg = colors.error;
@@ -172,6 +176,10 @@ export default function HubSwipeableRow({
 
   const deleteCopy = deleteModalCopy();
 
+  if (selectionMode) {
+    return <View style={flat ? styles.foregroundFlat : styles.foreground}>{children}</View>;
+  }
+
   return (
     <>
       <Swipeable
@@ -194,6 +202,7 @@ export default function HubSwipeableRow({
         title={deleteCopy.title}
         body={deleteCopy.body}
         confirmLabel={deleteCopy.confirmLabel}
+        confirmDestructive
         onCancel={() => {
           clearDeleteModalTimer();
           setDeleteModal(false);

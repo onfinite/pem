@@ -14,7 +14,7 @@ import { useAuth } from "@clerk/expo";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Archive, ArchiveRestore, Trash2, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { InteractionManager, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /** Full prep content — close returns to hub. */
@@ -172,16 +172,23 @@ export default function PrepDetailScreen() {
     setDeleteModalVisible(true);
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     setDeleteModalVisible(false);
     pemSelection();
-    try {
-      await deletePrep(prep.id);
-      scheduleHomeNavigationIntent("ready");
-      router.replace("/home");
-    } catch {
-      /* refresh on next visit */
-    }
+    const prepId = prep.id;
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => {
+        void (async () => {
+          try {
+            await deletePrep(prepId);
+            scheduleHomeNavigationIntent("ready");
+            router.replace("/home");
+          } catch {
+            /* refresh on next visit */
+          }
+        })();
+      }, 48);
+    });
   };
 
   const onRetry = async () => {
@@ -271,7 +278,7 @@ export default function PrepDetailScreen() {
                 },
               ]}
             >
-              <Trash2 size={22} stroke={colors.textSecondary} strokeWidth={2} />
+              <Trash2 size={22} stroke={colors.error} strokeWidth={2} />
             </Pressable>
           ) : null}
           {!canUnarchive && !canArchive && !canDelete ? <View style={styles.headerCtrl} /> : null}
@@ -294,6 +301,7 @@ export default function PrepDetailScreen() {
         title="Delete this prep?"
         body="This can't be undone. Pem will remove it from your hub and stop any in-progress work for this prep."
         confirmLabel="Delete"
+        confirmDestructive
         onCancel={() => setDeleteModalVisible(false)}
         onConfirm={() => {
           void confirmDelete();
@@ -334,19 +342,7 @@ export default function PrepDetailScreen() {
             <PemButton onPress={() => void onRetry()}>Retry</PemButton>
           )
         ) : null}
-        <PrepDetailBody
-          prep={prep}
-          onPrepRefresh={async (row) => {
-            if (!id) return;
-            if (row) {
-              upsertPrepRow(row);
-              setPrep(apiPrepToPrep(row));
-              return;
-            }
-            const p = await fetchPrepById(id);
-            if (p) setPrep(p);
-          }}
-        />
+        <PrepDetailBody prep={prep} />
       </ScrollView>
     </View>
   );

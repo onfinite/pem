@@ -10,6 +10,8 @@ export type PemConfirmModalProps = {
   title: string;
   body: string;
   confirmLabel: string;
+  /** Red destructive confirm (delete, irreversible actions). */
+  confirmDestructive?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 };
@@ -22,6 +24,7 @@ export default function PemConfirmModal({
   title,
   body,
   confirmLabel,
+  confirmDestructive = false,
   onConfirm,
   onCancel,
 }: PemConfirmModalProps) {
@@ -61,6 +64,7 @@ export default function PemConfirmModal({
               Cancel
             </PemButton>
             <PemButton
+              variant={confirmDestructive ? "destructive" : "primary"}
               onPress={() => {
                 void onConfirm();
               }}

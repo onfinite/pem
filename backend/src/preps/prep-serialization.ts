@@ -29,6 +29,7 @@ export function serializePrepForApi(p: PrepRow): Record<string, unknown> {
     ready_at: p.readyAt?.toISOString?.() ?? p.readyAt ?? null,
     archived_at: p.archivedAt?.toISOString?.() ?? p.archivedAt ?? null,
     opened_at: p.openedAt?.toISOString?.() ?? p.openedAt ?? null,
+    starred_at: p.starredAt?.toISOString?.() ?? p.starredAt ?? null,
     bundle_type: readContextString(ctx, 'bundle_type'),
     bundle_detection_reason: readContextString(ctx, 'bundle_detection_reason'),
     display_emoji: p.displayEmoji ?? null,

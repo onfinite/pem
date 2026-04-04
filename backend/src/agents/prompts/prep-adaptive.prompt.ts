@@ -44,9 +44,12 @@ One punchy line: "Best overall: …" or "Pem's pick: …" — must follow from a
 ## buyingGuide
 1–2 sentences of honest buying advice, or "" if nothing additive.
 
-## products (1–3 rows)
+## products (1–10 rows) — e-commerce style
+- **Rows 1–3 (hero):** Best picks — full detail: \`why\`, \`pros\`/\`cons\` when helpful, \`badge\` when justified.
+- **Rows 4–10 (optional):** Up to **7** more **distinct** products from the trace — “browse more” tiles: shorter \`why\` or "", empty \`pros\`/\`cons\` OK; **name**, **price**, **url**, **store**, **image**, **rating** must still come from agent data only. **Never** duplicate URLs or pad with fake rows.
 - Real products only — names, prices, URLs, images from the agent output **only**. If the agent lacked an image URL, use "" for image.
-- **Minimum count:** If \`google_shopping\` **or** \`amazon_search\` in the agent trace has **2+ rows** with \`link\` + \`title\`, you **must** output **2 or 3** \`products\` rows (never just one). If both arrays combined have 3+ viable rows, output **3**. Only output a single product when the trace truly has **one** usable retailer row.
+- **Minimum (hero):** If \`google_shopping\` **or** \`amazon_search\` has **2+** viable rows, output **at least 2** products in positions 1–3. If the trace has only **one** usable row, output a single product total.
+- **Target:** When many viable rows exist, aim for **3 hero + more** (up to **10** total) so the app shows a main carousel and a compact grid below.
 - **Never** use **news, TV, or magazine sites** as **url** (e.g. today.com, nbcnews.com, cnn.com, forbes.com, wired.com) — those are articles, not checkout pages. If the only link in the trace is editorial, take product rows from \`google_shopping\` / \`amazon_search\` instead.
 - **Pick offers** — **prefer major retailers** in this order: Amazon, Walmart, Target, Best Buy, Costco, Home Depot, Lowe's, Wayfair, then other well-known stores. Use \`amazon_search\` for Amazon-native links and \`google_shopping\` for mixed merchants; **do not** collapse everything into one affiliate blog pick.
 - **url** must be a **direct retailer product page** where someone can add-to-cart or buy (e.g. amazon.com/dp/…, target.com/p/…, walmart.com/ip/…, bestbuy.com/site/…, brand.com product URL).

@@ -5,10 +5,12 @@ import PemText from "@/components/ui/PemText";
 import { useInboxShell } from "@/constants/shellTokens";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
+import { INBOX_ROW_PAD_H } from "@/components/sections/home-sections/homeLayout";
 import { formatRelativeHubTime } from "@/lib/formatRelativeHubTime";
 import { prepListAccentFromIntent, prepListIconFromIntent } from "@/components/shell/prepTypeIcon";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { Check, Star } from "lucide-react-native";
 
 type Mode = "ready" | "prepping" | "archived";
 
@@ -18,17 +20,37 @@ type Props = {
   isLast: boolean;
   onOpen: () => void;
   onRetry?: (id: string) => Promise<void>;
+  /** Hub multi-select — tap toggles; long-press enters selection. */
+  selectionMode?: boolean;
+  selected?: boolean;
+  onLongPress?: () => void;
+  /** Gmail-style star; hidden in selection mode. */
+  starred?: boolean;
+  onStarPress?: () => void;
 };
 
 const ICON_WELL = 36;
-const ROW_PAD_H = space[5];
+const CHECK_COL = 28;
+const ROW_PAD_H = INBOX_ROW_PAD_H;
 
 /**
- * Gmail-style inbox row: hairline separator, bold when unread, amber strip when prepping.
+ * Gmail-style inbox row: hairline separator, bold when unread on Ready.
+ * Prepping rows match Ready styling plus a trailing spinner; hub does not open detail until ready.
  */
-export default function PrepInboxRow({ prep, mode, isLast, onOpen, onRetry }: Props) {
+export default function PrepInboxRow({
+  prep,
+  mode,
+  isLast,
+  onOpen,
+  onRetry,
+  selectionMode = false,
+  selected = false,
+  onLongPress,
+  starred = false,
+  onStarPress,
+}: Props) {
   const s = useInboxShell();
-  const { resolved } = useTheme();
+  const { colors, resolved } = useTheme();
   const accent = prepListAccentFromIntent(prep.intent ?? null, prep.kind, resolved);
   const isPrepping = mode === "prepping";
   const isArchived = mode === "archived";
@@ -44,22 +66,45 @@ export default function PrepInboxRow({ prep, mode, isLast, onOpen, onRetry }: Pr
       : "Pem is working on this…"
     : prep.summary;
 
+  const rowTapActive = !isPrepping || selectionMode;
+  const sepMarginLeft =
+    ROW_PAD_H + (selectionMode ? CHECK_COL + space[3] : 0) + ICON_WELL + space[4];
+
   return (
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${prep.title}. ${prep.summary}`}
+        accessibilityLabel={
+          isPrepping && !selectionMode
+            ? `${prep.title}. ${teaser}. Opens when ready.`
+            : `${prep.title}. ${prep.summary}`
+        }
+        accessibilityState={{ selected: selectionMode ? selected : undefined }}
         onPress={onOpen}
+        onLongPress={onLongPress}
+        delayLongPress={400}
+        android_ripple={rowTapActive ? undefined : null}
         style={({ pressed }) => [
           styles.row,
           {
-            backgroundColor: isPrepping ? s.rowPreppingBg : s.bg,
-            opacity: isArchived ? 0.6 : pressed ? 0.92 : 1,
+            backgroundColor: s.bg,
+            opacity:
+              isArchived ? 0.82 : rowTapActive && pressed ? 0.94 : 1,
           },
         ]}
       >
-        {isPrepping && !failed ? (
-          <View style={[styles.strip, { backgroundColor: s.amber }]} />
+        {selectionMode ? (
+          <View
+            style={[
+              styles.checkWell,
+              {
+                borderColor: selected ? s.amber : s.border,
+                backgroundColor: selected ? s.amber : "transparent",
+              },
+            ]}
+          >
+            {selected ? <Check size={16} color={colors.onPrimary} strokeWidth={3} /> : null}
+          </View>
         ) : null}
 
         <View style={[styles.iconWell, { backgroundColor: accent.well }]}>
@@ -72,8 +117,11 @@ export default function PrepInboxRow({ prep, mode, isLast, onOpen, onRetry }: Pr
               numberOfLines={1}
               style={[
                 styles.title,
-                { color: unread ? s.textPrimary : s.textSecondary },
-                unread && { fontFamily: fontFamily.sans.bold },
+                {
+                  color:
+                    isPrepping ? s.textSecondary : unread ? s.textPrimary : s.textSecondary,
+                },
+                unread && !isPrepping && { fontFamily: fontFamily.sans.bold },
               ]}
             >
               {prep.title}
@@ -97,15 +145,14 @@ export default function PrepInboxRow({ prep, mode, isLast, onOpen, onRetry }: Pr
               style={[
                 styles.teaser,
                 {
-                  color: isPrepping && !failed ? s.amber : s.textSecondary,
-                  fontFamily:
-                    isPrepping && !failed ? fontFamily.sans.medium : fontFamily.sans.regular,
+                  color: s.textSecondary,
+                  fontFamily: fontFamily.sans.regular,
                 },
               ]}
             >
               {teaser}
             </PemText>
-            {isPrepping && failed && onRetry ? (
+            {isPrepping && failed && onRetry && !selectionMode ? (
               retrying ? (
                 <PemLoadingIndicator placement="bare" size="small" />
               ) : (
@@ -126,16 +173,32 @@ export default function PrepInboxRow({ prep, mode, isLast, onOpen, onRetry }: Pr
           </View>
         </View>
 
-        {unread ? <View style={[styles.dot, { backgroundColor: s.amber }]} /> : null}
+        {!selectionMode && onStarPress ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={starred ? "Remove star" : "Star prep"}
+            hitSlop={8}
+            onPress={() => {
+              onStarPress();
+            }}
+            style={({ pressed }) => [styles.starHit, { opacity: pressed ? 0.75 : 1 }]}
+          >
+            <Star
+              size={22}
+              color={starred ? s.amber : s.textTertiary}
+              fill={starred ? s.amber : "transparent"}
+              strokeWidth={2}
+            />
+          </Pressable>
+        ) : null}
+
+        {unread && !selectionMode ? (
+          <View style={[styles.dot, { backgroundColor: s.amber }]} />
+        ) : null}
       </Pressable>
 
       {!isLast ? (
-        <View
-          style={[
-            styles.sep,
-            { backgroundColor: s.border, marginLeft: ROW_PAD_H + ICON_WELL + space[4] },
-          ]}
-        />
+        <View style={[styles.sep, { backgroundColor: s.border, marginLeft: sepMarginLeft }]} />
       ) : null}
     </View>
   );
@@ -151,12 +214,13 @@ const styles = StyleSheet.create({
     gap: space[4],
     minHeight: 82,
   },
-  strip: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 2,
+  checkWell: {
+    width: CHECK_COL,
+    height: CHECK_COL,
+    borderRadius: CHECK_COL / 2,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
   iconWell: {
     width: ICON_WELL,
@@ -197,6 +261,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSize.sm,
     lineHeight: lh(fontSize.sm, lineHeight.snug),
+  },
+  starHit: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   dot: {
     width: 8,

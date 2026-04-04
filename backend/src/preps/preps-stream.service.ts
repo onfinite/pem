@@ -5,7 +5,7 @@ import {
   NotFoundException,
   type MessageEvent,
 } from '@nestjs/common';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { Observable } from 'rxjs';
 
 import { DRIZZLE } from '../database/database.constants';
@@ -49,11 +49,7 @@ export class PrepsStreamService {
             .select()
             .from(prepsTable)
             .where(
-              and(
-                eq(prepsTable.dumpId, dumpId),
-                eq(prepsTable.userId, userId),
-                isNull(prepsTable.parentPrepId),
-              ),
+              and(eq(prepsTable.dumpId, dumpId), eq(prepsTable.userId, userId)),
             )
             .orderBy(desc(prepsTable.createdAt), desc(prepsTable.id));
 

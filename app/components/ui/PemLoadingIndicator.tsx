@@ -64,7 +64,16 @@ export default function PemLoadingIndicator({
     case "hubFooter":
       return <View style={styles.hubFooter}>{indicator}</View>;
     case "searchEmpty":
-      return <View style={styles.searchEmpty}>{indicator}</View>;
+      return (
+        <View style={styles.searchEmpty}>
+          <ActivityIndicator
+            accessibilityLabel={accessibilityLabel}
+            color={colors.pemAmber}
+            size="large"
+            {...rest}
+          />
+        </View>
+      );
     case "headerInline":
       return <View style={styles.headerInline}>{indicator}</View>;
     case "sheetCompact":
@@ -100,9 +109,12 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
   searchEmpty: {
-    marginVertical: space[6],
+    flexGrow: 1,
+    minHeight: 280,
+    justifyContent: "center",
     alignItems: "center",
     alignSelf: "stretch",
+    paddingVertical: space[8],
   },
   headerInline: {
     alignItems: "center",

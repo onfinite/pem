@@ -1,8 +1,4 @@
-import {
-  INBOX_DUMP_FAB_SIZE,
-  INBOX_FAB_GAP_ABOVE_TAB,
-  INBOX_TAB_BAR_FIXED_HEIGHT,
-} from "@/components/sections/home-sections/homeLayout";
+import { INBOX_DUMP_FAB_SIZE, INBOX_FAB_GAP_ABOVE_TAB } from "@/components/sections/home-sections/homeLayout";
 import { useInboxShell } from "@/constants/shellTokens";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import { router } from "expo-router";
@@ -10,13 +6,12 @@ import { Plus } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** Primary capture — sits above the bottom tab strip. */
+/** Primary capture — bottom-right above the home indicator (hub uses drawer nav, no tab strip). */
 export default function InboxDumpFab() {
   const s = useInboxShell();
   const insets = useSafeAreaInsets();
 
-  const bottom =
-    INBOX_TAB_BAR_FIXED_HEIGHT + insets.bottom + INBOX_FAB_GAP_ABOVE_TAB;
+  const bottom = insets.bottom + INBOX_FAB_GAP_ABOVE_TAB;
 
   return (
     <Pressable

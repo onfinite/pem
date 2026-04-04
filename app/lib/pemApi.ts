@@ -46,6 +46,8 @@ export type ApiPrep = {
   archived_at: string | null;
   /** Set when user opened detail; omitted/null = unread (ready tab). */
   opened_at?: string | null;
+  /** User starred; null/omitted = not starred. */
+  starred_at?: string | null;
   bundle_type?: string | null;
   display_emoji?: string | null;
   bundle_detection_reason?: string | null;
@@ -366,6 +368,7 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     explainCard: adaptive.explainCard,
     summaryCard: adaptive.summaryCard,
     ideaCards: adaptive.ideaCards,
+    starred: Boolean(row.starred_at),
   };
 }
 
@@ -405,6 +408,8 @@ export type ListPrepsPageParams = {
   cursor?: string | null;
   /** Scope to one dump (post-dump screen); use with limit. */
   dumpId?: string;
+  /** Starred preps only (any status); omit `status` when true. */
+  starredOnly?: boolean;
 };
 
 export async function listPrepsPage(
@@ -413,7 +418,8 @@ export async function listPrepsPage(
 ): Promise<ListPrepsPageResponse> {
   const q = new URLSearchParams();
   q.set("limit", String(params.limit));
-  if (params.status) q.set("status", params.status);
+  if (params.starredOnly) q.set("starred", "1");
+  else if (params.status) q.set("status", params.status);
   if (params.cursor) q.set("cursor", params.cursor);
   if (params.dumpId) q.set("dumpId", params.dumpId);
   return apiFetch(`/preps?${q.toString()}`, { method: "GET", getToken });
@@ -423,6 +429,7 @@ export type PrepCountsResponse = {
   ready: number;
   preparing: number;
   archived: number;
+  starred: number;
 };
 
 /** Exact totals per hub tab (separate from paginated list). */
@@ -437,6 +444,7 @@ export type SearchPrepsParams = {
   status: "ready" | "prepping" | "archived";
   limit: number;
   cursor?: string | null;
+  starredOnly?: boolean;
 };
 
 export async function searchPrepsPage(
@@ -448,19 +456,19 @@ export async function searchPrepsPage(
   q.set("status", params.status);
   q.set("limit", String(params.limit));
   if (params.cursor) q.set("cursor", params.cursor);
+  if (params.starredOnly) q.set("starred", "1");
   return apiFetch(`/preps/search?${q.toString()}`, { method: "GET", getToken });
 }
 
-/** Append Serp shopping rows (max 25 on prep). */
-export async function appendShoppingMore(
+export async function starPrepApi(
   getToken: () => Promise<string | null>,
-  prepId: string,
-  body: { query?: string; batchSize?: number },
+  id: string,
+  starred: boolean,
 ): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(prepId)}/shopping/more`, {
-    method: "POST",
+  return apiFetch(`/preps/${encodeURIComponent(id)}/star`, {
+    method: "PATCH",
     getToken,
-    body: JSON.stringify(body),
+    body: JSON.stringify({ starred }),
   });
 }
 

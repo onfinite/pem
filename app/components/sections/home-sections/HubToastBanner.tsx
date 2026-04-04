@@ -1,5 +1,8 @@
 import PemText from "@/components/ui/PemText";
-import { INBOX_TAB_BAR_FIXED_HEIGHT } from "@/components/sections/home-sections/homeLayout";
+import {
+  INBOX_DUMP_FAB_SIZE,
+  INBOX_FAB_GAP_ABOVE_TAB,
+} from "@/components/sections/home-sections/homeLayout";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
@@ -15,7 +18,7 @@ const AUTO_DISMISS_WITH_UNDO_MS = 5200;
 
 /**
  * Global prep hub snack — overlays any screen inside `PrepHubProvider` (home, prep detail, etc.).
- * Sits above the inbox tab bar on home; uses safe-area bottom elsewhere.
+ * Sits above the dump FAB on home; uses safe-area bottom elsewhere.
  */
 export default function HubToastBanner() {
   const { colors } = useTheme();
@@ -37,7 +40,9 @@ export default function HubToastBanner() {
 
   const bottomPad =
     insets.bottom +
-    (reserveForInboxTabBar ? INBOX_TAB_BAR_FIXED_HEIGHT + space[2] : space[3]);
+    (reserveForInboxTabBar
+      ? INBOX_DUMP_FAB_SIZE + INBOX_FAB_GAP_ABOVE_TAB + space[4]
+      : space[3]);
 
   return (
     <View style={[styles.wrap, { bottom: bottomPad }]} pointerEvents="box-none">

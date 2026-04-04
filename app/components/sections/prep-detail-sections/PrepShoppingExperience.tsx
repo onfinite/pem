@@ -1,17 +1,12 @@
 import PemMarkdown from "@/components/ui/PemMarkdown";
-import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemText from "@/components/ui/PemText";
-import PemButton from "@/components/ui/PemButton";
 import { useTheme } from "@/contexts/ThemeContext";
+import { SHOPPING_HERO_COUNT } from "@/constants/shopping";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import { SHOPPING_PRODUCTS_MAX } from "@/constants/shopping";
 import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
 import type { ShoppingCardPayload, ShoppingProduct } from "@/lib/adaptivePrep";
-import { appendShoppingMore, type ApiPrep } from "@/lib/pemApi";
 import { openExternalUrl } from "@/lib/openExternalUrl";
-import { useAuth } from "@clerk/expo";
 import { ExternalLink, ShoppingBag } from "lucide-react-native";
-import { useCallback, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -22,11 +17,9 @@ import {
 import PrepShareRow from "./PrepShareRow";
 
 type Props = {
-  prepId: string;
   data: ShoppingCardPayload;
   prepTitle: string;
   sharePlainText: string;
-  onPrepUpdated?: (row: ApiPrep) => Promise<void>;
 };
 
 function ratingLabel(r: number): string | null {
@@ -34,58 +27,41 @@ function ratingLabel(r: number): string | null {
   return `${r.toFixed(1)} ★`;
 }
 
-function ProductTile({
-  p,
-  compact,
-}: {
-  p: ShoppingProduct;
-  compact?: boolean;
-}) {
+function ProductTile({ p }: { p: ShoppingProduct }) {
   const { colors } = useTheme();
   return (
     <View
       style={[
-        compact ? styles.compactTile : styles.tile,
+        styles.tile,
         {
           backgroundColor: colors.cardBackground,
           borderColor: colors.borderMuted,
           ...Platform.select({
             ios: {
               shadowColor: "#1c1a16",
-              shadowOffset: { width: 0, height: compact ? 4 : 8 },
-              shadowOpacity: compact ? 0.05 : 0.08,
-              shadowRadius: compact ? 10 : 16,
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.08,
+              shadowRadius: 16,
             },
-            android: { elevation: compact ? 1 : 2 },
+            android: { elevation: 2 },
           }),
         },
       ]}
     >
-      {!compact ? (
-        <RemoteImageOrPlaceholder
-          uri={p.image.trim()}
-          style={[styles.tileImage, { backgroundColor: colors.secondarySurface }]}
-          placeholderStyle={{ backgroundColor: colors.secondarySurface }}
-        />
-      ) : (
-        <RemoteImageOrPlaceholder
-          uri={p.image.trim()}
-          style={[styles.compactImage, { backgroundColor: colors.secondarySurface }]}
-          placeholderStyle={{ backgroundColor: colors.secondarySurface }}
-        />
-      )}
-      <View style={[styles.tileBody, compact && styles.compactBody]}>
-        {p.badge.trim() && !compact ? (
+      <RemoteImageOrPlaceholder
+        uri={p.image.trim()}
+        style={[styles.tileImage, { backgroundColor: colors.secondarySurface }]}
+        placeholderStyle={{ backgroundColor: colors.secondarySurface }}
+      />
+      <View style={styles.tileBody}>
+        {p.badge.trim() ? (
           <View style={[styles.badge, { borderColor: colors.pemAmber }]}>
             <PemText variant="caption" style={[styles.badgeText, { color: colors.pemAmber }]}>
               {p.badge}
             </PemText>
           </View>
         ) : null}
-        <PemText
-          style={[compact ? styles.compactName : styles.tileName, { color: colors.textPrimary }]}
-          numberOfLines={compact ? 2 : 3}
-        >
+        <PemText style={[styles.tileName, { color: colors.textPrimary }]} numberOfLines={3}>
           {p.name}
         </PemText>
         {p.store.trim() ? (
@@ -103,14 +79,14 @@ function ProductTile({
             </PemText>
           ) : null}
         </View>
-        {!compact && p.why.trim() ? (
+        {p.why.trim() ? (
           <View style={styles.why}>
             <PemMarkdown variant="companion" selectable>
               {p.why}
             </PemMarkdown>
           </View>
         ) : null}
-        {!compact && (p.pros.length > 0 || p.cons.length > 0) && (
+        {(p.pros.length > 0 || p.cons.length > 0) && (
           <View style={styles.pc}>
             {p.pros.length > 0 ? (
               <PemText variant="caption" style={[styles.pcHead, { color: colors.textSecondary }]}>
@@ -158,37 +134,66 @@ function ProductTile({
   );
 }
 
-export default function PrepShoppingExperience({
-  prepId,
-  data,
-  prepTitle,
-  sharePlainText,
-  onPrepUpdated,
-}: Props) {
+/** Compact grid tile — PDP “related / more options” feel. */
+function ProductGridTile({ p }: { p: ShoppingProduct }) {
   const { colors } = useTheme();
-  const { getToken } = useAuth();
-  const getTokenRef = useRef(getToken);
-  getTokenRef.current = getToken;
-  const [loadingMore, setLoadingMore] = useState(false);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${p.name}, ${p.price}`}
+      onPress={() => (p.url.trim() ? void openExternalUrl(p.url) : undefined)}
+      style={({ pressed }) => [
+        styles.gridTile,
+        {
+          backgroundColor: colors.cardBackground,
+          borderColor: colors.borderMuted,
+          opacity: pressed ? 0.92 : 1,
+          ...Platform.select({
+            ios: {
+              shadowColor: "#1c1a16",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.06,
+              shadowRadius: 6,
+            },
+            android: { elevation: 1 },
+          }),
+        },
+      ]}
+    >
+      <RemoteImageOrPlaceholder
+        uri={p.image.trim()}
+        style={[styles.gridImage, { backgroundColor: colors.secondarySurface }]}
+        placeholderStyle={{ backgroundColor: colors.secondarySurface }}
+      />
+      <View style={styles.gridBody}>
+        <PemText numberOfLines={2} style={[styles.gridName, { color: colors.textPrimary }]}>
+          {p.name}
+        </PemText>
+        {p.store.trim() ? (
+          <PemText variant="caption" numberOfLines={1} style={{ color: colors.textTertiary }}>
+            {p.store}
+          </PemText>
+        ) : null}
+        <View style={styles.gridPriceRow}>
+          {p.price.trim() ? (
+            <PemText style={[styles.gridPrice, { color: colors.pemAmber }]}>{p.price}</PemText>
+          ) : null}
+          {ratingLabel(p.rating) ? (
+            <PemText variant="caption" style={{ color: colors.textSecondary }}>
+              {ratingLabel(p.rating)}
+            </PemText>
+          ) : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
 
-  const hero = data.products.slice(0, 3);
-  const morePicks = data.products.slice(3);
-  const canLoadMore = data.products.length < SHOPPING_PRODUCTS_MAX;
+export default function PrepShoppingExperience({ data, prepTitle, sharePlainText }: Props) {
+  const { colors } = useTheme();
 
-  const onLoadMore = useCallback(async () => {
-    if (loadingMore || !canLoadMore) return;
-    setLoadingMore(true);
-    try {
-      const row = await appendShoppingMore(() => getTokenRef.current(), prepId, {
-        batchSize: 6,
-      });
-      await onPrepUpdated?.(row);
-    } catch {
-      /* optional toast */
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [loadingMore, canLoadMore, prepId, onPrepUpdated]);
+  const hero = data.products.slice(0, SHOPPING_HERO_COUNT);
+  const morePicks = data.products.slice(SHOPPING_HERO_COUNT);
 
   return (
     <View style={styles.root}>
@@ -225,30 +230,20 @@ export default function PrepShoppingExperience({
       </ScrollView>
 
       {morePicks.length > 0 ? (
-        <View style={{ gap: space[2] }}>
+        <View style={styles.moreSection}>
           <PemText style={[styles.moreSectionTitle, { color: colors.textSecondary }]}>
-            More options
+            Similar picks
           </PemText>
-          <View style={{ gap: space[3] }}>
+          <PemText variant="caption" style={[styles.moreSectionHint, { color: colors.textTertiary }]}>
+            More options from the same search — tap to open the store page.
+          </PemText>
+          <View style={styles.moreGrid}>
             {morePicks.map((p, i) => (
-              <ProductTile key={`more-${p.name}-${p.url}-${i}`} p={p} compact />
+              <View key={`grid-${p.name}-${p.url}-${i}`} style={styles.moreGridCell}>
+                <ProductGridTile p={p} />
+              </View>
             ))}
           </View>
-        </View>
-      ) : null}
-
-      {canLoadMore ? (
-        <View style={{ gap: space[2] }}>
-          <PemText variant="caption" style={{ color: colors.textSecondary }}>
-            Load more from the web (same search as this prep; saved here, max {SHOPPING_PRODUCTS_MAX}).
-          </PemText>
-          {loadingMore ? (
-            <PemLoadingIndicator placement="listFooter" />
-          ) : (
-            <PemButton variant="secondary" onPress={() => void onLoadMore()}>
-              Load more picks
-            </PemButton>
-          )}
         </View>
       ) : null}
 
@@ -295,17 +290,62 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize["2xl"],
-    lineHeight: lh(fontSize["2xl"], lineHeight.snug),
+    fontSize: fontSize.xxl,
+    lineHeight: lh(fontSize.xxl, lineHeight.snug),
   },
   heroSub: {
     marginTop: space[1],
+  },
+  moreSection: {
+    gap: space[2],
   },
   moreSectionTitle: {
     fontFamily: fontFamily.sans.semibold,
     fontSize: fontSize.sm,
     letterSpacing: 0.2,
     textTransform: "uppercase",
+  },
+  moreSectionHint: {
+    marginTop: -space[1],
+  },
+  moreGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: space[3],
+  },
+  moreGridCell: {
+    width: "48%",
+  },
+  gridTile: {
+    borderRadius: radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+  },
+  gridImage: {
+    width: "100%",
+    aspectRatio: 1,
+  },
+  gridBody: {
+    padding: space[2],
+    gap: space[1],
+  },
+  gridName: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.sm,
+    lineHeight: lh(fontSize.sm, lineHeight.snug),
+    minHeight: 36,
+  },
+  gridPriceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space[2],
+    flexWrap: "wrap",
+  },
+  gridPrice: {
+    fontFamily: fontFamily.sans.bold,
+    fontSize: fontSize.sm,
   },
   hScroll: {
     gap: space[3],
@@ -318,29 +358,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
   },
-  compactTile: {
-    flexDirection: "row",
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: "hidden",
-    maxWidth: "100%",
-  },
   tileImage: {
     width: "100%",
     height: 140,
-  },
-  compactImage: {
-    width: 88,
-    height: 88,
   },
   tileBody: {
     padding: space[4],
     gap: space[2],
     flex: 1,
-  },
-  compactBody: {
-    padding: space[3],
-    minWidth: 0,
   },
   badge: {
     alignSelf: "flex-start",
@@ -356,11 +381,6 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.lg,
     lineHeight: lh(fontSize.lg, lineHeight.snug),
-  },
-  compactName: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.snug),
   },
   priceRow: {
     flexDirection: "row",

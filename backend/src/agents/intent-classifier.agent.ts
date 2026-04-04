@@ -8,6 +8,7 @@ import {
   type PrepIntent,
   intentClassificationSchema,
 } from './intents/prep-intent';
+import { adjustIntentForPlaceDiscovery } from './intents/place-intent-heuristics';
 import { buildIntentClassifyPrompt } from './prompts/intent-classify.prompt';
 
 @Injectable()
@@ -38,7 +39,7 @@ export class IntentClassifierAgent {
         prompt: buildIntentClassifyPrompt(trimmed),
       });
       if (output?.intent) {
-        return output.intent;
+        return adjustIntentForPlaceDiscovery(trimmed, output.intent);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

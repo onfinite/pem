@@ -12,12 +12,11 @@ import { openExternalUrl } from "@/lib/openExternalUrl";
 import type { PrepCanonicalSection } from "@/lib/prepSections";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
-import { AlertCircle, Check, Copy, Send, Zap } from "lucide-react-native";
+import { AlertCircle, Check, Copy, ExternalLink, Send, Zap } from "lucide-react-native";
 import { useCallback } from "react";
 import {
   Alert,
   Dimensions,
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -45,51 +44,36 @@ const COPY = {
   followUpHint: "Go deeper with Pem",
 } as const;
 
-function SourceChips({
-  sources,
-  max = 3,
-}: {
-  sources: PrepSourceChip[];
-  max?: number;
-}) {
+/** Vertical link list — reading flow (research / gist), not favicon chips. */
+function PlainSourceList({ sources, max = 12 }: { sources: PrepSourceChip[]; max?: number }) {
   const { colors } = useTheme();
   const shown = sources.slice(0, max);
-  const more = sources.length - shown.length;
+  if (shown.length === 0) return null;
   return (
-    <View style={styles.chipRow}>
+    <View style={styles.plainSources}>
+      <PemText style={[styles.plainSourcesLabel, { color: colors.textSecondary }]}>Sources</PemText>
       {shown.map((s, i) => (
         <Pressable
           key={`${s.url}-${i}`}
           accessibilityRole="link"
           onPress={() => void openExternalUrl(s.url)}
-          style={({ pressed }) => [
-            styles.sourceChip,
-            {
-              backgroundColor: colors.secondarySurface,
-              borderColor: colors.borderMuted,
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
+          style={({ pressed }) => [styles.plainSourceRow, { opacity: pressed ? 0.78 : 1 }]}
         >
-          <Image
-            source={{
-              uri: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(s.domain)}&sz=32`,
-            }}
-            style={styles.favicon}
-            accessibilityIgnoresInvertColors
-          />
-          <PemText variant="caption" numberOfLines={1} style={{ color: colors.textSecondary, maxWidth: 120 }}>
-            {s.domain || s.title}
+          <ExternalLink size={15} stroke={colors.textTertiary} strokeWidth={2} />
+          <PemText
+            numberOfLines={3}
+            style={[
+              styles.plainSourceText,
+              {
+                color: colors.textPrimary,
+                textDecorationColor: colors.borderMuted,
+              },
+            ]}
+          >
+            {s.title?.trim() || s.domain || s.url}
           </PemText>
         </Pressable>
       ))}
-      {more > 0 ? (
-        <View style={[styles.sourceChip, { backgroundColor: colors.secondarySurface, borderColor: colors.borderMuted }]}>
-          <PemText variant="caption" style={{ color: colors.textSecondary }}>
-            +{more} more
-          </PemText>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -118,18 +102,18 @@ function ResearchLikeSection({
   const { colors } = useTheme();
   const paras = narrative.split(/\n\n+/).filter(Boolean);
   return (
-    <View style={styles.sectionGap}>
-      <PemText style={[styles.sectionHeader, { color: colors.textPrimary }]}>{title}</PemText>
+    <View style={styles.readingBlock}>
+      <PemText style={[styles.readingTitle, { color: colors.textPrimary }]}>{title}</PemText>
       {paras.map((p, i) => (
         <PemMarkdown key={i} variant="body" selectable style={{ color: colors.textPrimary }}>
           {p}
         </PemMarkdown>
       ))}
       {keyPoints.length > 0 ? (
-        <View style={styles.kpList}>
+        <View style={styles.kpListLoose}>
           {keyPoints.map((k, i) => (
-            <View key={i} style={styles.kpRow}>
-              <View style={[styles.amberDot, { backgroundColor: colors.pemAmber }]} />
+            <View key={i} style={styles.kpRowLoose}>
+              <PemText style={[styles.kpBullet, { color: colors.textTertiary }]}>•</PemText>
               <PemText selectable style={[styles.kpText, { color: colors.textPrimary }]}>
                 {k}
               </PemText>
@@ -137,7 +121,7 @@ function ResearchLikeSection({
           ))}
         </View>
       ) : null}
-      {sources.length > 0 ? <SourceChips sources={sources} max={3} /> : null}
+      {sources.length > 0 ? <PlainSourceList sources={sources} /> : null}
     </View>
   );
 }
@@ -574,11 +558,7 @@ function FollowUpSection({ question, prefill }: { question: string; prefill?: st
 
 function StandaloneSources({ sources }: { sources: PrepSourceChip[] }) {
   if (!sources.length) return null;
-  return (
-    <View style={styles.sectionGap}>
-      <SourceChips sources={sources} max={4} />
-    </View>
-  );
+  return <PlainSourceList sources={sources} max={16} />;
 }
 
 type Props = {
@@ -679,6 +659,15 @@ const styles = StyleSheet.create({
   sectionGap: {
     gap: space[4],
   },
+  /** Research / search narrative blocks — top-to-bottom reading, no card chrome. */
+  readingBlock: {
+    gap: space[5],
+  },
+  readingTitle: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize["2xl"],
+    lineHeight: lh(fontSize["2xl"], lineHeight.snug),
+  },
   sectionHeader: {
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.xl,
@@ -691,16 +680,51 @@ const styles = StyleSheet.create({
   kpList: {
     gap: space[2],
   },
+  kpListLoose: {
+    gap: space[3],
+  },
   kpRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: space[2],
+  },
+  kpRowLoose: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: space[3],
+  },
+  kpBullet: {
+    fontSize: fontSize.md,
+    lineHeight: lh(fontSize.md, lineHeight.relaxed),
+    marginTop: 1,
   },
   amberDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     marginTop: 7,
+  },
+  plainSources: {
+    gap: space[3],
+    marginTop: space[1],
+  },
+  plainSourcesLabel: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.xs,
+    letterSpacing: 0.35,
+    textTransform: "uppercase",
+  },
+  plainSourceRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: space[3],
+  },
+  plainSourceText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
+    fontFamily: fontFamily.sans.regular,
+    textDecorationLine: "underline",
   },
   kpText: {
     flex: 1,
@@ -720,10 +744,6 @@ const styles = StyleSheet.create({
     paddingVertical: space[2],
     borderRadius: radii.full,
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  favicon: {
-    width: 14,
-    height: 14,
   },
   prosConsRow: {
     flexDirection: "row",

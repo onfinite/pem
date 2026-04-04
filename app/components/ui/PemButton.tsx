@@ -16,7 +16,12 @@ import {
   ViewStyle,
 } from "react-native";
 
-export const pemButtonVariants = ["primary", "secondary", "ghost"] as const;
+export const pemButtonVariants = [
+  "primary",
+  "secondary",
+  "ghost",
+  "destructive",
+] as const;
 export type PemButtonVariant = (typeof pemButtonVariants)[number];
 export const pemButtonSizes = ["sm", "md", "lg"] as const;
 export type PemButtonSize = (typeof pemButtonSizes)[number];
@@ -94,21 +99,27 @@ export default function PemButton({
           pressed: { opacity: 0.88 },
           labelColor: colors.onPrimary,
         }
-      : variant === "secondary"
+      : variant === "destructive"
         ? {
-            container: {
-              backgroundColor: colors.secondarySurface,
-              borderWidth: 1,
-              borderColor: colors.border,
-            },
-            pressed: { opacity: 0.92 },
-            labelColor: colors.textPrimary,
+            container: { backgroundColor: colors.error },
+            pressed: { opacity: 0.88 },
+            labelColor: colors.onPrimary,
           }
-        : {
-            container: { backgroundColor: "transparent" },
-            pressed: { opacity: 0.65 },
-            labelColor: colors.pemAmber,
-          };
+        : variant === "secondary"
+          ? {
+              container: {
+                backgroundColor: colors.secondarySurface,
+                borderWidth: 1,
+                borderColor: colors.border,
+              },
+              pressed: { opacity: 0.92 },
+              labelColor: colors.textPrimary,
+            }
+          : {
+              container: { backgroundColor: "transparent" },
+              pressed: { opacity: 0.65 },
+              labelColor: colors.pemAmber,
+            };
 
   const content =
     typeof children === "string" || typeof children === "number" ? (

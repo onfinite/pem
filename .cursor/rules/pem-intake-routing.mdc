@@ -37,7 +37,7 @@ When a **thought** arrives (after split), classify it into **exactly one** of th
 - **TASK_UNCLEAR** — too vague; need a clarifying question before proceeding
 - **SUMMARIZE** — “summarize this article / doc / contract / thread for me” — **input is a URL or pasted text**; task is compression and extraction, **not** open-ended web search
 - **FIND_PERSON** — “find the LinkedIn of the CTO of Stripe”, “who’s the head of sales at X” — **people discovery** (profiles, roles, contact paths)
-- **FIND_PLACE** — “best dentist near me”, “coworking in Oakland under $200/mo” — **local / venue / service** discovery (often needs location in context)
+- **FIND_PLACE** — **local / venue / service** discovery: “best dentist near me”, “coworking in Oakland under $200/mo”, “top restaurants in Austin”, “find coffee near work”, “search date night spots” — **verbs** (find/search/look up/best/top) do **not** imply RESEARCH; use FIND_PLACE whenever the user wants **concrete places** (maps, ratings), not an industry report
 - **SCHEDULE_PREP** — “I have a meeting with X investor tomorrow, prep me” — **brief someone before a meeting**: who they are, company, talking points, risks (search + synthesize)
 - **CONTENT_IDE** — “ideas for my next LinkedIn post about AI”, “what should I write about this week” — **creative angles**, hooks, outlines (minimal or no search unless trends matter)
 - **EXPLAIN** — “how do S-corps work?”, “what is a cap table?” — **conceptual clarity**, **no web search required** unless the user asks for “latest rules”; simpler and tighter than RESEARCH

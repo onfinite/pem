@@ -9,6 +9,7 @@ import {
   Mail,
   Scale,
   Search,
+  Star,
   type LucideIcon,
 } from "lucide-react-native";
 import type {
@@ -106,6 +107,8 @@ export type Prep = {
   intent?: string;
   /** Ready prep not yet opened in detail (inbox-style). */
   unread?: boolean;
+  /** User starred (API `starred_at`). */
+  starred?: boolean;
   /** Composable sections (new API). When set, detail renders blocks in order. */
   blocks?: PrepResultBlock[];
   /** Adaptive layout — `SHOPPING_CARD` from API `result.schema`. */
@@ -270,12 +273,13 @@ export function getPrepById(id: string): Prep | undefined {
   return ALL_PREPS.find((p) => p.id === id);
 }
 
-export type PrepTab = "ready" | "prepping" | "archived";
+export type PrepTab = "ready" | "prepping" | "archived" | "starred";
 
 export const TABS: { id: PrepTab; label: string; Icon: LucideIcon }[] = [
   { id: "ready", label: "For you", Icon: CheckCircle2 },
   { id: "prepping", label: "In progress", Icon: Loader2 },
   { id: "archived", label: "Archived", Icon: Archive },
+  { id: "starred", label: "Starred", Icon: Star },
 ];
 
 /** In-flight preps on the Prepping tab — set `SHOW_PREPPING_HUB_ROWS` false to preview empty state. */

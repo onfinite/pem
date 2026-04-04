@@ -1,5 +1,4 @@
 import {
-  boolean,
   index,
   json,
   pgTable,
@@ -43,12 +42,6 @@ export const prepsTable = pgTable(
     dumpId: uuid('dump_id')
       .notNull()
       .references(() => dumpsTable.id, { onDelete: 'cascade' }),
-    /**
-     * Legacy self-FK: child row points at parent. Hub lists only `parent_prep_id` null; new pipeline does not create children.
-     */
-    parentPrepId: uuid('parent_prep_id'),
-    /** Legacy; new preps are always false. */
-    isBundle: boolean('is_bundle').notNull().default(false),
     /** Optional emoji prefix for hub row. */
     displayEmoji: text('display_emoji'),
     /** Short card label — kept for backward compatibility; prefer `thought`. */
@@ -74,12 +67,14 @@ export const prepsTable = pgTable(
     archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
     /** First time user opened prep detail; null = unread (ready preps). */
     openedAt: timestamp('opened_at', { withTimezone: true, mode: 'date' }),
+    /** User starred for hub; null = not starred. */
+    starredAt: timestamp('starred_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     index('ix_preps_user_id').on(t.userId),
     index('ix_preps_dump_id').on(t.dumpId),
     index('ix_preps_status').on(t.status),
-    index('ix_preps_parent_prep_id').on(t.parentPrepId),
+    index('ix_preps_user_starred').on(t.userId, t.starredAt),
   ],
 );
 

@@ -4,7 +4,6 @@ import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
-import type { ApiPrep } from "@/lib/pemApi";
 import { isLikelyBlockedRemoteImageUrl, normalizeRemoteImageUri } from "@/lib/remoteImageUrl";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { ChevronRight, ExternalLink, Gavel, GitCompare, Scale, StickyNote, User } from "lucide-react-native";
@@ -27,19 +26,34 @@ type Props = {
   prep: Prep;
   prepTitle: string;
   sharePlainText: string;
-  onPrepRefresh?: (row?: ApiPrep) => Promise<void>;
 };
 
 function Hero({
   kicker,
   title,
   sub,
+  variant = "card",
 }: {
   kicker: string;
   title: string;
   sub?: string;
+  /** `plain` — editorial top matter, no card chrome (research reads like an article). */
+  variant?: "card" | "plain";
 }) {
   const { colors } = useTheme();
+  if (variant === "plain") {
+    return (
+      <View style={styles.heroPlain}>
+        <PemText style={[styles.heroKicker, { color: colors.textSecondary }]}>{kicker}</PemText>
+        <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>{title}</PemText>
+        {sub?.trim() ? (
+          <PemText variant="caption" style={[styles.heroSub, { color: colors.textTertiary }]}>
+            {sub}
+          </PemText>
+        ) : null}
+      </View>
+    );
+  }
   return (
     <View
       style={[
@@ -163,28 +177,35 @@ function ComparisonSwipe({ prep }: { prep: NonNullable<Prep["comparisonCard"]> }
 function ResearchArticle({ prep }: { prep: NonNullable<Prep["researchCard"]> }) {
   const { colors } = useTheme();
   return (
-    <View style={styles.root}>
-      <Hero kicker="Research" title={prep.topic || "Findings"} sub={prep.lastUpdated} />
-      <View style={[styles.article, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
+    <View style={styles.researchArticleRoot}>
+      <Hero variant="plain" kicker="Research" title={prep.topic || "Findings"} sub={prep.lastUpdated} />
+      <View style={styles.researchLead}>
         <PemMarkdown variant="body" selectable>
           {prep.executiveSummary}
         </PemMarkdown>
       </View>
-      <View style={styles.facts}>
-        <PemText variant="caption" style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-          Key facts
-        </PemText>
-        {prep.keyFacts.map((f, i) => (
-          <View key={i} style={[styles.factRow, { borderLeftColor: colors.pemAmber }]}>
-            <PemText style={{ color: colors.textPrimary }}>{f}</PemText>
+      {prep.keyFacts.length > 0 ? (
+        <View style={styles.researchFacts}>
+          <PemText style={[styles.researchLabel, { color: colors.textSecondary }]}>Key facts</PemText>
+          <View style={styles.researchFactList}>
+            {prep.keyFacts.map((f, i) => (
+              <View key={i} style={styles.researchFactLine}>
+                <PemText style={[styles.researchFactBullet, { color: colors.textTertiary }]}>•</PemText>
+                <PemText selectable style={[styles.researchFactText, { color: colors.textPrimary }]}>
+                  {f}
+                </PemText>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
+        </View>
+      ) : null}
       {(prep.sections ?? []).map((s, i) =>
         s.title.trim() || s.content.trim() ? (
-          <View key={i} style={styles.section}>
+          <View key={i} style={styles.researchSection}>
             {s.title.trim() ? (
-              <PemText style={[styles.sectionTitle, { color: colors.textPrimary }]}>{s.title}</PemText>
+              <PemText style={[styles.researchSectionHeading, { color: colors.textPrimary }]}>
+                {s.title}
+              </PemText>
             ) : null}
             <PemMarkdown variant="body" selectable>
               {s.content}
@@ -193,22 +214,31 @@ function ResearchArticle({ prep }: { prep: NonNullable<Prep["researchCard"]> }) 
         ) : null,
       )}
       {prep.sources.length > 0 ? (
-        <View style={styles.sources}>
-          <PemText variant="caption" style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-            Sources
-          </PemText>
-          {prep.sources.map((s, i) => (
-            <Pressable
-              key={i}
-              onPress={() => void openExternalUrl(s.url)}
-              style={({ pressed }) => [styles.sourceRow, { opacity: pressed ? 0.85 : 1 }]}
-            >
-              <ExternalLink size={14} stroke={colors.pemAmber} strokeWidth={2} />
-              <PemText style={[styles.sourceLink, { color: colors.pemAmber }]} numberOfLines={2}>
-                {s.title || s.url}
-              </PemText>
-            </Pressable>
-          ))}
+        <View style={styles.researchSources}>
+          <PemText style={[styles.researchLabel, { color: colors.textSecondary }]}>Sources</PemText>
+          <View style={styles.researchSourceList}>
+            {prep.sources.map((s, i) => (
+              <Pressable
+                key={i}
+                onPress={() => void openExternalUrl(s.url)}
+                style={({ pressed }) => [styles.researchSourceRow, { opacity: pressed ? 0.75 : 1 }]}
+              >
+                <ExternalLink size={15} stroke={colors.textTertiary} strokeWidth={2} />
+                <PemText
+                  style={[
+                    styles.researchSourceText,
+                    {
+                      color: colors.textPrimary,
+                      textDecorationColor: colors.borderMuted,
+                    },
+                  ]}
+                  numberOfLines={3}
+                >
+                  {s.title || s.url}
+                </PemText>
+              </Pressable>
+            ))}
+          </View>
         </View>
       ) : null}
     </View>
@@ -673,13 +703,7 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText, onP
   if (prep.shoppingCard) {
     return (
       <View>
-        <PrepShoppingExperience
-          prepId={prep.id}
-          data={prep.shoppingCard}
-          prepTitle={prepTitle}
-          sharePlainText={sharePlainText}
-          onPrepUpdated={onPrepRefresh}
-        />
+        <PrepShoppingExperience data={prep.shoppingCard} prepTitle={prepTitle} sharePlainText={sharePlainText} />
       </View>
     );
   }
@@ -775,6 +799,10 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText, onP
 const styles = StyleSheet.create({
   root: { gap: space[4] },
   wrap: { gap: space[4] },
+  heroPlain: {
+    gap: space[2],
+    marginBottom: space[2],
+  },
   hero: {
     borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
@@ -818,6 +846,51 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
     padding: space[4],
+  },
+  /** Adaptive research_card — continuous reading, no inset cards. */
+  researchArticleRoot: { gap: space[6] },
+  researchLead: {
+    gap: space[3],
+  },
+  researchLabel: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.xs,
+    letterSpacing: 0.35,
+    textTransform: "uppercase",
+    marginBottom: space[2],
+  },
+  researchFacts: { gap: 0 },
+  researchFactList: { gap: space[3] },
+  researchFactLine: { flexDirection: "row", alignItems: "flex-start", gap: space[3] },
+  researchFactBullet: {
+    fontSize: fontSize.md,
+    lineHeight: lh(fontSize.md, lineHeight.relaxed),
+    marginTop: 1,
+  },
+  researchFactText: {
+    flex: 1,
+    fontSize: fontSize.md,
+    lineHeight: lh(fontSize.md, lineHeight.relaxed),
+    fontFamily: fontFamily.sans.regular,
+  },
+  researchSection: {
+    gap: space[3],
+    paddingTop: space[1],
+  },
+  researchSectionHeading: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize.lg,
+    lineHeight: lh(fontSize.lg, lineHeight.snug),
+  },
+  researchSources: { gap: 0, marginTop: space[1] },
+  researchSourceList: { gap: space[3] },
+  researchSourceRow: { flexDirection: "row", alignItems: "flex-start", gap: space[3] },
+  researchSourceText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
+    fontFamily: fontFamily.sans.regular,
+    textDecorationLine: "underline",
   },
   facts: { gap: space[2] },
   factRow: {

@@ -17,7 +17,6 @@ import { openExternalUrl } from "@/lib/openExternalUrl";
 import { ExternalLink } from "lucide-react-native";
 import { useMemo } from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
-import type { ApiPrep } from "@/lib/pemApi";
 import type { Prep } from "../home-sections/homePrepData";
 import PrepAdaptiveStack from "./PrepAdaptiveStack";
 import PrepSectionStack from "./PrepSectionStack";
@@ -25,8 +24,6 @@ import PrepShareRow from "./PrepShareRow";
 
 type Props = {
   prep: Prep;
-  /** Pass updated row from mutations (e.g. load more shopping) to avoid a refetch. */
-  onPrepRefresh?: (row?: ApiPrep) => Promise<void>;
 };
 
 const PICK_WARM = ["First pick", "Second pick", "Third pick"] as const;
@@ -195,7 +192,7 @@ function PrepDetailBlockSection({ block, prepTitle }: BlockSectionProps) {
           <PemText selectable style={[styles.leadProse, { color: colors.textSecondary }]}>
             {COPY.researchLead}
           </PemText>
-          <View style={[styles.proseSurface, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
+          <View style={styles.researchReading}>
             <PemMarkdown variant="body" selectable>
               {md}
             </PemMarkdown>
@@ -287,7 +284,7 @@ function PrepDetailBlockSection({ block, prepTitle }: BlockSectionProps) {
   }
 }
 
-export default function PrepDetailBody({ prep, onPrepRefresh }: Props) {
+export default function PrepDetailBody({ prep }: Props) {
   const { colors } = useTheme();
 
   const shareableFull = buildPrepShareablePlainText(prep);
@@ -348,12 +345,7 @@ export default function PrepDetailBody({ prep, onPrepRefresh }: Props) {
       ) : null}
 
       {hasAdaptive ? (
-        <PrepAdaptiveStack
-          prep={prep}
-          prepTitle={prep.title}
-          sharePlainText={shareableFull}
-          onPrepRefresh={onPrepRefresh}
-        />
+        <PrepAdaptiveStack prep={prep} prepTitle={prep.title} sharePlainText={shareableFull} />
       ) : null}
 
       {useSectionStack ? (
@@ -376,10 +368,14 @@ export default function PrepDetailBody({ prep, onPrepRefresh }: Props) {
             </PemText>
           ) : null}
           <View
-            style={[
-              styles.proseSurface,
-              { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted },
-            ]}
+            style={
+              isResearch
+                ? styles.researchReading
+                : [
+                    styles.proseSurface,
+                    { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted },
+                  ]
+            }
           >
             <PemMarkdown variant="body" selectable>
               {prep.body}
@@ -493,6 +489,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
     padding: space[4],
+  },
+  /** Research / deep_research — continuous prose, no card panel. */
+  researchReading: {
+    gap: space[4],
   },
   sectionTitle: {
     fontFamily: fontFamily.display.semibold,

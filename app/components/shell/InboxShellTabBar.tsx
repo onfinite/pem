@@ -75,8 +75,8 @@ export default function InboxShellTabBar({ active, onChange, hasUnreadReady }: P
                     resolved === "light" ? colors.secondarySurface : colors.cardBackground,
                   borderColor:
                     resolved === "dark"
-                      ? "rgba(255, 255, 255, 0.1)"
-                      : "rgba(28, 26, 22, 0.1)",
+                      ? "rgba(255, 255, 255, 0.14)"
+                      : "rgba(60, 60, 67, 0.14)",
                 },
                 isActive &&
                   Platform.select({
@@ -88,7 +88,7 @@ export default function InboxShellTabBar({ active, onChange, hasUnreadReady }: P
                     },
                     android: { elevation: 2 },
                   }),
-                pressed && !isActive && { opacity: 0.9 },
+                pressed && !isActive && { opacity: 0.96 },
               ]}
             >
               <TabIcon
@@ -105,7 +105,6 @@ export default function InboxShellTabBar({ active, onChange, hasUnreadReady }: P
                       marginTop: 4,
                       color: isActive ? activeColor : inactiveColor,
                       fontFamily: isActive ? fontFamily.sans.semibold : fontFamily.sans.medium,
-                      opacity: isActive ? 1 : 0.9,
                     },
                   ]}
                 >

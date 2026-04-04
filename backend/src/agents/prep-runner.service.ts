@@ -92,11 +92,6 @@ export class PrepRunnerService {
         return;
       }
 
-      if (prep.isBundle) {
-        this.log.warn(`bundle parent prep ${prepId} skipped (legacy row)`);
-        return;
-      }
-
       await this.appendLog(prepId, 'queued', 'Prep job picked up', {});
       this.log.log(`prep ${prepId} run starting`);
 
@@ -347,12 +342,7 @@ export class PrepRunnerService {
       },
     });
 
-    if (!updated.parentPrepId) {
-      await this.push.notifyPrepReady(
-        updated.userId,
-        prep.thought || prep.title,
-      );
-    }
+    await this.push.notifyPrepReady(updated.userId, prep.thought || prep.title);
   }
 
   private async maybeEmitStreamDone(dumpId: string): Promise<void> {

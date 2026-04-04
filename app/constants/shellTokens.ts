@@ -21,10 +21,6 @@ export type InboxShellColors = {
   amberMuted: string;
   /** Pressed FAB / darker amber */
   amberDim: string;
-  /** Left rail while a prep is still prepping */
-  amberStripMuted: string;
-  /** Slightly lifted row when a prep is actively prepping */
-  rowPreppingBg: string;
   /** Icon on solid amber FAB */
   fabIconOnAmber: string;
   success: string;
@@ -44,12 +40,10 @@ export function inboxShellFromTheme(
     border: colors.borderMuted,
     textPrimary: colors.textPrimary,
     textSecondary: colors.textSecondary,
-    textTertiary: colors.placeholder,
+    textTertiary: colors.textTertiary,
     amber: a,
     amberMuted: colors.brandMutedSurface,
     amberDim: resolved === "dark" ? amber[700] : amber[600],
-    amberStripMuted: `${a}44`,
-    rowPreppingBg: colors.surfacePage,
     fabIconOnAmber: resolved === "dark" ? "#141410" : "#1c1a16",
     success: "#22c55e",
     warning: "#f59e0b",
