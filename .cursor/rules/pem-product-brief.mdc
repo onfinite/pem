@@ -30,7 +30,7 @@ UUID PKs: `users`, `dumps`, `preps` — columns per brief (name, push_token, tra
 
 ## Stack
 
-NestJS + Vercel AI SDK (`ai` + `@ai-sdk/openai`), BullMQ + Redis, Drizzle + Postgres, Clerk, Tavily, OpenAI (Whisper when audio), Expo push.
+NestJS + Vercel AI SDK (`ai` + `@ai-sdk/openai`), BullMQ + Redis, Drizzle + Postgres, Clerk, Tavily, OpenAI, Expo push.
 
 ## Rules
 

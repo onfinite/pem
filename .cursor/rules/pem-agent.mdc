@@ -650,7 +650,7 @@ CLERK_SECRET_KEY
 CLERK_WEBHOOK_SECRET
 DATABASE_URL              Neon connection string
 REDIS_URL                 Railway Redis
-OPENAI_API_KEY            gpt-4o-mini + future Whisper
+OPENAI_API_KEY            gpt-4o-mini + agent models
 # ANTHROPIC_API_KEY   # add later for claude-sonnet at prod
 TAVILY_API_KEY
 NODE_ENV

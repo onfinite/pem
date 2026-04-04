@@ -10,7 +10,6 @@ export const dumpsTable = pgTable(
       .notNull()
       .references(() => usersTable.id, { onDelete: 'cascade' }),
     transcript: text('transcript').notNull(),
-    audioUrl: text('audio_url'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
