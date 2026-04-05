@@ -1,6 +1,6 @@
 ---
 description: Pem dump intake — intent classification and prep routing (target behavior + UX rules)
-globs: backend/src/dump-jobs/**/*.ts, backend/src/agents/**/*.ts, backend/src/dumps/**/*.ts
+globs: backend/src/queue/dump-jobs/**/*.ts, backend/src/agents/**/*.ts, backend/src/dumps/**/*.ts
 alwaysApply: false
 ---
 
@@ -9,7 +9,7 @@ alwaysApply: false
 ## Where this fits in the pipeline
 
 1. **Split (required, structural)** — `SplitAgent` turns one dump into **one or more thoughts** (unrelated asks → multiple preps; one coherent ask → one prep). This step answers **only**: “how many distinct units of work?” It does **not** assign SHOPPING vs DRAFT vs RESEARCH. **Keep split dumb here** so we don’t blur “how many preps?” with “what kind?”  
-   - Implemented in: `dump-jobs/dump-split.service.ts`, `agents/split.agent.ts`, `prompts/split-transcript.prompt.ts`.
+   - Implemented in: `queue/dump-jobs/dump-split.service.ts`, `agents/split.agent.ts`, `prompts/split-transcript.prompt.ts`.
 
 2. **Intent classification (per thought, after split)** — For **each** thought (each future prep row), classify into exactly one intent type below **before** treating every prep the same way. This is the hook for **dynamic** handling: different Tavily rules, tools, prompts, and **output shapes** so users see real value (a draft vs a comparison vs a clarifying question), not one generic pattern.
 

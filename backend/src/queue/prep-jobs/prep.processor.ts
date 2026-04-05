@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
 
-import { PrepRunnerService } from '../agents/prep-runner.service';
+import { PrepRunnerService } from '../../agents/prep-runner.service';
 
 @Processor('prep')
 export class PrepProcessor extends WorkerHost {

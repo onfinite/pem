@@ -1,6 +1,6 @@
 ---
 description: Pem adaptive visual prep — intent-scoped card schemas, 5-stage pipeline target, app dispatch (beyond split)
-globs: backend/src/agents/**/*.ts, backend/src/prep-jobs/**/*.ts, backend/src/integrations/**/*.ts, app/components/sections/prep-detail-sections/**/*.tsx, app/app/(app)/prep/**/*.tsx
+globs: backend/src/agents/**/*.ts, backend/src/queue/prep-jobs/**/*.ts, backend/src/integrations/**/*.ts, app/components/sections/prep-detail-sections/**/*.tsx, app/app/(app)/prep/**/*.tsx
 alwaysApply: false
 ---
 
@@ -148,7 +148,7 @@ Extend the registry in code when UX requires a new layout; update this table in 
 | Run prep + structure | `backend/src/agents/prep-runner.service.ts` |
 | Blocks / structured output (today) | `backend/src/agents/schemas/prep-result.schema.ts` |
 | Tools | `backend/src/agents/agent-tools/prep-tools.factory.ts` |
-| Prep worker | `backend/src/prep-jobs/` |
+| Prep worker | `backend/src/queue/prep-jobs/` |
 | Detail UI | `app/components/sections/prep-detail-sections/PrepDetailBody.tsx`, `app/app/(app)/prep/[id].tsx` |
 
 **Migration note:** Until `result.schema` + per-schema payloads ship, the app may render **legacy** `blocks` + `primaryKind`. New work should **prefer** intent-scoped schemas + dispatch without breaking existing clients (version or optional fields as needed).

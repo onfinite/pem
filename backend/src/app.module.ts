@@ -6,11 +6,9 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AgentsModule } from './agents/agents.module';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
-import { DumpJobsModule } from './dump-jobs/dump-jobs.module';
 import { DumpsModule } from './dumps/dumps.module';
 import { HealthController } from './health/health.controller';
 import { IntegrationsModule } from './integrations/integrations.module';
-import { PrepJobsModule } from './prep-jobs/prep-jobs.module';
 import { PrepsModule } from './preps/preps.module';
 import { QueueModule } from './queue/queue.module';
 import { UsersModule } from './users/users.module';
@@ -32,8 +30,6 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     IntegrationsModule,
     DatabaseModule,
     AgentsModule,
-    PrepJobsModule,
-    DumpJobsModule,
     DumpsModule,
     PrepsModule,
     UsersModule,

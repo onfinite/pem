@@ -4,23 +4,23 @@ import { Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
-import { IntentClassifierAgent } from '../agents/intent-classifier.agent';
+import { IntentClassifierAgent } from '../../agents/intent-classifier.agent';
 import {
   LOCATION_PREP_QUEUE_DELAY_MS,
   prepIntentNeedsLocation,
-} from '../agents/intents/location-intent';
-import { initialPrepTypeForIntent } from '../agents/intents/prep-intent-routing';
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+} from '../../agents/intents/location-intent';
+import { initialPrepTypeForIntent } from '../../agents/intents/prep-intent-routing';
+import { SplitAgent } from '../../agents/split.agent';
+import { DRIZZLE } from '../../database/database.constants';
+import type { DrizzleDb } from '../../database/database.module';
 import {
   dumpsTable,
   prepsTable,
   usersTable,
   type PrepRow,
-} from '../database/schemas';
-import { PrepEventsService } from '../events/prep-events.service';
-import { ProfileService } from '../profile/profile.service';
-import { SplitAgent } from '../agents/split.agent';
+} from '../../database/schemas';
+import { PrepEventsService } from '../../events/prep-events.service';
+import { ProfileService } from '../../profile/profile.service';
 
 /**
  * After POST /dumps: **split** transcript → per-thought intent + prep row → queue jobs → SSE.
