@@ -393,7 +393,6 @@ function buildCompositeBriefShareText(prep: Prep): string | null {
     `${b.emoji} ${b.title}`.trim(),
     b.overview_teaser,
     ...sectionLines,
-    b.sources_used.length > 0 ? `Sources: ${b.sources_used.join(", ")}` : "",
   ]
     .filter((x) => x && x.trim().length > 0)
     .join("\n\n");

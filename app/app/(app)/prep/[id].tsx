@@ -36,6 +36,9 @@ export default function PrepDetailScreen() {
   } = usePrepHub();
   const { getToken } = useAuth();
   const markedOpenForId = useRef<string | null>(null);
+  const prepScrollRef = useRef<ScrollView | null>(null);
+  /** Keeps vertical offset for composite brief `measureInWindow` scroll-to-section (Fabric-safe). */
+  const prepScrollOffsetY = useRef(0);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -308,6 +311,11 @@ export default function PrepDetailScreen() {
       />
 
       <ScrollView
+        ref={prepScrollRef}
+        onScroll={(e) => {
+          prepScrollOffsetY.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.scroll,
           {
@@ -328,7 +336,11 @@ export default function PrepDetailScreen() {
             <PemButton onPress={() => void onRetry()}>Retry</PemButton>
           )
         ) : null}
-        <PrepDetailBody prep={prep} />
+        <PrepDetailBody
+          prep={prep}
+          parentScrollViewRef={prepScrollRef}
+          parentScrollOffsetYRef={prepScrollOffsetY}
+        />
       </ScrollView>
     </View>
   );

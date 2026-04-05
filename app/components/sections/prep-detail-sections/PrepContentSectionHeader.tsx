@@ -15,7 +15,7 @@ export default function PrepContentSectionHeader({ title, subtitle }: Props) {
   const { colors } = useTheme();
   return (
     <View style={styles.wrap} accessibilityRole="header">
-      <PemText style={[styles.title, { color: colors.pemAmber }]}>{title}</PemText>
+      <PemText style={[styles.title, { color: colors.textSecondary }]}>{title}</PemText>
       {subtitle?.trim() ? (
         <PemText style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle.trim()}</PemText>
       ) : null}

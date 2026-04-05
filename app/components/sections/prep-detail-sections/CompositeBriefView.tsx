@@ -21,8 +21,10 @@ import type {
   PlaceRow,
   ShoppingCardPayload,
 } from "@/lib/adaptivePrep";
+import { pemSelection } from "@/lib/pemHaptics";
 import { AlertTriangle, Check } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import type { MutableRefObject, RefObject } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import {
   PrepBusinessExperience,
@@ -36,6 +38,10 @@ import PrepShoppingExperience from "./PrepShoppingExperience";
 
 type Props = {
   brief: CompositeBriefPayload;
+  /** Prep detail outer `ScrollView` — enables section pills to scroll to each block. */
+  scrollParentRef?: RefObject<ScrollView | null>;
+  /** Latest vertical scroll offset of that `ScrollView` (`onScroll` → `contentOffset.y`). */
+  scrollOffsetYRef?: MutableRefObject<number>;
 };
 
 function SectionHeader({ title, emoji }: { title: string; emoji: string }) {
@@ -62,35 +68,26 @@ function PemRecommendationBlock({ data }: { data: Record<string, unknown> }) {
   }
   return (
     <View style={[styles.pemRecCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
-      <View style={[styles.pemRecBar, { backgroundColor: colors.pemAmber }]} />
       <View style={styles.pemRecInner}>
-        <View style={styles.pemRecLabelRow}>
-          <View style={[styles.pemDot, { backgroundColor: colors.pemAmber }]} />
-          <PemText style={[styles.pemRecLabel, { color: colors.pemAmber }]}>Pem&apos;s recommendation</PemText>
-        </View>
+        <PemText style={[styles.pemRecLabel, { color: colors.textSecondary }]}>Pem&apos;s recommendation</PemText>
         <PemText style={[styles.verdict, { color: colors.textPrimary }]}>{parsed.verdict}</PemText>
         <PemText style={[styles.subLabel, { color: colors.textSecondary }]}>Why this works</PemText>
         {parsed.reasons.map((r, i) => (
           <View key={i} style={styles.reasonRow}>
-            <PemText style={[styles.bullet, { color: colors.pemAmber }]}>•</PemText>
+            <PemText style={[styles.bullet, { color: colors.textTertiary }]}>•</PemText>
             <PemText style={[styles.reasonText, { color: colors.textPrimary }]}>{r}</PemText>
           </View>
         ))}
         {parsed.caveat ? (
           <View style={[styles.caveatBox, { backgroundColor: colors.secondarySurface }]}>
-            <AlertTriangle size={14} color={colors.pemAmber} />
+            <AlertTriangle size={14} color={colors.textTertiary} />
             <PemText style={[styles.caveatText, { color: colors.textSecondary }]}>{parsed.caveat}</PemText>
           </View>
         ) : null}
         <View style={[styles.nextBox, { backgroundColor: colors.secondarySurface }]}>
-          <PemText style={[styles.nextLabel, { color: colors.pemAmber }]}>Do this now</PemText>
+          <PemText style={[styles.nextLabel, { color: colors.textSecondary }]}>Do this now</PemText>
           <PemText style={[styles.nextText, { color: colors.textPrimary }]}>{parsed.nextAction}</PemText>
         </View>
-        {parsed.methodology ? (
-          <PemText style={[styles.methodology, { color: colors.textSecondary }]}>
-            Based on: {parsed.methodology}
-          </PemText>
-        ) : null}
       </View>
     </View>
   );
@@ -144,10 +141,10 @@ function WarningsSection({ data }: { data: Record<string, unknown> }) {
     ? data.items.filter((f): f is string => typeof f === "string")
     : [];
   return (
-    <View style={[styles.warnShell, { borderColor: colors.pemAmber, backgroundColor: colors.secondarySurface }]}>
+    <View style={[styles.warnShell, { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface }]}>
       {items.map((f, i) => (
         <View key={i} style={styles.warnRow}>
-          <AlertTriangle size={14} color={colors.pemAmber} />
+          <AlertTriangle size={14} color={colors.textTertiary} />
           <PemText style={[styles.warnText, { color: colors.textPrimary }]}>{f}</PemText>
         </View>
       ))}
@@ -398,25 +395,51 @@ function SectionBody({ section }: { section: CompositeSection }) {
   return <GenericSectionBody section={section} />;
 }
 
-export default function CompositeBriefView({ brief }: Props) {
+const SCROLL_TO_SECTION_TOP_PAD = 10;
+
+type MeasureInWindowCallback = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) => void;
+
+/** `ScrollView` ref typings omit `measureInWindow`; native host still implements it. */
+function measureScrollHostInWindow(
+  scrollView: ScrollView,
+  callback: MeasureInWindowCallback,
+): void {
+  const host = scrollView as unknown as {
+    measureInWindow: (cb: MeasureInWindowCallback) => void;
+  };
+  host.measureInWindow(callback);
+}
+
+export default function CompositeBriefView({ brief, scrollParentRef, scrollOffsetYRef }: Props) {
   const { colors } = useTheme();
   const sections = brief.sections;
+  const sectionRefs = useRef<(View | null)[]>([]);
 
-  const confidenceLabel = useMemo(() => {
-    if (brief.confidence === "high") return "High confidence";
-    if (brief.confidence === "medium") return "Medium confidence";
-    return "Lower confidence — verify key details";
-  }, [brief.confidence]);
+  const scrollToSection = useCallback(
+    (index: number) => {
+      const scroll = scrollParentRef?.current;
+      const target = sectionRefs.current[index];
+      if (!scroll || !target) return;
+      pemSelection();
+      /** Fabric / RN: `measureLayout(findNodeHandle(scroll))` breaks; use window coords + tracked offset. */
+      target.measureInWindow((_tx, ty, _tw, _th) => {
+        measureScrollHostInWindow(scroll, (_sx, sy, _sw, _sh) => {
+          const scrollY = scrollOffsetYRef?.current ?? 0;
+          const contentY = scrollY + (ty - sy) - SCROLL_TO_SECTION_TOP_PAD;
+          scroll.scrollTo({ y: Math.max(0, contentY), animated: true });
+        });
+      });
+    },
+    [scrollParentRef, scrollOffsetYRef],
+  );
 
   return (
     <View style={styles.wrapper}>
-      <View style={[styles.hero, { borderColor: colors.borderMuted, backgroundColor: colors.cardBackground }]}>
-        <PemText style={[styles.heroEmoji]}>{brief.emoji || "✨"}</PemText>
-        <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>{brief.title}</PemText>
-        <PemText style={[styles.heroTeaser, { color: colors.textSecondary }]}>{brief.overview_teaser}</PemText>
-        <PemText style={[styles.confidence, { color: colors.textSecondary }]}>{confidenceLabel}</PemText>
-      </View>
-
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -424,15 +447,22 @@ export default function CompositeBriefView({ brief }: Props) {
         contentContainerStyle={styles.pillRow}
       >
         {sections.map((s, i) => (
-          <View
-            key={`${s.type}-${i}`}
-            style={[styles.pill, { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface }]}
+          <Pressable
+            key={`${s.type}-${i}-pill`}
+            accessibilityRole="button"
+            accessibilityLabel={`Go to ${s.title}`}
+            onPress={() => scrollToSection(i)}
+            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
           >
-            <PemText style={styles.pillEmoji}>{s.emoji}</PemText>
-            <PemText style={[styles.pillLabel, { color: colors.textPrimary }]} numberOfLines={1}>
-              {s.title}
-            </PemText>
-          </View>
+            <View
+              style={[styles.pill, { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface }]}
+            >
+              <PemText style={styles.pillEmoji}>{s.emoji}</PemText>
+              <PemText style={[styles.pillLabel, { color: colors.textPrimary }]} numberOfLines={1}>
+                {s.title}
+              </PemText>
+            </View>
+          </Pressable>
         ))}
       </ScrollView>
 
@@ -441,6 +471,10 @@ export default function CompositeBriefView({ brief }: Props) {
         return (
           <View
             key={`${section.type}-${index}`}
+            ref={(el) => {
+              sectionRefs.current[index] = el;
+            }}
+            collapsable={false}
             style={[
               styles.sectionBlock,
               { borderBottomColor: colors.borderMuted },
@@ -486,12 +520,6 @@ export default function CompositeBriefView({ brief }: Props) {
           </View>
         );
       })}
-
-      {brief.sources_used.length > 0 ? (
-        <PemText style={[styles.sourcesLine, { color: colors.textSecondary }]}>
-          Sources: {brief.sources_used.join(" · ")}
-        </PemText>
-      ) : null}
     </View>
   );
 }
@@ -529,28 +557,6 @@ export function PrepOriginalDumpCollapsible({ text }: { text: string }) {
 const styles = StyleSheet.create({
   wrapper: {
     gap: space[4],
-  },
-  hero: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
-    gap: space[2],
-  },
-  heroEmoji: {
-    fontSize: fontSize.xxl,
-  },
-  heroTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.lg,
-    lineHeight: lh(fontSize.lg, lineHeight.snug),
-  },
-  heroTeaser: {
-    fontSize: fontSize.sm,
-    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
-  },
-  confidence: {
-    fontSize: fontSize.xs,
-    marginTop: space[1],
   },
   pillScroll: {
     maxHeight: 44,
@@ -631,28 +637,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
   },
-  pemRecBar: {
-    height: 3,
-    width: "100%",
-  },
   pemRecInner: {
     padding: space[4],
     gap: space[3],
   },
-  pemRecLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  pemDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
   pemRecLabel: {
-    fontFamily: fontFamily.sans.medium,
+    fontFamily: fontFamily.sans.semibold,
     fontSize: fontSize.xs,
-    letterSpacing: 0.4,
+    letterSpacing: 0.6,
     textTransform: "uppercase",
   },
   verdict: {
@@ -707,10 +699,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontFamily: fontFamily.sans.medium,
   },
-  methodology: {
-    fontSize: fontSize.xs,
-    fontStyle: "italic",
-  },
   warnShell: {
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
@@ -730,10 +718,6 @@ const styles = StyleSheet.create({
   mutedJson: {
     fontSize: fontSize.xs,
     fontFamily: fontFamily.sans.regular,
-  },
-  sourcesLine: {
-    fontSize: fontSize.xs,
-    marginTop: space[2],
   },
   dumpBox: {
     borderTopWidth: StyleSheet.hairlineWidth,

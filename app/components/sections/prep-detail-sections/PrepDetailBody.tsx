@@ -15,8 +15,9 @@ import {
 import { getPrepDetailSectionHeader } from "@/lib/prepDetailSectionHeader";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { ExternalLink } from "lucide-react-native";
+import type { MutableRefObject, RefObject } from "react";
 import { useMemo } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { Prep } from "../home-sections/homePrepData";
 import CompositeBriefView, { PrepOriginalDumpCollapsible } from "./CompositeBriefView";
 import PrepContentSectionHeader from "./PrepContentSectionHeader";
@@ -26,6 +27,10 @@ import PrepShareRow from "./PrepShareRow";
 
 type Props = {
   prep: Prep;
+  /** When set (prep detail screen), composite brief pills can scroll this view to each section. */
+  parentScrollViewRef?: RefObject<ScrollView | null>;
+  /** Latest `contentOffset.y` of `parentScrollViewRef` — used with `measureInWindow` on Fabric. */
+  parentScrollOffsetYRef?: MutableRefObject<number>;
 };
 
 const PICK_WARM = ["First pick", "Second pick", "Third pick"] as const;
@@ -285,7 +290,7 @@ function PrepDetailBlockSection({ block, prepTitle }: BlockSectionProps) {
   }
 }
 
-export default function PrepDetailBody({ prep }: Props) {
+export default function PrepDetailBody({ prep, parentScrollViewRef, parentScrollOffsetYRef }: Props) {
   const { colors } = useTheme();
 
   const shareableFull = buildPrepShareablePlainText(prep);
@@ -357,7 +362,11 @@ export default function PrepDetailBody({ prep }: Props) {
 
       {hasComposite && prep.compositeBrief ? (
         <>
-          <CompositeBriefView brief={prep.compositeBrief} />
+          <CompositeBriefView
+            brief={prep.compositeBrief}
+            scrollParentRef={parentScrollViewRef}
+            scrollOffsetYRef={parentScrollOffsetYRef}
+          />
           {prep.dumpTranscript ? <PrepOriginalDumpCollapsible text={prep.dumpTranscript} /> : null}
         </>
       ) : null}

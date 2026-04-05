@@ -7,13 +7,17 @@ import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** After a dump: scrollable body + pinned CTA to the hub. */
+/** After a dump: scrollable body + pinned CTAs (another dump, open hub). */
 export default function PreppingScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   const goHome = () => {
     router.replace("/home");
+  };
+
+  const goDump = () => {
+    router.push("/dump");
   };
 
   return (
@@ -33,6 +37,9 @@ export default function PreppingScreen() {
         <View style={styles.footerInner}>
           <PemButton variant="primary" size="lg" onPress={goHome} style={styles.footerBtn}>
             Open For you
+          </PemButton>
+          <PemButton variant="secondary" size="lg" onPress={goDump} style={styles.footerBtn}>
+            Dump more
           </PemButton>
         </View>
       </View>
@@ -54,6 +61,7 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: PREPPING_FLOW_MAX_WIDTH,
     paddingHorizontal: space[5],
+    gap: space[2],
   },
   footerBtn: {
     width: "100%",

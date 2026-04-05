@@ -14,15 +14,17 @@ import type {
   MarketCardPayload,
   TrendsCardPayload,
 } from "@/lib/adaptivePrep";
+import { labelForBusinessMapsUrl, openBusinessMapsUrl } from "@/lib/placeLinks";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import * as Clipboard from "expo-clipboard";
 import {
   Briefcase,
   Building2,
   Calendar,
+  ChevronRight,
   ExternalLink,
   LineChart,
-  Plane,
+  MapPin,
   Star,
   TrendingUp,
 } from "lucide-react-native";
@@ -55,8 +57,8 @@ function Hero({
       ]}
     >
       <View style={styles.heroIconRow}>
-        <Icon size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
-        <PemText style={[styles.heroKicker, { color: colors.pemAmber }]}>{kicker}</PemText>
+        <Icon size={18} stroke={colors.textSecondary} strokeWidth={2.25} />
+        <PemText style={[styles.heroKicker, { color: colors.textSecondary }]}>{kicker}</PemText>
       </View>
       <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>{title}</PemText>
       {sub?.trim() ? (
@@ -174,35 +176,6 @@ export function PrepEventsExperience({
   );
 }
 
-function splitRouteForBanner(routeLabel: string): { line1: string; line2?: string } {
-  const s = routeLabel.trim();
-  if (!s) return { line1: "" };
-  const m = s.match(/^(.+?)\s*(?:→|➜|->|⇒)\s*(.+)$/u);
-  if (m) {
-    const left = m[1].trim();
-    const right = m[2].trim();
-    const bits = right
-      .split(/\s*[·•]\s*/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-    if (bits.length >= 2) {
-      return {
-        line1: `${left} → ${bits[0]}`,
-        line2: bits.slice(1).join(" · "),
-      };
-    }
-    return { line1: `${left} → ${right}` };
-  }
-  return { line1: s };
-}
-
-function stopsTone(stops: string): "direct" | "stop" | "unknown" {
-  const x = stops.toLowerCase();
-  if (/\bnon-?stop|nonstop|direct\b/.test(x)) return "direct";
-  if (/\b\d\s*stop|\bstop\b/.test(x)) return "stop";
-  return "unknown";
-}
-
 export function PrepFlightsExperience({
   data,
   prepTitle,
@@ -213,7 +186,6 @@ export function PrepFlightsExperience({
   sharePlainText: string;
 }) {
   const { colors } = useTheme();
-  const route = splitRouteForBanner(data.routeLabel || data.query);
   const titleLine = prepTitle.trim();
   const recLine = data.recommendation.trim();
   const titleMatchesRec =
@@ -223,131 +195,133 @@ export function PrepFlightsExperience({
   /** Don’t repeat the screen title in the card. */
   const showRec = recLine.length > 0 && !titleMatchesRec;
 
+  const queryTrim = data.query.trim();
+  const summaryTrim = data.summary.trim();
+  let recommendationSubtitle: string | undefined;
+  if (queryTrim && queryTrim.toLowerCase() !== recLine.toLowerCase()) {
+    recommendationSubtitle = queryTrim;
+  } else if (summaryTrim && summaryTrim.toLowerCase() !== recLine.toLowerCase()) {
+    recommendationSubtitle = summaryTrim;
+  }
+
+  const showRecommendationBlock = showRec;
+
   return (
     <View style={styles.root}>
-      <View
-        style={[
-          styles.flightHero,
-          {
-            backgroundColor: colors.cardBackground,
-            borderColor: colors.borderMuted,
-          },
-        ]}
-      >
-        {showRec ? (
-          <PemText
-            style={[styles.flightRecommendation, { color: colors.textPrimary }]}
-            selectable
-            numberOfLines={8}
-          >
-            {recLine}
-          </PemText>
-        ) : null}
-
-        {route.line1 ? (
-          <View style={[styles.routeStrip, { backgroundColor: colors.secondarySurface, borderColor: colors.borderMuted }]}>
-            <View style={styles.routeStripInner}>
-              <PemText style={[styles.routePrimary, { color: colors.textPrimary }]} numberOfLines={2}>
-                {route.line1}
-              </PemText>
-              {route.line2 ? (
-                <PemText style={[styles.routeSecondary, { color: colors.textSecondary }]} numberOfLines={2}>
-                  {route.line2}
-                </PemText>
-              ) : null}
-            </View>
+      {showRecommendationBlock ? (
+        <View style={styles.flightRecSection}>
+          <PrepContentSectionHeader title="Recommendation" subtitle={recommendationSubtitle} />
+          <View style={styles.flightRecBody}>
+            <PemText
+              style={[styles.flightRecommendation, { color: colors.textPrimary }]}
+              selectable
+              numberOfLines={8}
+            >
+              {recLine}
+            </PemText>
           </View>
-        ) : null}
-        {data.query.trim() && data.query !== data.routeLabel ? (
-          <PemText variant="caption" style={{ color: colors.textTertiary, marginTop: space[1] }}>
-            {data.query}
-          </PemText>
-        ) : null}
-      </View>
-
-      {data.offers.length > 0 ? (
-        <PrepContentSectionHeader title="Options" subtitle="Best, cheaper, and more" />
+        </View>
       ) : null}
 
-      <View style={styles.stack}>
-        {data.offers.map((o, i) => {
-          const st = stopsTone(o.stops);
-          const chipBorder =
-            st === "direct" ? colors.pemAmber : st === "stop" ? colors.borderMuted : colors.borderMuted;
-          return (
-            <View
-              key={`${o.label}-${i}`}
-              style={[
-                styles.flightCard,
-                {
-                  backgroundColor: colors.cardBackground,
-                  borderColor: colors.borderMuted,
-                },
-              ]}
-            >
-              <View style={styles.flightCardHeader}>
-                <View style={[styles.flightBadge, { backgroundColor: colors.secondarySurface }]}>
-                  <PemText style={[styles.flightBadgeText, { color: colors.pemAmber }]}>
-                    {o.label.trim() || (i === 0 ? "Top pick" : `Option ${i + 1}`)}
-                  </PemText>
-                </View>
-                {o.price.trim() ? (
-                  <View style={styles.flightPriceCol}>
-                    <PemText style={[styles.flightPriceLabel, { color: colors.textTertiary }]}>From</PemText>
-                    <PemText style={[styles.flightPriceHuge, { color: colors.textPrimary }]}>{o.price}</PemText>
-                  </View>
-                ) : null}
-              </View>
+      {data.offers.length > 0 ? (
+        <PrepContentSectionHeader title="Flights" subtitle="Tap a result to view booking options" />
+      ) : null}
 
-              <View style={styles.flightMetaRow}>
-                <Plane size={14} stroke={colors.textSecondary} strokeWidth={2} />
-                <PemText style={[styles.flightAirline, { color: colors.textPrimary }]} numberOfLines={2}>
+      {data.offers.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.hScroll}
+          decelerationRate="fast"
+        >
+          {data.offers.map((o, i) => {
+            const tripMeta = [o.duration.trim(), o.stops.trim()].filter(Boolean).join(" · ");
+            const badge = o.label.trim() || (i === 0 ? "Best" : "");
+            const notesLine = o.notes.trim();
+            const schedulePrimary = notesLine || tripMeta;
+            const showMetaUnderAirline = Boolean(notesLine && tripMeta);
+            const url = o.bookingUrl.trim();
+            const openBooking = () => {
+              if (!url) return;
+              pemSelection();
+              void openExternalUrl(url);
+            };
+
+            const cardBody = (
+              <>
+                <View style={styles.gfCardTop}>
+                  {badge ? (
+                    <View style={[styles.gfBadge, { backgroundColor: colors.secondarySurface }]}>
+                      <PemText style={[styles.gfBadgeText, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {badge}
+                      </PemText>
+                    </View>
+                  ) : (
+                    <View style={styles.gfBadgePlaceholder} />
+                  )}
+                  {o.price.trim() ? (
+                    <PemText style={[styles.gfPrice, { color: colors.textPrimary }]} numberOfLines={1}>
+                      {o.price.trim()}
+                    </PemText>
+                  ) : null}
+                </View>
+
+                {schedulePrimary ? (
+                  <PemText style={[styles.gfTimes, { color: colors.textPrimary }]} numberOfLines={2}>
+                    {schedulePrimary}
+                  </PemText>
+                ) : null}
+
+                <PemText style={[styles.gfAirline, { color: colors.textSecondary }]} numberOfLines={2}>
                   {o.airline.trim() || "Airline"}
                 </PemText>
-              </View>
 
-              <View style={styles.flightChipsRow}>
-                {o.duration.trim() ? (
-                  <View style={[styles.flightChip, { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface }]}>
-                    <PemText style={[styles.flightChipText, { color: colors.textSecondary }]}>{o.duration}</PemText>
-                  </View>
-                ) : null}
-                {o.stops.trim() ? (
-                  <View
-                    style={[
-                      styles.flightChip,
-                      { borderColor: chipBorder, backgroundColor: colors.secondarySurface },
-                    ]}
-                  >
-                    <PemText style={[styles.flightChipText, { color: colors.textPrimary }]}>{o.stops}</PemText>
-                  </View>
-                ) : null}
-              </View>
-
-              {o.notes.trim() ? (
-                <PemText style={[styles.flightTimes, { color: colors.textSecondary }]}>{o.notes}</PemText>
-              ) : null}
-
-              {o.bookingUrl.trim() ? (
-                <Pressable
-                  accessibilityRole="link"
-                  onPress={() => void openExternalUrl(o.bookingUrl)}
-                  style={({ pressed }) => [
-                    styles.linkRow,
-                    styles.flightDealLink,
-                    { borderTopColor: colors.borderMuted, opacity: pressed ? 0.85 : 1 },
-                  ]}
-                >
-                  <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
-                  <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
-                    View deal
+                {showMetaUnderAirline ? (
+                  <PemText style={[styles.gfTripMeta, { color: colors.textTertiary }]} numberOfLines={2}>
+                    {tripMeta}
                   </PemText>
-                </Pressable>
-              ) : null}
-            </View>
-          );
-        })}
-      </View>
+                ) : null}
+
+                {url ? (
+                  <View style={[styles.gfFooter, { borderTopColor: colors.borderMuted }]}>
+                    <PemText style={[styles.gfFooterText, { color: colors.pemAmber }]}>View booking options</PemText>
+                    <ChevronRight size={18} color={colors.pemAmber} strokeWidth={2} />
+                  </View>
+                ) : null}
+              </>
+            );
+
+            return url ? (
+              <Pressable
+                key={`${o.label}-${i}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${o.airline}, ${o.price}, open booking`}
+                onPress={openBooking}
+                style={({ pressed }) => [
+                  styles.gfCard,
+                  {
+                    backgroundColor: colors.cardBackground,
+                    borderColor: colors.borderMuted,
+                    opacity: pressed ? 0.92 : 1,
+                  },
+                ]}
+              >
+                {cardBody}
+              </Pressable>
+            ) : (
+              <View
+                key={`${o.label}-${i}`}
+                style={[
+                  styles.gfCard,
+                  { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted },
+                ]}
+              >
+                {cardBody}
+              </View>
+            );
+          })}
+        </ScrollView>
+      ) : null}
       {sharePlainText.trim() ? (
         <View style={[styles.shareFooter, { borderTopColor: colors.borderMuted }]}>
           <PrepShareRow variant="compact" text={sharePlainText.trim()} shareTitle={prepTitle} />
@@ -378,7 +352,9 @@ export function PrepBusinessExperience({
     <View style={styles.root}>
       <Hero icon={Building2} kicker="Businesses" title={data.recommendation} sub={data.query} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
-        {data.businesses.map((b, i) => (
+        {data.businesses.map((b, i) => {
+          const mapsLinkKind = labelForBusinessMapsUrl(b.mapsUrl);
+          return (
           <View
             key={`${b.name}-${i}`}
             style={[
@@ -445,18 +421,28 @@ export function PrepBusinessExperience({
               {b.mapsUrl.trim() ? (
                 <Pressable
                   accessibilityRole="link"
-                  onPress={() => void openExternalUrl(b.mapsUrl)}
+                  accessibilityLabel={
+                    mapsLinkKind === "Map"
+                      ? `Open ${b.name} in Maps`
+                      : `Open ${b.name} website`
+                  }
+                  onPress={() => void openBusinessMapsUrl(b.mapsUrl)}
                   style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted }]}
                 >
-                  <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  {mapsLinkKind === "Map" ? (
+                    <MapPin size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  ) : (
+                    <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  )}
                   <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
-                    Maps & reviews
+                    {mapsLinkKind}
                   </PemText>
                 </Pressable>
               ) : null}
             </View>
           </View>
-        ))}
+          );
+        })}
       </ScrollView>
       {sharePlainText.trim() ? (
         <View style={[styles.shareFooter, { borderTopColor: colors.borderMuted }]}>
@@ -761,12 +747,12 @@ const styles = StyleSheet.create({
   },
   sym: { fontFamily: fontFamily.display.semibold, fontSize: fontSize.xxxl },
   priceHuge: { fontFamily: fontFamily.display.semibold, fontSize: fontSize.xxl },
-  flightHero: {
+  flightRecSection: {
     alignSelf: "stretch",
     width: "100%",
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
+    gap: space[2],
+  },
+  flightRecBody: {
     gap: space[3],
   },
   flightRecommendation: {
@@ -774,85 +760,71 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     lineHeight: lh(fontSize.md, lineHeight.relaxed),
   },
-  routeStrip: {
-    borderRadius: radii.md,
+  /** Google Flights–style result card — flat, dense, price + times first. */
+  gfCard: {
+    width: 308,
+    borderRadius: radii.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: space[3],
-    paddingHorizontal: space[3],
+    paddingHorizontal: space[4],
+    paddingTop: space[4],
+    paddingBottom: space[3],
     gap: space[1],
   },
-  routeStripInner: { gap: space[1] },
-  routePrimary: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.snug),
-  },
-  routeSecondary: {
-    fontSize: fontSize.sm,
-    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
-  },
-  flightDealLink: {
-    marginTop: space[2],
-  },
-  flightCard: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
-    gap: space[2],
-    ...Platform.select({
-      ios: {
-        shadowColor: "#1c1a16",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.06,
-        shadowRadius: 10,
-      },
-      android: { elevation: 1 },
-    }),
-  },
-  flightCardHeader: {
+  gfCardTop: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-start",
+    justifyContent: "space-between",
     gap: space[3],
   },
-  flightBadge: {
+  gfBadge: {
     borderRadius: radii.sm,
     paddingHorizontal: space[2],
     paddingVertical: 4,
-    alignSelf: "flex-start",
+    maxWidth: "58%",
   },
-  flightBadgeText: {
-    fontFamily: fontFamily.sans.semibold,
+  gfBadgePlaceholder: {
+    flex: 1,
+    minWidth: 0,
+  },
+  gfBadgeText: {
+    fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.xs,
     letterSpacing: 0.2,
   },
-  flightPriceCol: { alignItems: "flex-end" },
-  flightPriceLabel: { fontSize: fontSize.xs },
-  flightPriceHuge: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.xxl,
-    lineHeight: lh(fontSize.xxl, lineHeight.tight),
+  gfPrice: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.xl,
+    lineHeight: lh(fontSize.xl, lineHeight.tight),
+    flexShrink: 0,
+    textAlign: "right",
   },
-  flightMetaRow: { flexDirection: "row", alignItems: "center", gap: space[2], marginTop: space[1] },
-  flightAirline: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.md,
-    flex: 1,
+  gfTimes: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.xl,
+    lineHeight: lh(fontSize.xl, lineHeight.snug),
+    marginTop: space[1],
   },
-  flightChipsRow: { flexDirection: "row", flexWrap: "wrap", gap: space[2], marginTop: space[1] },
-  flightChip: {
-    borderRadius: radii.full,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: space[3],
-    paddingVertical: 6,
-  },
-  flightChipText: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.xs,
-  },
-  flightTimes: {
+  gfAirline: {
+    fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.sm,
     lineHeight: lh(fontSize.sm, lineHeight.relaxed),
     marginTop: space[1],
+  },
+  gfTripMeta: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.sm,
+    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
+  },
+  gfFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: space[2],
+    paddingTop: space[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  gfFooterText: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.sm,
   },
 });

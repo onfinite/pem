@@ -5,11 +5,17 @@ import { PLACE_HERO_COUNT } from "@/constants/shopping";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
 import type { PlaceCardPayload } from "@/lib/adaptivePrep";
+import {
+  isLikelyMapsHttpUrl,
+  labelForPlaceRowAction,
+  openNativeMapsForPlace,
+  shouldOpenPlaceRowAsMap,
+} from "@/lib/placeLinks";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { pemSelection } from "@/lib/pemHaptics";
 import * as Clipboard from "expo-clipboard";
 import { ChevronRight, Copy, ExternalLink, MapPin, MessageCircle, Phone } from "lucide-react-native";
-import { Image, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import PrepShareRow from "./PrepShareRow";
 
 type Props = {
@@ -25,14 +31,19 @@ function ratingLine(r: number, reviews: number): string | null {
   return [stars, rc].filter(Boolean).join(" · ");
 }
 
-function mapsUrlForPlace(p: PlaceCardPayload["places"][number]): string {
-  const u = p.url.trim();
-  if (u.startsWith("http")) return u;
-  if (p.lat !== 0 && p.lng !== 0) {
-    return `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
+function openPlaceRow(p: PlaceCardPayload["places"][number]): void {
+  const urlTrimmed = p.url.trim();
+  if (shouldOpenPlaceRowAsMap({ lat: p.lat, lng: p.lng, urlTrimmed })) {
+    void openNativeMapsForPlace({
+      name: p.name,
+      address: p.address,
+      lat: p.lat,
+      lng: p.lng,
+      mapsHttpUrl: urlTrimmed && isLikelyMapsHttpUrl(urlTrimmed) ? urlTrimmed : undefined,
+    });
+    return;
   }
-  const q = encodeURIComponent(`${p.name} ${p.address}`.trim());
-  return `https://www.google.com/maps/search/?api=1&query=${q}`;
+  void openExternalUrl(ensureHttpUrl(urlTrimmed));
 }
 
 const HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 } as const;
@@ -62,11 +73,13 @@ async function copyLine(text: string): Promise<void> {
 
 function PlaceMoreRow({ p }: { p: PlaceCardPayload["places"][number] }) {
   const { colors } = useTheme();
+  const urlTrimmed = p.url.trim();
+  const asMap = shouldOpenPlaceRowAsMap({ lat: p.lat, lng: p.lng, urlTrimmed });
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${p.name}, open in Maps`}
-      onPress={() => void openExternalUrl(mapsUrlForPlace(p))}
+      accessibilityLabel={asMap ? `${p.name}, open in Maps` : `${p.name}, open website`}
+      onPress={() => void openPlaceRow(p)}
       style={({ pressed }) => [
         styles.morePlaceRow,
         {
@@ -116,31 +129,8 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
   const heroPlaces = data.places.slice(0, PLACE_HERO_COUNT);
   const morePlaces = data.places.slice(PLACE_HERO_COUNT);
 
-  const showMap = data.mapCenterLat !== 0 && data.mapCenterLng !== 0;
-  const mapUri = showMap
-    ? `https://staticmap.openstreetmap.de/staticmap.php?center=${data.mapCenterLat},${data.mapCenterLng}&zoom=14&size=640x240&markers=${data.mapCenterLat},${data.mapCenterLng},red-pushpin`
-    : "";
-
   return (
     <View style={styles.root}>
-      {showMap ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open map area in Maps"
-          onPress={() =>
-            void openExternalUrl(
-              `https://www.google.com/maps/search/?api=1&query=${data.mapCenterLat},${data.mapCenterLng}`,
-            )
-          }
-        >
-          <Image
-            source={{ uri: mapUri }}
-            style={[styles.mapPreview, { backgroundColor: colors.secondarySurface }]}
-            resizeMode="cover"
-            accessibilityIgnoresInvertColors
-          />
-        </Pressable>
-      ) : null}
       <View
         style={[
           styles.hero,
@@ -172,6 +162,11 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
         >
           {heroPlaces.map((p, i) => {
           const dial = phoneForDial(p.phone);
+          const placeLinkKind = labelForPlaceRowAction({
+            lat: p.lat,
+            lng: p.lng,
+            urlTrimmed: p.url.trim(),
+          });
           return (
           <View
             key={`${p.name}-${i}`}
@@ -357,16 +352,24 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
               ) : null}
               <Pressable
                 accessibilityRole="link"
-                accessibilityLabel={`Open ${p.name} in Maps`}
-                onPress={() => void openExternalUrl(mapsUrlForPlace(p))}
+                accessibilityLabel={
+                  placeLinkKind === "Map"
+                    ? `Open ${p.name} in Maps`
+                    : `Open ${p.name} website`
+                }
+                onPress={() => void openPlaceRow(p)}
                 style={({ pressed }) => [
                   styles.linkRow,
                   { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted },
                 ]}
               >
-                <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                {placeLinkKind === "Map" ? (
+                  <MapPin size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                ) : (
+                  <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                )}
                 <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
-                  Open in Maps
+                  {placeLinkKind}
                 </PemText>
               </Pressable>
             </View>
@@ -380,7 +383,7 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
         <View style={styles.morePlacesSection}>
           <PemText style={[styles.morePlacesTitle, { color: colors.textSecondary }]}>More places</PemText>
           <PemText variant="caption" style={[styles.morePlacesHint, { color: colors.textTertiary }]}>
-            Additional matches — tap a row for Maps.
+            Additional matches — tap a row.
           </PemText>
           <View style={styles.morePlacesList}>
             {morePlaces.map((p, i) => (
@@ -402,12 +405,6 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
 const styles = StyleSheet.create({
   root: {
     gap: space[5],
-  },
-  mapPreview: {
-    width: "100%",
-    height: 160,
-    borderRadius: radii.lg,
-    overflow: "hidden",
   },
   hero: {
     borderRadius: radii.lg,
