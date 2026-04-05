@@ -32,6 +32,7 @@ import type {
   SummaryCardPayload,
   TrendsCardPayload,
 } from "@/lib/adaptivePrep";
+import type { CompositeBriefPayload } from "@/lib/compositePrep";
 import type { PrepResultBlock } from "@/lib/prepBlocks";
 
 /**
@@ -138,6 +139,10 @@ export type Prep = {
   trendsCard?: TrendsCardPayload;
   marketCard?: MarketCardPayload;
   jobsCard?: JobsCardPayload;
+  /** Multi-section intelligent brief (`COMPOSITE_BRIEF`). */
+  compositeBrief?: CompositeBriefPayload;
+  /** Parent dump text — detail fetch only. */
+  dumpTranscript?: string;
 };
 
 export const SAMPLE_READY_PREPS: Prep[] = [

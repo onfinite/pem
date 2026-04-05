@@ -5,6 +5,8 @@ HTTP API for Pem: **PostgreSQL** (`user`, `dump`, `prep`), **Clerk** auth and we
 ## Stack
 
 - **NestJS** 11, **Drizzle ORM**, **pg**
+
+**Prep runner (high level):** Vague travel / situational asks default to **composite** (`COMPOSITE_BRIEF`) via heuristics + composite detection; **narrow** Serp flight pipe or explicit fare-only messages can stay **single-lane**. **Composite fan-out (default):** a mini-model **plans 2–4 parallel lanes** (e.g. flights vs hotels vs map); each lane runs a **separate** `generateText` tool loop in parallel; lane outputs are **concatenated**, then a **merge** pass (mini-model, **no tools**) dedupes and unifies into one memo, then the composite JSON formatter runs (thinness / adaptive fallbacks as before). Disable fan-out with `COMPOSITE_FANOUT_ENABLED=false`, or disable merge only with `COMPOSITE_MERGE_ENABLED=false`. The composite **normalizer** (`normalizeCompositeBrief`) repairs common mini-model mistakes; the formatter is retried once on failure.
 - **Clerk:** `jose` (JWKS + RS256) for `Authorization: Bearer`, **Svix** for `POST /webhooks/clerk`
 - **Rate limiting:** `@nestjs/throttler` (100/min; webhook route is skipped)
 

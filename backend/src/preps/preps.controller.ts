@@ -273,8 +273,9 @@ export class PrepsController {
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
-    const p = await this.preps.getByIdForUser(id, user.id);
-    return serializePrepForApi(p);
+    const { prep, transcript } =
+      await this.preps.getByIdWithDumpTranscriptForUser(id, user.id);
+    return serializePrepForApi(prep, { dumpTranscript: transcript });
   }
 
   @Patch(':id/archive')

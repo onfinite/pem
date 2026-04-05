@@ -9,7 +9,9 @@ alwaysApply: false
 
 # Pem: SerpAPI engines + app cards (reference)
 
-**Implementation:** `backend/src/integrations/serpapi.service.ts` (`fetchJson` → `https://serpapi.com/search.json`), **`backend/src/integrations/serpapi-query-parsers.ts`** (pipe formats for flights/hotels/reviews/ASIN/immersive token), and **`backend/src/agents/agent-tools/prep-google-bundle.ts`** (intent-aware `Promise.all` Serp + Tavily).
+**Implementation:** `backend/src/integrations/serpapi.service.ts` (`fetchJson` → `https://serpapi.com/search.json`), **`backend/src/integrations/serpapi-query-parsers.ts`** (pipe formats for flights/hotels/reviews/ASIN/immersive token, **`deriveSerpRetryHint`**), and **`backend/src/agents/agent-tools/prep-google-bundle.ts`** (intent-aware `Promise.all` Serp + Tavily).
+
+**Errors & retries:** SerpAPI often returns **HTTP 200** with `error` or `search_metadata.status: "Error"`. `fetchJson` treats those as failures and logs them. Engines that return **objects** (flights, hotels, trends, travel_explore, immersive_product, amazon_product, facebook_profile, maps_reviews) embed **`serp_error`** + **`serp_retry_hint`** in the JSON so the agent can fix the query and call `google()` again. Full engine list: [SerpAPI search engine APIs](https://serpapi.com/search-engine-apis).
 
 **Types:** `GoogleVertical` in `prep-google-bundle.ts`. **`intentAllowsGoogleSerp`** includes `SHOPPING`, `RESEARCH`, `COMPARISON`, `DECISION`, `LEGAL_FINANCIAL`, `FIND_PLACE`, `FIND_PERSON`, `SCHEDULE_PREP`, `LIFE_ADMIN`.
 
@@ -18,9 +20,8 @@ alwaysApply: false
 | vertical | SerpAPI engine(s) | Service method | Notes |
 |----------|-------------------|----------------|-------|
 | `shopping` | `google_shopping` + `amazon` + Tavily | `googleShopping`, `amazonSearch`, shopping bundle | SHOPPING intent always this bundle |
-| `maps` | `google_maps` | `googleMaps` | `ll` from client hint when present |
-| `local` | `google_local` | `googleLocal` | SMB / local pack style |
-| `local_services` | `google_local_services` | `googleLocalServices` | Pros / home services |
+| `local` | `google_local` | `googleLocal` | SMB / local pack style; also handles place/business searches (google_maps removed) |
+| `local_services` | **`google_local`** (not Serp’s `google_local_services`) | `googleLocalServices` | Agent vertical name; implementation uses Maps local pack. SerpAPI’s **`google_local_services`** needs **`data_cid`** + allowlisted **`q`** (e.g. `electrician`) per [their docs](https://serpapi.com/google-local-services-api) — free-text “movers near X” returns HTTP 400. |
 | `web` | `google` organic | `googleOrganic` | |
 | `news` | `google_news` | `googleNewsEngine` | Dedicated news engine |
 | `images` | `google_images` | `googleImages` | |
@@ -29,7 +30,7 @@ alwaysApply: false
 | `finance` | `google_finance` | `googleFinance` | Tickers / instruments |
 | `events` | `google_events` | `googleEvents` | Concerts, festivals; optional `htichips` via method opts (not exposed on tool yet) |
 | `flights` | `google_flights` | `googleFlights` | Query **`flight\|DEP\|ARR\|YYYY-MM-DD`** |
-| `hotels` | `google_hotels` | `googleHotels` | Query **`hotel\|City or name\|check_in\|check_out`** |
+| `hotels` | `google_hotels` | `googleHotels` | SerpAPI uses **`q`** + **`check_in_date`** / **`check_out_date`** ([docs](https://serpapi.com/google-hotels-api)). Parser: pipe **`hotel\|area or name\|YYYY-MM-DD\|YYYY-MM-DD`**, or any two ISO dates in free text, else defaults (+14d / 2-night) with full string as `q`. |
 | `forums` | `google_forums` | `googleForums` | Discussions / forums |
 | `maps_reviews` | `google_maps_reviews` | `googleMapsReviews` | Query **`reviews\|DATA_ID`** |
 | `travel_explore` | `google_travel_explore` | `googleTravelExplore` | Trip inspiration |

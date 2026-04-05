@@ -27,10 +27,10 @@ Implementation: `TavilyService`, `SerpApiService`; agent **`google()`** runs `ex
 | Intent | Serp | Tavily |
 |--------|------|--------|
 | `SHOPPING` | `google_shopping` | buying guide / reviews (exclude aggregator domains — see `shopping-search.constants.ts`) |
-| `FIND_PLACE` | `google_maps` | short context |
+| `FIND_PLACE` | `google_local` | short context |
 | `FIND_PERSON` | organic | background |
 | `SCHEDULE_PREP` | organic (past month) | synthesis |
-| `LIFE_ADMIN` | maps **or** organic by `vertical` | context / process |
+| `LIFE_ADMIN` | local **or** organic by `vertical` | context / process |
 
 When **`SERP_API_KEY`** is unset, the bundle falls back to Tavily-only with a warning in JSON.
 

@@ -36,7 +36,21 @@ import { ProfileService } from '../profile/profile.service';
 import { PrepsService } from '../preps/preps.service';
 import { PushService } from '../push/push.service';
 import { StepsService } from '../steps/steps.service';
+import {
+  isNarrowAtomicSingleLaneAsk,
+  shouldPreferCompositeBrief,
+} from './composite-heuristics';
+import { detectCompositeThought } from './composite-detect';
+import { buildCompositePrepAgentAddendum } from './prompts/prep-composite.prompt';
 import { tryPersistAdaptiveFormat } from './prep-runner-adaptive';
+import {
+  assembleAndPersistComposite,
+  type CompositePersistParams,
+} from './prep-runner-composite';
+import {
+  planCompositeLanes,
+  runCompositeFanout,
+} from './prep-runner-composite-fanout';
 
 /** Stored `prep_type` matches structured `primaryKind` (including `mixed`). */
 function prepTypeFromPrimaryKind(pk: PrimaryKind): PrepType {
@@ -96,7 +110,7 @@ export class PrepRunnerService {
       await this.appendLog(prepId, 'queued', 'Prep job picked up', {});
       this.log.log(`prep ${prepId} run starting`);
 
-      const intent = parsePrepIntent(prep.intent);
+      const classifiedIntent = parsePrepIntent(prep.intent);
 
       const apiKey = this.config.get<string>('openai.apiKey');
       if (!apiKey) {
@@ -104,13 +118,13 @@ export class PrepRunnerService {
         return;
       }
 
-      if (intent === 'TRACK_MONITOR') {
+      if (classifiedIntent === 'TRACK_MONITOR') {
         await this.appendLog(
           prepId,
           'run',
           'TRACK_MONITOR shortcut (no agent)',
           {
-            intent,
+            intent: classifiedIntent,
           },
         );
         const shortcut: StructuredPrepOutput = {
@@ -132,10 +146,42 @@ export class PrepRunnerService {
         this.config.get<string>('openai.model') ?? 'gpt-4o-mini';
       const agentModelId =
         this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
-      const maxSteps = this.config.get<number>('agentMaxSteps') ?? 10;
+      const defaultMaxSteps = this.config.get<number>('agentMaxSteps') ?? 10;
+      const compositeDetectTimeoutMs =
+        this.config.get<number>('compositeDetectTimeoutMs') ?? 25_000;
       const openai = createOpenAI({ apiKey });
       const agentModel = openai(agentModelId);
       const miniModel = openai(miniModelId);
+
+      const thoughtLine = prep.thought || prep.title;
+
+      let compositeMode = false;
+      {
+        const compositeCheck = await detectCompositeThought({
+          thoughtLine,
+          transcript,
+          miniModel,
+          timeoutMs: compositeDetectTimeoutMs,
+          log: this.log,
+        });
+        compositeMode = !compositeCheck.isSingleFocusedLane;
+        if (shouldPreferCompositeBrief(thoughtLine)) {
+          compositeMode = true;
+        }
+        if (isNarrowAtomicSingleLaneAsk(thoughtLine)) {
+          compositeMode = false;
+        }
+        await this.appendLog(prepId, 'run', 'Composite detection', {
+          isSingleFocusedLane: compositeCheck.isSingleFocusedLane,
+          situationType: compositeCheck.situationType,
+          confidence: compositeCheck.confidence,
+          compositeMode,
+          heuristicBoost: shouldPreferCompositeBrief(thoughtLine),
+          heuristicSingle: isNarrowAtomicSingleLaneAsk(thoughtLine),
+        });
+      }
+
+      const intentForTools = compositeMode ? 'RESEARCH' : classifiedIntent;
 
       const userId = prep.userId;
       const [userRow] = await this.db
@@ -144,7 +190,6 @@ export class PrepRunnerService {
         .where(eq(usersTable.id, userId))
         .limit(1);
 
-      const thoughtLine = prep.thought || prep.title;
       const [memorySection, pastPrepsBlock, pastDumpsBlock, profileMap] =
         await Promise.all([
           this.profile.buildMemoryPromptSection(userId),
@@ -179,7 +224,7 @@ export class PrepRunnerService {
         await this.prepEvents.consumeClientLocationHint(prepId);
       const sessionLocationBlock = formatLocationHintForPrompt(
         locationHint,
-        intent,
+        intentForTools,
       );
 
       const userPrompt = buildPrepUserPrompt({
@@ -214,40 +259,136 @@ export class PrepRunnerService {
         agentModel,
         userPrompt,
         displayName,
-        intent,
+        intent: intentForTools,
         mapsLocation,
       });
 
       const system = buildPrepAgentSystemPrompt(
         memorySection,
         relevantBlock,
-        intentSystemAddendum(intent),
+        compositeMode
+          ? buildCompositePrepAgentAddendum()
+          : intentSystemAddendum(classifiedIntent),
       );
+
+      const maxSteps = compositeMode
+        ? (this.config.get<number>('compositeAgentMaxSteps') ?? 14)
+        : defaultMaxSteps;
 
       const agentTimeoutMs =
         this.config.get<number>('prepAgentTimeoutMs') ?? 600_000;
       const structureTimeoutMs =
         this.config.get<number>('prepStructureTimeoutMs') ?? 120_000;
 
-      const agentResult = await generateText({
-        model: agentModel,
-        system,
-        prompt: userPrompt,
-        tools,
-        stopWhen: stepCountIs(maxSteps),
-        onStepFinish: (event) => appendPrepAgentStep(prepId, this.steps, event),
-        timeout: agentTimeoutMs,
-      });
+      const compositeFanoutEnabled =
+        this.config.get<boolean>('compositeFanoutEnabled') ?? true;
+      const compositeFanoutMaxLanes =
+        this.config.get<number>('compositeFanoutMaxLanes') ?? 4;
+      const compositeFanoutMaxStepsPerLane =
+        this.config.get<number>('compositeFanoutMaxStepsPerLane') ?? 8;
+      const compositeFanoutPlanTimeoutMs =
+        this.config.get<number>('compositeFanoutPlanTimeoutMs') ?? 20_000;
 
-      const agentText = agentResult.text;
+      let agentText: string;
+
+      if (compositeMode && compositeFanoutEnabled) {
+        try {
+          const lanes = await planCompositeLanes({
+            thoughtLine,
+            transcript,
+            miniModel,
+            timeoutMs: compositeFanoutPlanTimeoutMs,
+            maxLanes: compositeFanoutMaxLanes,
+            log: this.log,
+          });
+          const maxStepsPerLane = Math.max(
+            3,
+            Math.min(
+              compositeFanoutMaxStepsPerLane,
+              Math.floor(maxSteps / Math.max(1, lanes.length)),
+            ),
+          );
+          await this.appendLog(
+            prepId,
+            'run',
+            'Composite fan-out (structured)',
+            {
+              laneIds: lanes.map((l) => l.id),
+              laneSchemas: lanes.map((l) => `${l.id}→${l.cardSchema}`),
+              maxStepsPerLane,
+            },
+          );
+
+          const fanout = await runCompositeFanout({
+            lanes,
+            agentModel,
+            userPrompt,
+            memorySection,
+            relevantBlock,
+            tools,
+            maxStepsPerLane,
+            prepId,
+            steps: this.steps,
+            agentTimeoutMs,
+            log: this.log,
+          });
+
+          const compositeDone = await assembleAndPersistComposite({
+            laneResults: fanout.sections,
+            thoughtLine,
+            miniModel,
+            timeoutMs: structureTimeoutMs,
+            prepId,
+            log: this.log,
+            persist: async (p: CompositePersistParams) => {
+              await this.persistReadyResult(prepId, dumpIdStr, prep, p);
+            },
+          });
+          if (compositeDone) {
+            return;
+          }
+          this.log.warn(
+            'composite assembly failed — falling back to single agent',
+          );
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          this.log.warn(`composite fan-out failed, single agent: ${msg}`);
+        }
+
+        const agentResult = await generateText({
+          model: agentModel,
+          system,
+          prompt: userPrompt,
+          tools,
+          stopWhen: stepCountIs(maxSteps),
+          onStepFinish: (event) =>
+            appendPrepAgentStep(prepId, this.steps, event),
+          timeout: agentTimeoutMs,
+        });
+        agentText = agentResult.text;
+      } else {
+        const agentResult = await generateText({
+          model: agentModel,
+          system,
+          prompt: userPrompt,
+          tools,
+          stopWhen: stepCountIs(maxSteps),
+          onStepFinish: (event) =>
+            appendPrepAgentStep(prepId, this.steps, event),
+          timeout: agentTimeoutMs,
+        });
+        agentText = agentResult.text;
+      }
+
       const structuredFormatterCtx = {
         memorySection,
         thoughtLine,
         relevantContextSection: relevantBlock,
       };
 
+      /** After composite, align adaptive card with tool intent (RESEARCH in composite) — not raw LIFE_ADMIN etc. */
       const adaptiveDone = await tryPersistAdaptiveFormat({
-        intent,
+        intent: intentForTools,
         agentText,
         ctx: structuredFormatterCtx,
         miniModel,
@@ -320,10 +461,13 @@ export class PrepRunnerService {
       prepType: PrepType;
       result: Record<string, unknown>;
       logMeta?: Record<string, unknown>;
+      isComposite?: boolean;
+      displayEmoji?: string | null;
     },
   ): Promise<void> {
     const now = new Date();
     const { summary, prepType, result, logMeta } = params;
+    const isComposite = params.isComposite ?? false;
 
     const [updated] = await this.db
       .update(prepsTable)
@@ -334,6 +478,10 @@ export class PrepRunnerService {
         result,
         readyAt: now,
         errorMessage: null,
+        isComposite,
+        ...(params.displayEmoji !== undefined
+          ? { displayEmoji: params.displayEmoji }
+          : {}),
       })
       .where(and(eq(prepsTable.id, prepId), eq(prepsTable.status, 'prepping')))
       .returning();
@@ -355,6 +503,7 @@ export class PrepRunnerService {
         intent: updated.intent ?? null,
         status: updated.status,
         prep_type: updated.prepType,
+        is_composite: updated.isComposite,
         summary: updated.summary,
         result: updated.result,
         created_at: updated.createdAt.toISOString(),

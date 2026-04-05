@@ -59,7 +59,6 @@ export function createPrepAgentTools(d: PrepToolsFactoryDeps) {
 
   const googleVerticals = [
     'shopping',
-    'maps',
     'local',
     'local_services',
     'web',
@@ -85,7 +84,7 @@ export function createPrepAgentTools(d: PrepToolsFactoryDeps) {
 
   const googleTool = tool({
     description:
-      '**SerpAPI + Tavily bundle** — structured Google/third-party data plus context. Call **before** search() when you need real SERP rows. **vertical**: `shopping` (Google Shopping + Amazon + buying guide), `maps` (Google Maps places), `local` (google_local), `local_services` (pros / home services), `web` (organic), `news` (google_news engine), `images` / `images_light` (fast images), `jobs`, `finance`, `events` (concerts/festivals), `flights` (query **flight|DEP|ARR|YYYY-MM-DD**), `hotels` (**hotel|City|check_in|check_out**), `forums` (discussions), `maps_reviews` (**reviews|DATA_ID**), `travel_explore`, `trends`, `immersive_product` (**product|PAGE_TOKEN** from shopping), `amazon_product` (ASIN or **asin|B0…**), `apple_app_store`, `home_depot`, `facebook_profile` (public id), `scholar` (papers). SHOPPING always shopping bundle; FIND_PLACE defaults to maps but may use `events`/`local`/`local_services`/`travel_explore`/`maps_reviews`; LIFE_ADMIN may use travel/finance/trends; RESEARCH/COMPARISON/DECISION can use any vertical.',
+      '**SerpAPI + Tavily bundle** — structured Google/third-party data plus context. Call **before** search() when you need real SERP rows. **vertical**: `shopping` (Google Shopping + Amazon + buying guide), `local` (Google Local — businesses, services, places near a location), `local_services` (pros / home services), `web` (organic), `news` (google_news engine), `images` / `images_light` (fast images), `jobs`, `finance`, `events` (concerts/festivals), `flights` (query **flight|DEP|ARR|YYYY-MM-DD**), `hotels` (**hotel|City|check_in|check_out**), `forums` (discussions), `maps_reviews` (**reviews|DATA_ID**), `travel_explore`, `trends`, `immersive_product` (**product|PAGE_TOKEN** from shopping), `amazon_product` (ASIN or **asin|B0…**), `apple_app_store`, `home_depot`, `facebook_profile` (public id), `scholar` (papers). SHOPPING always shopping bundle; FIND_PLACE defaults to local; LIFE_ADMIN may use travel/finance/trends; RESEARCH/COMPARISON/DECISION can use any vertical. **If the JSON includes `serp_error` or `serp_retry_hint`,** read them, fix the query (dates, pipe format, DATA_ID, etc.), and **call google() again** — do not ignore engine errors.',
     inputSchema: z.object({
       query: z.string(),
       vertical: z.enum(googleVerticals),
@@ -113,7 +112,7 @@ export function createPrepAgentTools(d: PrepToolsFactoryDeps) {
   const fetchTool = tool({
     description:
       d.intent === 'SHOPPING'
-        ? 'Fetch a **retailer product page URL** (PDP) — Amazon /dp/, Target /p/, Walmart /ip/, brand store product URL — to confirm price, title, and og:image. Do not use fetch() for maps or blog-only pages; open the real seller product page instead.'
+        ? 'Fetch a **retailer product page URL** (PDP) — Amazon /dp/, Target /p/, Walmart /ip/, brand store product URL — to confirm price, title, and og:image. Do not use fetch() for blog-only pages; open the real seller product page instead.'
         : 'Fetch a public product or article URL and return readable text (and use the same page to infer og:image / main image URL for product cards)',
     inputSchema: z.object({ url: z.string().url() }),
     execute: async ({ url }: { url: string }) => {

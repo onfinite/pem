@@ -89,9 +89,16 @@ export type ResearchCardPayload = ResearchCardModelOutput & {
 export function normalizeResearchCard(
   raw: ResearchCardModelOutput,
 ): ResearchCardPayload {
+  let summary = raw.summary.trim();
+  if (!summary || summary.length < 12 || /^[0-9]+$/.test(summary)) {
+    summary =
+      raw.executiveSummary.trim().slice(0, 280) ||
+      raw.topic.trim().slice(0, 280) ||
+      'Research results ready.';
+  }
   return {
     schema: 'RESEARCH_CARD',
-    summary: raw.summary.trim(),
+    summary,
     topic: raw.topic.trim(),
     executiveSummary: raw.executiveSummary.trim(),
     keyFacts: raw.keyFacts

@@ -145,8 +145,26 @@ export async function tryPersistAdaptiveFormat(params: {
       if (!adaptive.output) return false;
       const payload = normalize(adaptive.output as T);
       const disc = payload.schema;
+      let safeSummary = payload.summary;
+      if (
+        !safeSummary ||
+        safeSummary.length < 8 ||
+        /^[0-9]+$/.test(safeSummary)
+      ) {
+        const fallbackKeys = ['executiveSummary', 'topic', 'title'] as const;
+        for (const k of fallbackKeys) {
+          const v = (payload as Record<string, unknown>)[k];
+          if (typeof v === 'string' && v.trim().length >= 12) {
+            safeSummary = v.trim().slice(0, 280);
+            break;
+          }
+        }
+        if (!safeSummary || safeSummary.length < 8) {
+          safeSummary = 'Your prep is ready.';
+        }
+      }
       await persist({
-        summary: payload.summary,
+        summary: safeSummary,
         prepType: prepTypeForSchema(disc),
         result: { ...payload } as Record<string, unknown>,
         logMeta: { schema: disc },

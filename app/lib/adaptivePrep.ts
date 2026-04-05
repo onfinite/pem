@@ -389,6 +389,10 @@ export function parseAdaptiveFromResult(
   }
   const sch = result.schema;
 
+  if (sch === "COMPOSITE_BRIEF") {
+    return {};
+  }
+
   if (sch === "SHOPPING_CARD") {
     const productsRaw = Array.isArray(result.products) ? result.products : [];
     const products = productsRaw.map(parseProduct).filter((p): p is ShoppingProduct => p !== null && p.name.length > 0);

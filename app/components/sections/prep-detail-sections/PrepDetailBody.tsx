@@ -4,7 +4,6 @@ import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import { formatKeyPointsMarkdown, formatSourcesMarkdown } from "@/lib/prepBodyMarkdown";
-import { prepKindCompanionLabel } from "@/lib/prepDetailLabels";
 import type { PrepOptionRow, PrepResultBlock } from "@/lib/prepBlocks";
 import { buildCanonicalSectionsFromPrep } from "@/lib/prepSections";
 import {
@@ -13,11 +12,14 @@ import {
   buildLegacyDraftShareText,
   buildPrepShareablePlainText,
 } from "@/lib/prepShareableText";
+import { getPrepDetailSectionHeader } from "@/lib/prepDetailSectionHeader";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { ExternalLink } from "lucide-react-native";
 import { useMemo } from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import type { Prep } from "../home-sections/homePrepData";
+import CompositeBriefView, { PrepOriginalDumpCollapsible } from "./CompositeBriefView";
+import PrepContentSectionHeader from "./PrepContentSectionHeader";
 import PrepAdaptiveStack from "./PrepAdaptiveStack";
 import PrepSectionStack from "./PrepSectionStack";
 import PrepShareRow from "./PrepShareRow";
@@ -36,7 +38,6 @@ const COPY = {
   draftSection: "Words you can send",
   draftHint: "Share when you’re ready — you’re always the one who sends.",
   limitationLabel: "Note",
-  shareSection: "Take this with you",
 } as const;
 
 /** Send/share for a block — placed after content so reading isn’t blocked by chrome. */
@@ -288,8 +289,12 @@ export default function PrepDetailBody({ prep }: Props) {
   const { colors } = useTheme();
 
   const shareableFull = buildPrepShareablePlainText(prep);
+  /** Only draft adaptive cards use system share — avoid a redundant footer on every prep. */
+  const sharePlainTextForAdaptiveStack = prep.draftCard ? shareableFull : "";
+  const hasComposite = Boolean(prep.compositeBrief);
   const hasAdaptive = Boolean(
-    prep.shoppingCard ||
+    !hasComposite &&
+    (prep.shoppingCard ||
       prep.placeCard ||
       prep.draftCard ||
       prep.comparisonCard ||
@@ -306,15 +311,8 @@ export default function PrepDetailBody({ prep }: Props) {
       prep.businessCard ||
       prep.trendsCard ||
       prep.marketCard ||
-      prep.jobsCard,
+      prep.jobsCard),
   );
-  const showFullShare =
-    !hasAdaptive &&
-    prep.status !== "prepping" &&
-    prep.status !== undefined &&
-    shareableFull.trim().length > 0;
-
-  const kindLabel = prepKindCompanionLabel(prep.kind);
   const isResearch = prep.kind === "deep_research";
   const isSearch = prep.kind === "web";
   const useBlocks = Boolean(prep.blocks?.length);
@@ -332,7 +330,10 @@ export default function PrepDetailBody({ prep }: Props) {
     [prep.summary, prep.detailIntro, prep.blocks],
   );
 
-  const useSectionStack = !hasAdaptive && useBlocks && canonicalSections.length > 0;
+  const useSectionStack =
+    !hasComposite && !hasAdaptive && useBlocks && canonicalSections.length > 0;
+
+  const sectionMeta = getPrepDetailSectionHeader(prep);
 
   return (
     <View style={styles.block}>
@@ -342,7 +343,7 @@ export default function PrepDetailBody({ prep }: Props) {
         </PemText>
       ) : null}
 
-      {prep.detailIntro && !useSectionStack ? (
+      {prep.detailIntro && !hasComposite && !useSectionStack ? (
         <View style={styles.section}>
           <PemText selectable style={[styles.proseMuted, { color: colors.textSecondary }]}>
             {prep.detailIntro}
@@ -350,8 +351,19 @@ export default function PrepDetailBody({ prep }: Props) {
         </View>
       ) : null}
 
+      {sectionMeta ? (
+        <PrepContentSectionHeader title={sectionMeta.title} subtitle={sectionMeta.subtitle} />
+      ) : null}
+
+      {hasComposite && prep.compositeBrief ? (
+        <>
+          <CompositeBriefView brief={prep.compositeBrief} />
+          {prep.dumpTranscript ? <PrepOriginalDumpCollapsible text={prep.dumpTranscript} /> : null}
+        </>
+      ) : null}
+
       {hasAdaptive ? (
-        <PrepAdaptiveStack prep={prep} prepTitle={prep.title} sharePlainText={shareableFull} />
+        <PrepAdaptiveStack prep={prep} prepTitle={prep.title} sharePlainText={sharePlainTextForAdaptiveStack} />
       ) : null}
 
       {useSectionStack ? (
@@ -410,12 +422,6 @@ export default function PrepDetailBody({ prep }: Props) {
         </View>
       ) : null}
 
-      {showFullShare ? (
-        <View style={[styles.shareSection, { borderTopColor: colors.borderMuted }]}>
-          <PemText style={[styles.shareLabel, { color: colors.textSecondary }]}>{COPY.shareSection}</PemText>
-          <PrepShareRow text={shareableFull} shareTitle={prep.title || kindLabel} />
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -548,15 +554,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     lineHeight: lh(fontSize.lg, lineHeight.snug),
     marginBottom: space[2],
-  },
-  shareSection: {
-    gap: space[3],
-    paddingTop: space[4],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  shareLabel: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.sm,
-    letterSpacing: 0.2,
   },
 });

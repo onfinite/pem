@@ -375,6 +375,30 @@ function buildJobsCardShareText(c: JobsCardPayload): string {
   return lines.join("\n\n");
 }
 
+function buildCompositeBriefShareText(prep: Prep): string | null {
+  const b = prep.compositeBrief;
+  if (!b) return null;
+  const sectionLines = b.sections.map((s) => {
+    const head = [s.emoji, s.title].filter(Boolean).join(" ").trim();
+    const d = s.data;
+    const prose =
+      typeof d.summary === "string" && d.summary.trim()
+        ? d.summary.trim()
+        : typeof d.verdict === "string" && d.verdict.trim()
+          ? d.verdict.trim()
+          : JSON.stringify(d);
+    return `${head}\n${prose}`;
+  });
+  return [
+    `${b.emoji} ${b.title}`.trim(),
+    b.overview_teaser,
+    ...sectionLines,
+    b.sources_used.length > 0 ? `Sources: ${b.sources_used.join(", ")}` : "",
+  ]
+    .filter((x) => x && x.trim().length > 0)
+    .join("\n\n");
+}
+
 /** Full prep content for detail share (markdown-ish body kept as-is). */
 export function buildPrepShareablePlainText(prep: Prep): string {
   const parts: string[] = [];
@@ -382,6 +406,11 @@ export function buildPrepShareablePlainText(prep: Prep): string {
   if (prep.title?.trim()) parts.push(prep.title.trim());
   if (prep.summary?.trim()) parts.push(prep.summary.trim());
   if (prep.detailIntro?.trim()) parts.push(prep.detailIntro.trim());
+  const compositeText = buildCompositeBriefShareText(prep);
+  if (compositeText) {
+    parts.push(compositeText);
+    return parts.filter(Boolean).join("\n\n");
+  }
   if (prep.shoppingCard) {
     parts.push(buildShoppingCardShareText(prep.shoppingCard));
     return parts.filter(Boolean).join("\n\n");

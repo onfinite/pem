@@ -7,7 +7,6 @@ import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
-import { prepKindCompanionLabel } from "@/lib/prepDetailLabels";
 import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
 import { apiPrepToPrep, markPrepOpened } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
@@ -320,20 +319,7 @@ export default function PrepDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <View style={styles.heroPemRow}>
-            <PemText style={[styles.pemMark, { color: colors.pemAmber }]}>Pem</PemText>
-            <PemText style={[styles.heroDot, { color: colors.textSecondary }]}>·</PemText>
-            <PemText style={[styles.heroKind, { color: colors.textSecondary }]}>
-              {prepKindCompanionLabel(prep.kind)}
-            </PemText>
-          </View>
-          {prep.kind !== "deep_research" ? (
-            <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
-          ) : (
-            <PemText style={[styles.researchWelcome, { color: colors.textSecondary }]}>
-              Take your time — everything below is yours to use.
-            </PemText>
-          )}
+          <PemText style={[styles.title, { color: colors.textPrimary }]}>{prep.title}</PemText>
         </View>
         {prep.status === "failed" ? (
           retrying ? (
@@ -380,30 +366,7 @@ const styles = StyleSheet.create({
     paddingTop: space[1],
   },
   hero: {
-    gap: space[3],
-  },
-  heroPemRow: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: space[2],
-    flexWrap: "wrap",
-  },
-  pemMark: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.sm,
-    letterSpacing: 0.3,
-  },
-  heroDot: {
-    fontSize: fontSize.sm,
-  },
-  heroKind: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
-  },
-  researchWelcome: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.relaxed),
   },
   title: {
     fontFamily: fontFamily.display.semibold,

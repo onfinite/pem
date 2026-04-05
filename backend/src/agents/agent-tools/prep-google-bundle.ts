@@ -7,14 +7,13 @@ export type GoogleBundleDeps = {
   intent: PrepIntent;
   serp: SerpApiService;
   tavily: TavilyService;
-  /** SerpAPI `ll` for `google_maps` — device location from client hint (not persisted). */
+  /** Device coordinates for `google_local` — passed as `ll` to SerpAPI. */
   mapsLocation?: { latitude: number; longitude: number } | null;
 };
 
 /** Pass to `google()` — picks SerpAPI engine + Tavily pairing. */
 export type GoogleVertical =
   | 'shopping'
-  | 'maps'
   | 'local'
   | 'local_services'
   | 'web'
@@ -74,7 +73,7 @@ async function runShoppingBundle(
   );
 }
 
-async function runMapsPlaceBundle(
+async function runLocalPlaceBundle(
   d: GoogleBundleDeps,
   q: string,
 ): Promise<string> {
@@ -83,13 +82,33 @@ async function runMapsPlaceBundle(
     loc !== undefined
       ? `${q} reviews what to know (${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)})`
       : `${q} reviews what to know`;
-  const [maps, extra] = await Promise.all([
-    d.serp.googleMaps(q, loc),
-    d.tavily.search(tavilyQuery, 4, {
-      searchDepth: 'basic',
-    }),
+
+  const [results, extra] = await Promise.all([
+    d.serp.googleLocal(q, loc),
+    d.tavily.search(tavilyQuery, 4, { searchDepth: 'basic' }),
   ]);
-  return JSON.stringify({ google_maps: maps, context_tavily: extra }, null, 2);
+
+  if (Array.isArray(results) && results.length === 0) {
+    const rescue = await d.tavily.search(`${q} top rated near me`, 6, {
+      searchDepth: 'advanced',
+    });
+    return JSON.stringify(
+      {
+        google_local: [],
+        serp_note:
+          'google_local returned no results — Tavily used as fallback.',
+        tavily_rescue: rescue,
+        context_tavily: extra,
+      },
+      null,
+      2,
+    );
+  }
+  return JSON.stringify(
+    { google_local: results, context_tavily: extra },
+    null,
+    2,
+  );
 }
 
 async function runOrganicWebBundle(
@@ -149,8 +168,6 @@ async function runResearchVerticalBundle(
   switch (vertical) {
     case 'shopping':
       return runShoppingBundle(d, q);
-    case 'maps':
-      return runMapsPlaceBundle(d, q);
     case 'local': {
       const [rows, tv] = await Promise.all([
         d.serp.googleLocal(q, loc),
@@ -158,6 +175,24 @@ async function runResearchVerticalBundle(
           searchDepth: 'basic',
         }),
       ]);
+      if (Array.isArray(rows) && rows.length === 0) {
+        const rescue = await d.tavily.search(
+          `${q} top rated businesses near`,
+          6,
+          { searchDepth: 'advanced' },
+        );
+        return JSON.stringify(
+          {
+            google_local: [],
+            serp_note:
+              'Google Local returned no results — Tavily used as fallback.',
+            tavily_rescue: rescue,
+            context_tavily: tv,
+          },
+          null,
+          2,
+        );
+      }
       return JSON.stringify(
         { google_local: rows, context_tavily: tv },
         null,
@@ -263,10 +298,37 @@ async function runResearchVerticalBundle(
           searchDepth: 'basic',
         }),
       ]);
+      const hotelsFailed =
+        !hotels ||
+        (typeof hotels === 'object' &&
+          'serp_error' in hotels &&
+          (!Array.isArray(hotels.properties) ||
+            (hotels.properties as unknown[]).length === 0));
+      if (hotelsFailed) {
+        const rescue = await d.tavily.search(
+          `best hotels ${q} prices booking`,
+          6,
+          { searchDepth: 'advanced' },
+        );
+        return JSON.stringify(
+          {
+            google_hotels: hotels,
+            serp_note:
+              'SerpAPI google_hotels returned no properties — Tavily used as fallback.',
+            tavily_rescue: rescue,
+            hotels_query_hint:
+              'hotel|City or name|YYYY-MM-DD|YYYY-MM-DD — or free text with two ISO dates; else defaults (+14d, 2 nights)',
+            context_tavily: tv,
+          },
+          null,
+          2,
+        );
+      }
       return JSON.stringify(
         {
           google_hotels: hotels,
-          hotels_query_hint: 'hotel|City or name|check_in|check_out',
+          hotels_query_hint:
+            'hotel|City or name|YYYY-MM-DD|YYYY-MM-DD — or free text with two ISO dates; else defaults (+14d, 2 nights)',
           context_tavily: tv,
         },
         null,
@@ -448,15 +510,12 @@ export async function executeGoogleBundle(
       ) {
         return runResearchVerticalBundle(d, q, vertical);
       }
-      return runMapsPlaceBundle(d, q);
+      return runLocalPlaceBundle(d, q);
     case 'FIND_PERSON':
       return runOrganicWebBundle(d, q, `${q} background role professional`);
     case 'SCHEDULE_PREP':
       return runScheduleBundle(d, q);
     case 'LIFE_ADMIN':
-      if (vertical === 'maps') {
-        return runMapsPlaceBundle(d, q);
-      }
       if (
         vertical === 'flights' ||
         vertical === 'hotels' ||

@@ -15,7 +15,7 @@ Classify into exactly ONE intent:
 - COMPARISON — compare **products, tools, plans, services as SKUs** side-by-side (not "which two restaurants" — those are FIND_PLACE or DECISION about venues)
 - DECISION — choose between **abstract paths** or **non-venue** options; if the question is "which restaurant / bar / hotel should I pick" and they need **real venues**, prefer FIND_PLACE
 - LEGAL_FINANCIAL — contracts, taxes, legal, money decisions needing care
-- LIFE_ADMIN — logistics, moving, visa, appointments, renovation, bureaucracy steps **without** a primary "show me places on a map" ask
+- LIFE_ADMIN — logistics, moving, visa, appointments, renovation, bureaucracy steps **without** a primary "show me places on a map" ask — **not** vacation/trip/itinerary/travel planning (those are RESEARCH, FIND_PLACE, FLIGHTS, or EVENTS depending on the ask)
 - TASK_UNCLEAR — too vague; need a clarifying question first
 - SUMMARIZE — summarize a specific article, doc, contract, thread (user pasted text or gave a URL)
 - FIND_PERSON — find someone: LinkedIn, who is CTO, head of sales at X, background on a person

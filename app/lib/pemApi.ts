@@ -2,6 +2,7 @@ import type { Prep, PrepKind } from "@/components/sections/home-sections/homePre
 import { extractPrepResultBody } from "@/lib/extractPrepResultBody";
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
 import { hasAnyAdaptiveCard, parseAdaptiveFromResult } from "@/lib/adaptivePrep";
+import { parseCompositeBriefFromResult } from "@/lib/compositePrep";
 import { cardLayoutFromResult, type CardLayoutId } from "@/lib/prepCardLayout";
 import {
   primaryKindFromResult,
@@ -56,6 +57,10 @@ export type ApiPrep = {
   bundle_type?: string | null;
   display_emoji?: string | null;
   bundle_detection_reason?: string | null;
+  /** Multi-section brief; `result.schema` is COMPOSITE_BRIEF when true. */
+  is_composite?: boolean;
+  /** Parent dump text — detail only (GET /preps/:id). */
+  dump_transcript?: string | null;
 };
 
 export async function apiFetch<T>(
@@ -296,20 +301,32 @@ function optionsFromShoppingCard(
 
 /** Maps API prep row to hub `Prep` for lists and detail. */
 export function apiPrepToPrep(row: ApiPrep): Prep {
+  const compositeBrief = parseCompositeBriefFromResult(
+    row.result,
+    row.is_composite === true,
+  );
   const adaptive = parseAdaptiveFromResult(row.result);
-  const blocks = hasAnyAdaptiveCard(adaptive)
+  const blocks = compositeBrief
     ? undefined
-    : parsePrepBlocksFromResult(row.result);
-  const layout = cardLayoutFromResult(row.result);
+    : hasAnyAdaptiveCard(adaptive)
+      ? undefined
+      : parsePrepBlocksFromResult(row.result);
+  const layout = compositeBrief ? null : cardLayoutFromResult(row.result);
   const pk = primaryKindFromResult(row.result) ?? row.prep_type;
   const kind = prepKindForHub(blocks, layout, pk);
   const useAdaptive = hasAnyAdaptiveCard(adaptive);
-  const Icon: LucideIcon = layout ? iconForLayout(layout) : iconForKind(kind);
+  const Icon: LucideIcon = compositeBrief
+    ? Layers
+    : layout
+      ? iconForLayout(layout)
+      : iconForKind(kind);
   const { body, draftText, detailIntro, draftSubject } =
-    blocks?.length || useAdaptive ? {} : extractBodyAndDraft(row);
-  const options = blocks?.length
-    ? optionsFromBlocks(blocks)
-    : optionsFromShoppingCard(row) ?? extractOptions(row);
+    compositeBrief || blocks?.length || useAdaptive ? {} : extractBodyAndDraft(row);
+  const options = compositeBrief
+    ? undefined
+    : blocks?.length
+      ? optionsFromBlocks(blocks)
+      : optionsFromShoppingCard(row) ?? extractOptions(row);
 
   const summary =
     row.summary?.trim() ||
@@ -327,7 +344,9 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
       : row.status === "failed"
         ? "Failed"
         : tagForPrimaryKind(pk);
-  if (row.status === "ready" && layout) {
+  if (compositeBrief && row.status === "ready") {
+    tag = "Intelligent brief";
+  } else if (row.status === "ready" && layout) {
     if (layout === "shopping_card") tag = "Shop picks";
     else if (layout === "draft_card") tag = "Draft ready";
     else if (layout === "place_card") tag = "Places";
@@ -349,7 +368,9 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
   }
 
   let viewLabel = viewLabelForKind(kind);
-  if (layout === "shopping_card") viewLabel = "View picks";
+  if (compositeBrief) {
+    viewLabel = "Open brief";
+  } else if (layout === "shopping_card") viewLabel = "View picks";
   else if (layout === "place_card") viewLabel = "View places";
   else if (layout === "comparison_card") viewLabel = "Compare";
   else if (layout === "research_card") viewLabel = "Read";
@@ -406,6 +427,11 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     marketCard: adaptive.marketCard,
     jobsCard: adaptive.jobsCard,
     starred: Boolean(row.starred_at),
+    compositeBrief: compositeBrief ?? undefined,
+    dumpTranscript:
+      typeof row.dump_transcript === "string" && row.dump_transcript.trim().length > 0
+        ? row.dump_transcript.trim()
+        : undefined,
   };
 }
 

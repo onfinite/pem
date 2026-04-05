@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   json,
   pgTable,
@@ -56,6 +57,11 @@ export const prepsTable = pgTable(
     /** Enriched context: profile, intent, optional legacy keys, etc. */
     context: json('context').$type<Record<string, unknown>>(),
     prepType: text('prep_type').notNull(),
+    /**
+     * Multi-section intelligent brief (`result.schema` === COMPOSITE_BRIEF).
+     * Single-lane adaptive preps stay false.
+     */
+    isComposite: boolean('is_composite').notNull().default(false),
     status: text('status').notNull().default('prepping'),
     summary: text('summary'),
     result: json('result').$type<Record<string, unknown>>(),

@@ -10,7 +10,10 @@ export function readContextString(
 }
 
 /** Single JSON shape for list, detail, and SSE — one prep row; no multi-prep nesting. */
-export function serializePrepForApi(p: PrepRow): Record<string, unknown> {
+export function serializePrepForApi(
+  p: PrepRow,
+  opts?: { dumpTranscript?: string },
+): Record<string, unknown> {
   const ctx = p.context && typeof p.context === 'object' ? p.context : null;
 
   return {
@@ -20,6 +23,7 @@ export function serializePrepForApi(p: PrepRow): Record<string, unknown> {
     thought: p.thought || p.title,
     intent: p.intent ?? null,
     prep_type: p.prepType,
+    is_composite: p.isComposite,
     context: p.context,
     status: p.status,
     summary: p.summary,
@@ -37,5 +41,8 @@ export function serializePrepForApi(p: PrepRow): Record<string, unknown> {
     completed_sub_preps: null,
     failed_sub_preps: null,
     sub_preps: null,
+    ...(opts?.dumpTranscript !== undefined
+      ? { dump_transcript: opts.dumpTranscript }
+      : {}),
   };
 }

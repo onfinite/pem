@@ -332,6 +332,26 @@ export class PrepsService {
     return row;
   }
 
+  /**
+   * Prep row plus the parent dump transcript (detail screen — collapsed “original dump”).
+   */
+  async getByIdWithDumpTranscriptForUser(prepId: string, userId: string) {
+    const rows = await this.db
+      .select({
+        prep: prepsTable,
+        transcript: dumpsTable.transcript,
+      })
+      .from(prepsTable)
+      .innerJoin(dumpsTable, eq(prepsTable.dumpId, dumpsTable.id))
+      .where(and(eq(prepsTable.id, prepId), eq(prepsTable.userId, userId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      throw new NotFoundException('Prep not found');
+    }
+    return row;
+  }
+
   async listLogsForPrep(prepId: string, userId: string) {
     await this.getByIdForUser(prepId, userId);
     return this.db

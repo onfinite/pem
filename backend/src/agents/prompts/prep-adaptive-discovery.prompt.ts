@@ -45,8 +45,17 @@ ${ctxBlocks(ctx)}
 ${clipped}
 """
 
-**routeLabel** — e.g. "AUS → SFO · Jun 15 (one-way)" from trace.
-**offers**: label (e.g. "Best", "Cheaper"), price, airline, duration, stops, bookingUrl (real or ""), notes. Never invent prices.
+**routeLabel** — bold human line: origin city or IATA → destination · dates · one-way or round-trip (e.g. "AUS → LAS · Jun 12–15 · round trip").
+**offers** (up to 5): 
+- **label**: short badge — "Best overall", "Cheapest", "Shortest", "Direct", "Fewest stops" (pick what fits).
+- **price** — exact from trace (e.g. "$187").
+- **airline** — carrier name(s).
+- **duration** — e.g. "3h 45m" or "6h 20m with layover".
+- **stops** — "Nonstop" or "1 stop (DEN)" or "2 stops".
+- **bookingUrl** — real link from trace or "".
+- **notes** — optional: departure/arrival local times if present in trace (e.g. "7:05a → 8:50a local"); else "".
+
+Never invent prices, times, or URLs.
 
 Forbidden: "Explore", "Discover", "I'd be happy to help".`;
 }

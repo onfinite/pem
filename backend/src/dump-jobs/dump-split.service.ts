@@ -129,6 +129,7 @@ export class DumpSplitService {
       intent: p.intent ?? null,
       status: p.status,
       prep_type: p.prepType,
+      is_composite: p.isComposite,
       summary: p.summary,
       result: p.result,
       created_at: p.createdAt.toISOString(),

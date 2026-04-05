@@ -28,8 +28,6 @@ import {
 } from "./PrepDiscoveryCards";
 import PrepPlaceExperience from "./PrepPlaceExperience";
 import PrepShoppingExperience from "./PrepShoppingExperience";
-import PrepShareRow from "./PrepShareRow";
-
 type Props = {
   prep: Prep;
   prepTitle: string;
@@ -700,14 +698,6 @@ function IdeaSwipe({ prep }: { prep: NonNullable<Prep["ideaCards"]> }) {
 
 /** Renders the single adaptive layout for this prep (one schema at a time). */
 export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: Props) {
-  const { colors } = useTheme();
-  const share =
-    sharePlainText.trim().length > 0 ? (
-      <View style={[styles.shareFooter, { borderTopColor: colors.borderMuted }]}>
-        <PrepShareRow variant="compact" text={sharePlainText.trim()} shareTitle={prepTitle} />
-      </View>
-    ) : null;
-
   if (prep.shoppingCard) {
     return (
       <View>
@@ -775,7 +765,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <ComparisonSwipe prep={prep.comparisonCard} />
-        {share}
       </View>
     );
   }
@@ -783,7 +772,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <ResearchArticle prep={prep.researchCard} />
-        {share}
       </View>
     );
   }
@@ -791,7 +779,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <PersonCard prep={prep.personCard} />
-        {share}
       </View>
     );
   }
@@ -799,7 +786,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <MeetingBrief prep={prep.meetingBrief} />
-        {share}
       </View>
     );
   }
@@ -807,7 +793,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <DecisionVerdict prep={prep.decisionCard} />
-        {share}
       </View>
     );
   }
@@ -815,7 +800,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <LegalFinancial prep={prep.legalFinancialCard} />
-        {share}
       </View>
     );
   }
@@ -823,7 +807,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <ExplainCard prep={prep.explainCard} />
-        {share}
       </View>
     );
   }
@@ -831,7 +814,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <SummaryCard prep={prep.summaryCard} />
-        {share}
       </View>
     );
   }
@@ -839,7 +821,6 @@ export default function PrepAdaptiveStack({ prep, prepTitle, sharePlainText }: P
     return (
       <View style={styles.wrap}>
         <IdeaSwipe prep={prep.ideaCards} />
-        {share}
       </View>
     );
   }
@@ -1041,11 +1022,5 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     padding: space[4],
     gap: space[2],
-  },
-  shareFooter: {
-    paddingTop: space[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    justifyContent: "flex-end",
   },
 });

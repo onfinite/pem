@@ -156,13 +156,13 @@ One line: Pem's pick or how to choose among the options — from agent data only
 
 ## places (1–5 rows)
 - Order by fit: **first 3** render as the horizontal **Top places** carousel; **4–5** (if present) render as a **vertical list** below (same fields, compact rows).
-- **name**, **address**, **rating** (0–5), **reviewCount** (integer) — from google_maps / agent only; use 0 if unknown.
+- **name**, **address**, **rating** (0–5), **reviewCount** (integer) — from google_local / agent only; use 0 if unknown.
 - **photo** — best image URL from results (maps/local/events often expose **\`thumbnail\`**, **\`serpapi_thumbnail\`**, or **\`images[]\`**); otherwise "".
 - **lat**, **lng** — from Serp/maps data when present; use **0** and **0** if unknown (never guess coordinates).
-- **priceRange**, **hours**, **phone** — from Serp \`google_maps\` rows (\`phone\`, etc.) or ""; never invent.
-- **website** — business homepage URL from Serp \`google_maps\` \`website\` field when present; otherwise "". Not the same as the Maps link.
+- **priceRange**, **hours**, **phone** — from Serp \`google_local\` rows (\`phone\`, etc.) or ""; never invent.
+- **website** — business homepage URL from Serp \`google_local\` \`website\` field when present; otherwise "". Not the same as the Maps link.
 - **email** — only if it appears explicitly in the agent trace (e.g. fetched page); otherwise "". Never guess.
-- **url** — Google Maps place link (\`placeUrl\` / \`link\` in \`google_maps\` JSON) when present; "" if none.
+- **url** — Google Maps place link (\`placeUrl\` / \`link\` in \`google_local\` JSON) when present; "" if none.
 - **reviewSnippet** — short line from reviews, forums, or maps review text in the trace; "" if none.
 - **customerSatisfaction** — one line summarizing reputation / satisfaction; "" if none.
 - **pemNote** — one short line why this place fits the ask (from context).

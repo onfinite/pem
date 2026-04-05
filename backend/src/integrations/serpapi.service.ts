@@ -9,10 +9,22 @@ import {
 import {
   parseAmazonAsinQuery,
   parseFlightPipeQuery,
-  parseHotelPipeQuery,
+  deriveSerpRetryHint,
+  parseHotelFlexibleQuery,
   parseImmersiveProductQuery,
   parseMapsReviewsQuery,
+  simplifyQueryForGoogleLocal,
+  simplifyToKeywords,
+  extractLocationFromQuery,
 } from './serpapi-query-parsers';
+
+/** Parsed JSON from SerpAPI — includes engine-level errors in the body for HTTP 200. */
+type SerpFetchFailure = { message: string; hint: string };
+
+type SerpFetchResult = {
+  data: Record<string, unknown> | null;
+  failure?: SerpFetchFailure;
+};
 
 /** One normalized shopping row for the prep agent (from SerpAPI Google Shopping). */
 export type SerpShoppingItem = {
@@ -116,13 +128,38 @@ export class SerpApiService {
     return Boolean(this.config.get<string>('serpApi.apiKey')?.trim());
   }
 
+  /**
+   * SerpAPI returns JSON with `error` or `search_metadata.status: "Error"` even on HTTP 200.
+   * See [SerpAPI engines](https://serpapi.com/search-engine-apis).
+   */
+  private extractSerpApiError(
+    data: Record<string, unknown>,
+  ): SerpFetchFailure | null {
+    const sm = data.search_metadata as Record<string, unknown> | undefined;
+    if (sm && typeof sm.status === 'string' && sm.status === 'Error') {
+      const err = data.error;
+      const msg =
+        typeof err === 'string'
+          ? err
+          : err && typeof err === 'object'
+            ? JSON.stringify(err).slice(0, 500)
+            : 'SerpAPI search_metadata.status is Error';
+      return { message: msg.slice(0, 800), hint: deriveSerpRetryHint(msg) };
+    }
+    if (typeof data.error === 'string' && data.error.trim()) {
+      const msg = data.error.trim();
+      return { message: msg.slice(0, 800), hint: deriveSerpRetryHint(msg) };
+    }
+    return null;
+  }
+
   private async fetchJson(
     params: Record<string, string>,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<SerpFetchResult> {
     const key = this.config.get<string>('serpApi.apiKey')?.trim();
     if (!key) {
       this.log.warn('SERP_API_KEY missing — SerpAPI call skipped');
-      return null;
+      return { data: null };
     }
     const url = new URL('https://serpapi.com/search.json');
     url.searchParams.set('api_key', key);
@@ -135,27 +172,73 @@ export class SerpApiService {
       const res = await fetch(url.toString(), {
         signal: AbortSignal.timeout(25_000),
       });
-      if (!res.ok) {
-        const t = await res.text();
-        this.log.warn(`SerpAPI HTTP ${res.status}: ${t.slice(0, 200)}`);
-        return null;
+      const text = await res.text();
+      let json: Record<string, unknown>;
+      try {
+        json = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        this.log.warn(
+          `SerpAPI non-JSON (${res.status}): ${text.slice(0, 200)}`,
+        );
+        return {
+          data: null,
+          failure: {
+            message: `Invalid JSON (HTTP ${res.status})`,
+            hint: deriveSerpRetryHint(text),
+          },
+        };
       }
-      return (await res.json()) as Record<string, unknown>;
+      if (!res.ok) {
+        const fromBody = this.extractSerpApiError(json);
+        const base = `HTTP ${res.status}`;
+        if (fromBody) {
+          this.log.warn(`SerpAPI ${base}: ${fromBody.message}`);
+          return {
+            data: null,
+            failure: {
+              message: `${base}: ${fromBody.message}`,
+              hint: fromBody.hint,
+            },
+          };
+        }
+        const msg =
+          typeof json.error === 'string' ? json.error : text.slice(0, 400);
+        this.log.warn(`SerpAPI ${base}: ${msg}`);
+        return {
+          data: null,
+          failure: {
+            message: `${base}: ${msg}`,
+            hint: deriveSerpRetryHint(msg),
+          },
+        };
+      }
+      const fail = this.extractSerpApiError(json);
+      if (fail) {
+        this.log.warn(`SerpAPI engine error: ${fail.message}`);
+        return { data: null, failure: fail };
+      }
+      return { data: json };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.log.warn(`SerpAPI fetch failed: ${msg}`);
-      return null;
+      return {
+        data: null,
+        failure: { message: msg, hint: deriveSerpRetryHint(msg) },
+      };
     }
   }
 
   /** Google Shopping — product cards with price, image, store link. */
   async googleShopping(query: string): Promise<SerpShoppingItem[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_shopping',
       q,
       num: '12',
     });
+    if (failure) {
+      this.log.warn(`google_shopping: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.shopping_results;
     if (!Array.isArray(raw)) return [];
@@ -190,11 +273,14 @@ export class SerpApiService {
    */
   async amazonSearch(query: string): Promise<SerpShoppingItem[]> {
     const k = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'amazon',
       k,
       amazon_domain: 'amazon.com',
     });
+    if (failure) {
+      this.log.warn(`amazon: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.organic_results;
     if (!Array.isArray(raw)) return [];
@@ -241,77 +327,14 @@ export class SerpApiService {
   }
 
   /**
-   * Google Maps — local results with coordinates when available.
-   * When `location` is set, SerpAPI centers the map on that point (`ll`); without it,
-   * queries like "near me" resolve to an arbitrary default region (often wrong).
+   * @deprecated Use {@link googleLocal} instead — `google_maps` has been removed.
+   * Kept only as an alias so callers compile; routes to `google_local`.
    */
   async googleMaps(
     query: string,
     location?: { latitude: number; longitude: number },
   ): Promise<SerpLocalItem[]> {
-    const q = query.slice(0, 400);
-    const params: Record<string, string> = {
-      engine: 'google_maps',
-      q,
-      type: 'search',
-    };
-    if (location) {
-      const { latitude: lat, longitude: lng } = location;
-      params.ll = `@${lat},${lng},14z`;
-    }
-    const data = await this.fetchJson(params);
-    if (!data) return [];
-    const raw = data.local_results;
-    if (!Array.isArray(raw)) return [];
-    const out: SerpLocalItem[] = [];
-    for (const row of raw.slice(0, 12)) {
-      if (!row || typeof row !== 'object') continue;
-      const r = row as Record<string, unknown>;
-      const title = typeof r.title === 'string' ? r.title : '';
-      const address = typeof r.address === 'string' ? r.address : '';
-      const placeUrl = typeof r.link === 'string' ? r.link : '';
-      const website = typeof r.website === 'string' ? r.website.trim() : '';
-      const phone = typeof r.phone === 'string' ? r.phone.trim() : '';
-      const thumbnail = pickBestSerpImageUrl(r);
-      const type = typeof r.type === 'string' ? r.type : '';
-      let rating = 0;
-      let reviews = 0;
-      if (typeof r.rating === 'number' && !Number.isNaN(r.rating)) {
-        rating = Math.min(5, Math.max(0, r.rating));
-      }
-      if (typeof r.reviews === 'number' && !Number.isNaN(r.reviews)) {
-        reviews = Math.max(0, Math.floor(r.reviews));
-      }
-      const gps = r.gps_coordinates as
-        | { latitude?: number; longitude?: number }
-        | undefined;
-      let lat = 0;
-      let lng = 0;
-      if (
-        gps &&
-        typeof gps.latitude === 'number' &&
-        typeof gps.longitude === 'number'
-      ) {
-        lat = gps.latitude;
-        lng = gps.longitude;
-      }
-      if (title) {
-        out.push({
-          title,
-          address,
-          rating,
-          reviews,
-          thumbnail,
-          placeUrl,
-          website,
-          phone,
-          lat,
-          lng,
-          type,
-        });
-      }
-    }
-    return out;
+    return this.googleLocal(query, location);
   }
 
   /** Google organic web search — knowledge panel / LinkedIn discovery, news. */
@@ -328,7 +351,10 @@ export class SerpApiService {
     if (opts?.pastMonth) {
       params.tbs = 'qdr:m';
     }
-    const data = await this.fetchJson(params);
+    const { data, failure } = await this.fetchJson(params);
+    if (failure) {
+      this.log.warn(`google_organic: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.organic_results;
     if (!Array.isArray(raw)) return [];
@@ -354,13 +380,16 @@ export class SerpApiService {
     const q = query.slice(0, 400);
     const tbs =
       opts?.period === 'd' ? 'qdr:d' : opts?.period === 'm' ? 'qdr:m' : 'qdr:w';
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google',
       q,
       tbm: 'nws',
       tbs,
       num: '10',
     });
+    if (failure) {
+      this.log.warn(`google_news (tbm=nws): ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.news_results;
     if (!Array.isArray(raw)) return [];
@@ -391,11 +420,14 @@ export class SerpApiService {
   /** Google Images — thumbnails + originals for image search / reference. */
   async googleImages(query: string): Promise<SerpImageItem[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_images',
       q,
       num: '20',
     });
+    if (failure) {
+      this.log.warn(`google_images: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.images_results;
     if (!Array.isArray(raw)) return [];
@@ -430,7 +462,10 @@ export class SerpApiService {
     if (loc) {
       params.location = loc.slice(0, 120);
     }
-    const data = await this.fetchJson(params);
+    const { data, failure } = await this.fetchJson(params);
+    if (failure) {
+      this.log.warn(`google_jobs: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.jobs_results;
     if (!Array.isArray(raw)) return [];
@@ -470,10 +505,13 @@ export class SerpApiService {
   /** Google Finance — ticker / instrument snapshot (shape varies by instrument). */
   async googleFinance(query: string): Promise<SerpFinanceSnapshot | null> {
     const q = query.slice(0, 120);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_finance',
       q,
     });
+    if (failure) {
+      this.log.warn(`google_finance: ${failure.message}`);
+    }
     if (!data) return null;
     const summary = data.summary as Record<string, unknown> | undefined;
     if (!summary || typeof summary !== 'object') {
@@ -526,7 +564,10 @@ export class SerpApiService {
     if (loc) params.location = loc.slice(0, 120);
     const chips = opts?.htichips?.trim();
     if (chips) params.htichips = chips.slice(0, 200);
-    const data = await this.fetchJson(params);
+    const { data, failure } = await this.fetchJson(params);
+    if (failure) {
+      this.log.warn(`google_events: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.events_results;
     if (!Array.isArray(raw)) return [];
@@ -576,10 +617,19 @@ export class SerpApiService {
   async googleFlights(query: string): Promise<Record<string, unknown> | null> {
     const parsed = parseFlightPipeQuery(query);
     if (!parsed) {
-      this.log.warn(
-        'google_flights: use query flight|DEP|ARR|YYYY-MM-DD (e.g. flight|AUS|SFO|2026-06-15)',
+      this.log.debug(
+        'google_flights: expected query flight|DEP|ARR|YYYY-MM-DD (e.g. flight|AUS|SFO|2026-06-15)',
       );
-      return null;
+      return {
+        serp_error:
+          'Google Flights requires the pipe format in the query argument.',
+        serp_retry_hint:
+          'flight|DEP_IATA|ARR_IATA|YYYY-MM-DD (e.g. flight|AUS|SFO|2026-06-15)',
+        best_flights: [],
+        other_flights: [],
+        price_insights: null,
+        search_parameters: null,
+      };
     }
     const params: Record<string, string> = {
       engine: 'google_flights',
@@ -589,7 +639,17 @@ export class SerpApiService {
       type: parsed.type,
       currency: 'USD',
     };
-    const data = await this.fetchJson(params);
+    const { data, failure } = await this.fetchJson(params);
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        best_flights: [],
+        other_flights: [],
+        price_insights: null,
+        search_parameters: null,
+      };
+    }
     if (!data) return null;
     const best = data.best_flights;
     const other = data.other_flights;
@@ -602,23 +662,36 @@ export class SerpApiService {
   }
 
   /**
-   * Google Hotels — query `hotel|city or name|check_in|check_out` (YYYY-MM-DD).
+   * Google Hotels — see [SerpAPI Google Hotels](https://serpapi.com/google-hotels-api).
+   * Best: `hotel|city or name|check_in|check_out` (YYYY-MM-DD). Also accepts two ISO dates
+   * in free text, or infers default dates (+14d / +2 nights) when only a place string is given.
    */
   async googleHotels(query: string): Promise<Record<string, unknown> | null> {
-    const parsed = parseHotelPipeQuery(query);
+    const parsed = parseHotelFlexibleQuery(query);
     if (!parsed) {
-      this.log.warn(
-        'google_hotels: use query hotel|Area or hotel name|check_in|check_out',
-      );
+      this.log.warn('google_hotels: empty query');
       return null;
     }
-    const data = await this.fetchJson({
+    this.log.debug(
+      `google_hotels: q="${parsed.q.slice(0, 80)}" check_in=${parsed.check_in} check_out=${parsed.check_out} (raw="${query.slice(0, 80)}")`,
+    );
+    const { data, failure } = await this.fetchJson({
       engine: 'google_hotels',
       q: parsed.q.slice(0, 400),
-      check_in: parsed.check_in,
-      check_out: parsed.check_out,
+      check_in_date: parsed.check_in,
+      check_out_date: parsed.check_out,
       gl: 'us',
+      hl: 'en',
+      currency: 'USD',
     });
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        properties: [],
+        search_parameters: null,
+      };
+    }
     if (!data) return null;
     const props = data.properties;
     return {
@@ -630,7 +703,13 @@ export class SerpApiService {
   /** Discussions & forums (`engine=google_forums`). */
   async googleForums(query: string): Promise<SerpSimpleRow[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({ engine: 'google_forums', q });
+    const { data, failure } = await this.fetchJson({
+      engine: 'google_forums',
+      q,
+    });
+    if (failure) {
+      this.log.warn(`google_forums: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.discussions_and_forums;
     if (!Array.isArray(raw)) return [];
@@ -640,11 +719,14 @@ export class SerpApiService {
   /** Faster image search (`engine=google_images_light`). */
   async googleImagesLight(query: string): Promise<SerpImageItem[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_images_light',
       q,
       num: '20',
     });
+    if (failure) {
+      this.log.warn(`google_images_light: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.images_results;
     if (!Array.isArray(raw)) return [];
@@ -658,12 +740,27 @@ export class SerpApiService {
     const dataId = parseMapsReviewsQuery(query);
     if (!dataId) {
       this.log.warn('google_maps_reviews: use query reviews|DATA_ID');
-      return null;
+      return {
+        serp_error:
+          'google_maps_reviews requires reviews|DATA_ID from a Maps place.',
+        serp_retry_hint:
+          'Call maps first, then use reviews|DATA_ID from a result.',
+        reviews: [],
+        place_info: null,
+      };
     }
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_maps_reviews',
       data_id: dataId,
     });
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        reviews: [],
+        place_info: null,
+      };
+    }
     if (!data) return null;
     const revs = data.reviews;
     return {
@@ -677,40 +774,69 @@ export class SerpApiService {
     query: string,
     location?: { latitude: number; longitude: number },
   ): Promise<SerpLocalItem[]> {
-    const q = query.slice(0, 400);
+    const q = simplifyToKeywords(query).slice(0, 400);
+    this.log.debug(`google_local: q="${q}" (raw="${query.slice(0, 80)}")`);
     const params: Record<string, string> = {
       engine: 'google_local',
       q,
+      hl: 'en',
+      gl: 'us',
     };
+    const textLocation = extractLocationFromQuery(q);
+    if (textLocation) {
+      params.location = textLocation;
+    }
     if (location) {
       params.ll = `@${location.latitude},${location.longitude},14z`;
     }
-    const data = await this.fetchJson(params);
+    let { data, failure } = await this.fetchJson(params);
+    if (failure && textLocation && failure.message.includes('location')) {
+      this.log.warn(
+        `google_local: location "${textLocation}" rejected, retrying without`,
+      );
+      delete params.location;
+      ({ data, failure } = await this.fetchJson(params));
+    }
+    if (failure) {
+      this.log.warn(`google_local: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.local_results;
     if (!Array.isArray(raw)) return [];
     return this.mapLocalResultsRows(raw.slice(0, 12));
   }
 
-  /** Google Local Services (`engine=google_local_services`). */
+  /**
+   * “Local services” vertical for the agent bundle — implemented with **`google_local`**
+   * (Maps local pack), not SerpAPI’s `google_local_services` engine.
+   *
+   * SerpAPI’s [Google Local Services API](https://serpapi.com/google-local-services-api)
+   * requires **`data_cid`** (geographic Google CID) plus **`q` from Google’s fixed service list**
+   * (e.g. `electrician`) — not free text like “movers Fremont”. Passing only `q` + `ll`
+   * yields HTTP 400 “Unsupported `q` parameter.”
+   *
+   * Until we resolve city → `data_cid` and map asks to allowlisted service names, use
+   * **`google_local`**, which accepts normal local search queries and `ll`.
+   */
   async googleLocalServices(
     query: string,
     location?: { latitude: number; longitude: number },
   ): Promise<SerpSimpleRow[]> {
-    const q = query.slice(0, 400);
-    const params: Record<string, string> = {
-      engine: 'google_local_services',
-      q,
-    };
-    if (location) {
-      params.ll = `@${location.latitude},${location.longitude},14z`;
-    }
-    const data = await this.fetchJson(params);
-    if (!data) return [];
-    const raw =
-      data.local_services_results ?? data.local_results ?? data.local_place;
-    if (!Array.isArray(raw)) return [];
-    return this.mapSimpleRows(raw.slice(0, 12));
+    const local = await this.googleLocal(
+      simplifyQueryForGoogleLocal(query),
+      location,
+    );
+    return this.mapLocalItemsToSimpleRows(local);
+  }
+
+  /** Align google_local rows with SerpSimpleRow for bundle JSON shape. */
+  private mapLocalItemsToSimpleRows(items: SerpLocalItem[]): SerpSimpleRow[] {
+    return items.map((i) => ({
+      title: i.title,
+      link: i.placeUrl || i.website || '',
+      snippet: [i.address, i.type].filter(Boolean).join(' · ') || i.title,
+      thumbnail: i.thumbnail,
+    }));
   }
 
   /** Travel Explore — inspiration / destinations (`engine=google_travel_explore`). */
@@ -718,11 +844,20 @@ export class SerpApiService {
     query: string,
   ): Promise<Record<string, unknown> | null> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_travel_explore',
       q,
       gl: 'us',
     });
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        destinations: [],
+        discover_more: [],
+        search_parameters: null,
+      };
+    }
     if (!data) return null;
     return {
       destinations: data.destinations ?? data.top_destinations ?? [],
@@ -734,10 +869,19 @@ export class SerpApiService {
   /** Google Trends — interest over time + related (`engine=google_trends`). */
   async googleTrends(query: string): Promise<Record<string, unknown> | null> {
     const q = query.slice(0, 100);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_trends',
       q,
     });
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        interest_over_time: null,
+        related_queries: null,
+        related_topics: null,
+      };
+    }
     if (!data) return null;
     return {
       interest_over_time: data.interest_over_time ?? null,
@@ -753,12 +897,25 @@ export class SerpApiService {
     const token = parseImmersiveProductQuery(query);
     if (!token) {
       this.log.warn('google_immersive_product: use query product|PAGE_TOKEN');
-      return null;
+      return {
+        serp_error:
+          'immersive_product requires product|PAGE_TOKEN from a google_shopping result.',
+        serp_retry_hint:
+          'Use product|PAGE_TOKEN — copy PAGE_TOKEN from shopping JSON.',
+        immersive_product: null,
+      };
     }
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_immersive_product',
       page_token: token,
     });
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        immersive_product: null,
+      };
+    }
     if (!data) return null;
     return { immersive_product: data.immersive_product ?? data };
   }
@@ -768,13 +925,27 @@ export class SerpApiService {
     const asin = parseAmazonAsinQuery(query);
     if (!asin) {
       this.log.warn('amazon_product: pass ASIN or asin|B0XXXXXXXX');
-      return null;
+      return {
+        serp_error: 'amazon_product needs a valid ASIN or asin|B0XXXXXXXX.',
+        serp_retry_hint:
+          'Pass the product ASIN or asin|B0XXXXXXXX in the query.',
+        product_results: null,
+        search_parameters: null,
+      };
     }
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'amazon_product',
       asin,
       amazon_domain: 'amazon.com',
     });
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        product_results: null,
+        search_parameters: null,
+      };
+    }
     if (!data) return null;
     return {
       product_results: data.product_results ?? data,
@@ -785,11 +956,14 @@ export class SerpApiService {
   /** Apple App Store search (`engine=apple_app_store`). */
   async appleAppStore(query: string): Promise<SerpSimpleRow[]> {
     const term = query.slice(0, 200);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'apple_app_store',
       term,
       country: 'us',
     });
+    if (failure) {
+      this.log.warn(`apple_app_store: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.organic_results;
     if (!Array.isArray(raw)) return [];
@@ -799,10 +973,13 @@ export class SerpApiService {
   /** Home Depot product search (`engine=home_depot`). */
   async homeDepot(query: string): Promise<SerpSimpleRow[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'home_depot',
       q,
     });
+    if (failure) {
+      this.log.warn(`home_depot: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.products ?? data.organic_results;
     if (!Array.isArray(raw)) return [];
@@ -815,10 +992,17 @@ export class SerpApiService {
   ): Promise<Record<string, unknown> | null> {
     const profile_id = query.trim().slice(0, 200);
     if (!profile_id) return null;
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'facebook_profile',
       profile_id,
     });
+    if (failure) {
+      return {
+        serp_error: failure.message,
+        serp_retry_hint: failure.hint,
+        facebook_profile: null,
+      };
+    }
     if (!data) return null;
     return { facebook_profile: data };
   }
@@ -826,10 +1010,13 @@ export class SerpApiService {
   /** Google Scholar (`engine=google_scholar`) — academic papers. */
   async googleScholar(query: string): Promise<SerpSimpleRow[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_scholar',
       q,
     });
+    if (failure) {
+      this.log.warn(`google_scholar: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.organic_results;
     if (!Array.isArray(raw)) return [];
@@ -839,12 +1026,15 @@ export class SerpApiService {
   /** Dedicated Google News engine (`engine=google_news`). */
   async googleNewsEngine(query: string): Promise<SerpNewsItem[]> {
     const q = query.slice(0, 400);
-    const data = await this.fetchJson({
+    const { data, failure } = await this.fetchJson({
       engine: 'google_news',
       q,
       gl: 'us',
       hl: 'en',
     });
+    if (failure) {
+      this.log.warn(`google_news: ${failure.message}`);
+    }
     if (!data) return [];
     const raw = data.news_results;
     if (!Array.isArray(raw)) return [];
