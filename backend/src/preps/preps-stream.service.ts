@@ -103,7 +103,7 @@ export class PrepsStreamService {
   }
 
   private eventTypeForPrep(p: PrepRow): string {
-    if (p.status === 'ready') return 'prep.ready';
+    if (p.status === 'ready' || p.status === 'done') return 'prep.ready';
     if (p.status === 'failed') return 'prep.failed';
     return 'prep.created';
   }

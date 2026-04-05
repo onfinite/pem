@@ -64,8 +64,8 @@ Each section has a **card_schema** field. When set (not null), the app renders t
 **This is critical**: if you have structured data (businesses, flights, products, events, jobs), you MUST set card_schema and shape data to match the exact card payload. Text-only sections are a last resort for prose-only content.
 
 ### card_schema: "BUSINESS_CARD" — for businesses, services, venues, movers, restaurants, stores, any named places
-  data: { summary: "short overview", query: "what was searched", recommendation: "Pem's pick", businesses: [{ name: "...", rating: 4.5, reviewCount: 120, phone: "...", website: "https://...", address: "...", hours: "...", photo: "https://...", reviewSnippet: "...", customerSatisfaction: "...", mapsUrl: "https://...", pemNote: "..." }] }
-All string fields default to "" if unknown. rating defaults to 0, reviewCount to 0. At least 2 businesses when the transcript has them.
+  data: { summary: "short overview", query: "what was searched", recommendation: "Pem's pick", businesses: [{ name: "...", rating: 4.5, reviewCount: 120, phone: "...", website: "https://...", address: "...", hours: "...", photo: "https://...", reviewSnippet: "...", customerSatisfaction: "...", mapsUrl: "https://maps.google.com/...", lat: 0, lng: 0, pemNote: "..." }] }
+All string fields default to "" if unknown. rating defaults to 0, reviewCount to 0, lat/lng to 0 when unknown. **mapsUrl** = Google Maps place listing; **website** = business site. At least 2 businesses when the transcript has them.
 
 ### card_schema: "PLACE_CARD" — for geographic places with addresses (hotels, parks, landmarks, neighborhoods)
   data: { summary: "...", query: "...", recommendation: "...", places: [{ name: "...", address: "...", rating: 0, reviewCount: 0, photo: "", lat: 0, lng: 0, priceRange: "", hours: "", phone: "", website: "", email: "", url: "", reviewSnippet: "", customerSatisfaction: "", pemNote: "" }], mapCenterLat: 0, mapCenterLng: 0 }

@@ -23,7 +23,7 @@ import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemRefreshControl from "@/components/ui/PemRefreshControl";
 import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
 import { router } from "expo-router";
-import { Archive, Star } from "lucide-react-native";
+import { Archive, ListChecks, Star } from "lucide-react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -90,6 +90,19 @@ function StarredTabEmptyInbox() {
   );
 }
 
+function DoneTabEmptyInbox() {
+  const { colors } = useTheme();
+  return (
+    <HubEmptyState
+      compact
+      smallIconWell
+      icon={<ListChecks size={26} stroke={colors.textSecondary} strokeWidth={2} />}
+      title="Nothing in Done"
+      body="Open a ready prep and tap Done when you’ve acted on it — it stays here, dimmed, so you can revisit anytime."
+    />
+  );
+}
+
 function sortApiPrepsByCreatedAtDesc(rows: ApiPrep[]): ApiPrep[] {
   return [...rows].sort((a, b) => {
     const ta = Date.parse(a.created_at);
@@ -105,9 +118,11 @@ export default function HomeScreen() {
   const s = useInboxShell();
   const {
     readyPrepRows,
+    readyPrepRowsEffective,
     preppingPrepRows,
     archivedPrepRows,
     starredPrepRows,
+    donePrepRows,
     loadMore,
     hasMore,
     loadingMore,
@@ -120,6 +135,7 @@ export default function HomeScreen() {
     bulkUnarchivePreps,
     bulkDeletePreps,
     setStarPrep,
+    unreadReadyCount,
   } = usePrepHub();
   const { getToken } = useAuth();
   const getTokenRef = useRef(getToken);
@@ -197,14 +213,7 @@ export default function HomeScreen() {
   const nArchived = prepCounts?.archived ?? archivedPrepRows.length;
   const nStarred =
     typeof prepCounts?.starred === "number" ? prepCounts.starred : starredPrepRows.length;
-
-  const unreadReadyCount = useMemo(
-    () =>
-      readyPrepRows.filter(
-        (r) => r.status === "ready" && (r.opened_at === null || r.opened_at === undefined),
-      ).length,
-    [readyPrepRows],
-  );
+  const nDone = typeof prepCounts?.done === "number" ? prepCounts.done : donePrepRows.length;
 
   const [searchInput, setSearchInput] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
@@ -239,7 +248,9 @@ export default function HomeScreen() {
               ? "prepping"
               : tab === "archived"
                 ? "archived"
-                : "ready";
+                : tab === "done"
+                  ? "done"
+                  : "ready";
         const res = await searchPrepsPage(() => getTokenRef.current(), {
           q: searchDebounced,
           status: statusParam,
@@ -268,21 +279,28 @@ export default function HomeScreen() {
       if (tab === "starred") {
         return mergeHubTab(sortApiPrepsByCreatedAtDesc(searchRows));
       }
-      const rows = tab === "ready" ? sortReadyApiPreps(searchRows) : searchRows;
+      const rows =
+        tab === "ready"
+          ? sortReadyApiPreps(searchRows)
+          : tab === "done"
+            ? sortApiPrepsByCreatedAtDesc(searchRows)
+            : searchRows;
       return mergeHubTab(rows);
     }
-    if (tab === "ready") return mergeHubTab(sortReadyApiPreps(readyPrepRows));
+    if (tab === "ready") return mergeHubTab(sortReadyApiPreps(readyPrepRowsEffective));
     if (tab === "prepping") return mergeHubTab(preppingPrepRows);
     if (tab === "starred") return mergeHubTab(starredPrepRows);
+    if (tab === "done") return mergeHubTab(sortApiPrepsByCreatedAtDesc(donePrepRows));
     return mergeHubTab(archivedPrepRows);
   }, [
     searchActive,
     searchRows,
     tab,
-    readyPrepRows,
+    readyPrepRowsEffective,
     preppingPrepRows,
     archivedPrepRows,
     starredPrepRows,
+    donePrepRows,
   ]);
 
   useEffect(() => {
@@ -364,7 +382,9 @@ export default function HomeScreen() {
             ? "prepping"
             : tab === "archived"
               ? "archived"
-              : "ready";
+              : tab === "done"
+                ? "done"
+                : "ready";
       const res = await searchPrepsPage(() => getTokenRef.current(), {
         q: searchDebounced,
         status: statusParam,
@@ -390,6 +410,7 @@ export default function HomeScreen() {
     if (tab === "prepping" && hasMore.prepping) void loadMore("prepping");
     if (tab === "archived" && hasMore.archived) void loadMore("archived");
     if (tab === "starred" && hasMore.starred) void loadMore("starred");
+    if (tab === "done" && hasMore.done) void loadMore("done");
   }, [
     searchActive,
     searchHasMore,
@@ -438,6 +459,29 @@ export default function HomeScreen() {
               starred={starred}
               onStarPress={starToggle}
             />
+          );
+        }
+        if (st === "done") {
+          return (
+            <HubSwipeableRow
+              variant="ready"
+              prepId={prep.id}
+              canDelete={canDelete}
+              flat
+              selectionMode={selectMode}
+            >
+              <PrepInboxRow
+                prep={prep}
+                mode="done"
+                isLast={isLast}
+                onOpen={() => openPrepOrToggle(prep.id)}
+                selectionMode={selectMode}
+                selected={selected}
+                onLongPress={() => onRowLongPress(prep.id)}
+                starred={starred}
+                onStarPress={starToggle}
+              />
+            </HubSwipeableRow>
           );
         }
         if (st === "ready") {
@@ -527,6 +571,30 @@ export default function HomeScreen() {
         );
       }
 
+      if (tab === "done") {
+        return (
+          <HubSwipeableRow
+            variant="ready"
+            prepId={prep.id}
+            canDelete={canDelete}
+            flat
+            selectionMode={selectMode}
+          >
+            <PrepInboxRow
+              prep={prep}
+              mode="done"
+              isLast={isLast}
+              onOpen={() => openPrepOrToggle(prep.id)}
+              selectionMode={selectMode}
+              selected={selected}
+              onLongPress={() => onRowLongPress(prep.id)}
+              starred={starred}
+              onStarPress={starToggle}
+            />
+          </HubSwipeableRow>
+        );
+      }
+
       return (
         <HubSwipeableRow
           variant="archived"
@@ -568,7 +636,9 @@ export default function HomeScreen() {
     !searchActive &&
     ((tab === "ready" && loadingMore.ready) ||
       (tab === "prepping" && loadingMore.prepping) ||
-      (tab === "archived" && loadingMore.archived));
+      (tab === "archived" && loadingMore.archived) ||
+      (tab === "starred" && loadingMore.starred) ||
+      (tab === "done" && loadingMore.done));
 
   const listFooter =
     showSearchPaginationFooter || showTabPaginationFooter ? (
@@ -594,6 +664,8 @@ export default function HomeScreen() {
       <ArchivedTabEmptyInbox />
     ) : tab === "starred" && nStarred === 0 ? (
       <StarredTabEmptyInbox />
+    ) : tab === "done" && nDone === 0 ? (
+      <DoneTabEmptyInbox />
     ) : null;
 
   const bulkDeleteTitle =
@@ -635,7 +707,7 @@ export default function HomeScreen() {
             tab={tab}
             onCancel={exitSelectMode}
             onArchive={
-              tab === "ready" || tab === "prepping" || tab === "starred"
+              tab === "ready" || tab === "prepping" || tab === "starred" || tab === "done"
                 ? handleBulkArchive
                 : undefined
             }

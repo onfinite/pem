@@ -8,6 +8,7 @@ import {
   getPrepById,
   listPrepsPage,
   retryPrepApi,
+  setPrepDoneApi,
   starPrepApi,
   unarchivePrepApi,
   type ApiPrep,
@@ -46,13 +47,17 @@ export type HubToastPayload = {
 type PrepHubContextValue = {
   /** Root prep rows from API (hub lists roots only; same count as hub tabs). */
   readyPrepRows: ApiPrep[];
+  /** Ready rows with session optimistic `opened_at` applied — use for Inbox sort, unread count, badges. */
+  readyPrepRowsEffective: ApiPrep[];
   preppingPrepRows: ApiPrep[];
   archivedPrepRows: ApiPrep[];
   starredPrepRows: ApiPrep[];
+  donePrepRows: ApiPrep[];
   readyPreps: Prep[];
   preppingPreps: Prep[];
   archivedPreps: Prep[];
   starredPreps: Prep[];
+  donePreps: Prep[];
   archivePrep: (id: string) => Promise<void>;
   unarchivePrep: (id: string) => Promise<void>;
   retryPrep: (id: string) => Promise<void>;
@@ -62,6 +67,8 @@ type PrepHubContextValue = {
   bulkUnarchivePreps: (ids: string[]) => Promise<void>;
   bulkDeletePreps: (ids: string[]) => Promise<void>;
   setStarPrep: (id: string, starred: boolean) => Promise<void>;
+  /** Mark ready prep done (Done tab) or move back to Inbox. */
+  setPrepDone: (id: string, done: boolean) => Promise<void>;
   /** Call before navigating to home so the hub can switch tab + show a toast (e.g. after archive → stay on Ready). */
   scheduleHomeNavigationIntent: (tab: PrepTab, toast?: string) => void;
   consumeHomeNavigationIntent: () => HomeNavigationIntent | null;
@@ -72,10 +79,26 @@ type PrepHubContextValue = {
   getPrep: (id: string) => Prep | undefined;
   fetchPrepById: (id: string) => Promise<Prep | null>;
   upsertPrepRow: (row: ApiPrep) => void;
+  /** Call when user opens a ready prep — marks read in hub immediately (survives refresh/list races until server confirms). */
+  markPrepOpenedOptimistic: (id: string) => void;
+  /** Ready preps not yet opened (Inbox) — uses effective `opened_at` including optimistic. */
+  unreadReadyCount: number;
   refresh: (opts?: PrepHubRefreshOptions) => Promise<void>;
-  loadMore: (tab: "ready" | "prepping" | "archived" | "starred") => Promise<void>;
-  hasMore: { ready: boolean; prepping: boolean; archived: boolean; starred: boolean };
-  loadingMore: { ready: boolean; prepping: boolean; archived: boolean; starred: boolean };
+  loadMore: (tab: "ready" | "prepping" | "archived" | "starred" | "done") => Promise<void>;
+  hasMore: {
+    ready: boolean;
+    prepping: boolean;
+    archived: boolean;
+    starred: boolean;
+    done: boolean;
+  };
+  loadingMore: {
+    ready: boolean;
+    prepping: boolean;
+    archived: boolean;
+    starred: boolean;
+    done: boolean;
+  };
   /** Exact totals from GET /preps/counts (null before first successful refresh). */
   prepCounts: PrepCountsResponse | null;
   loading: boolean;
@@ -107,9 +130,9 @@ function dedupePrepsById(rows: ApiPrep[]): ApiPrep[] {
   return sortPrepsByCreatedAtDesc([...map.values()]);
 }
 
-type TabKey = "ready" | "prepping" | "archived" | "starred";
+type TabKey = "ready" | "prepping" | "archived" | "starred" | "done";
 
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 9;
 
 function applyHubLayoutAnimation() {
   if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -127,17 +150,20 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   const [preppingPrepRows, setPreppingPrepRows] = useState<ApiPrep[]>([]);
   const [archivedPrepRows, setArchivedPrepRows] = useState<ApiPrep[]>([]);
   const [starredPrepRows, setStarredPrepRows] = useState<ApiPrep[]>([]);
+  const [donePrepRows, setDonePrepRows] = useState<ApiPrep[]>([]);
   const [cursors, setCursors] = useState<{
     ready: string | null;
     prepping: string | null;
     archived: string | null;
     starred: string | null;
-  }>({ ready: null, prepping: null, archived: null, starred: null });
+    done: string | null;
+  }>({ ready: null, prepping: null, archived: null, starred: null, done: null });
   const [loadingMore, setLoadingMore] = useState({
     ready: false,
     prepping: false,
     archived: false,
     starred: false,
+    done: false,
   });
   const loadingMoreRef = useRef(loadingMore);
   loadingMoreRef.current = loadingMore;
@@ -150,6 +176,35 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   const hubOpTokenRef = useRef<Map<string, number>>(new Map());
   const archiveInflightRef = useRef<Map<string, Promise<ApiPrep>>>(new Map());
   const unarchiveInflightRef = useRef<Map<string, Promise<ApiPrep>>>(new Map());
+
+  /** Local `opened_at` timestamps until PATCH /opened lands — avoids unread flicker when refresh races the API. */
+  const sessionOpenedAtRef = useRef<Record<string, string>>({});
+  const [sessionOpenedVersion, setSessionOpenedVersion] = useState(0);
+
+  const bumpOpenedSession = useCallback(() => {
+    setSessionOpenedVersion((v) => v + 1);
+  }, []);
+
+  const mergeOpenedRow = useCallback((row: ApiPrep): ApiPrep => {
+    const ts = sessionOpenedAtRef.current[row.id];
+    if (
+      (row.status === "ready" || row.status === "done") &&
+      ts &&
+      (row.opened_at === null || row.opened_at === undefined)
+    ) {
+      return { ...row, opened_at: ts };
+    }
+    return row;
+  }, []);
+
+  const markPrepOpenedOptimistic = useCallback(
+    (id: string) => {
+      if (sessionOpenedAtRef.current[id]) return;
+      sessionOpenedAtRef.current[id] = new Date().toISOString();
+      bumpOpenedSession();
+    },
+    [bumpOpenedSession],
+  );
 
   const bumpHubOpToken = useCallback((id: string) => {
     const n = (hubOpTokenRef.current.get(id) ?? 0) + 1;
@@ -180,9 +235,20 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const upsertPrepRow = useCallback((row: ApiPrep) => {
+    if (row.opened_at) {
+      delete sessionOpenedAtRef.current[row.id];
+      bumpOpenedSession();
+    }
     setReadyPrepRows((prev) => {
       const rest = prev.filter((x) => x.id !== row.id);
       if (row.status === "ready") {
+        return sortPrepsByCreatedAtDesc([...rest, row]);
+      }
+      return rest;
+    });
+    setDonePrepRows((prev) => {
+      const rest = prev.filter((x) => x.id !== row.id);
+      if (row.status === "done") {
         return sortPrepsByCreatedAtDesc([...rest, row]);
       }
       return rest;
@@ -208,16 +274,19 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       }
       return rest;
     });
-  }, []);
+  }, [bumpOpenedSession]);
 
   const refresh = useCallback(async (opts?: PrepHubRefreshOptions) => {
     if (!isSignedIn) {
+      sessionOpenedAtRef.current = {};
+      setSessionOpenedVersion((v) => v + 1);
       setReadyPrepRows([]);
       setPreppingPrepRows([]);
       setArchivedPrepRows([]);
       setStarredPrepRows([]);
+      setDonePrepRows([]);
       setPrepCounts(null);
-      setCursors({ ready: null, prepping: null, archived: null, starred: null });
+      setCursors({ ready: null, prepping: null, archived: null, starred: null, done: null });
       setLoading(false);
       return;
     }
@@ -234,6 +303,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
               prepping?: ApiPrep[];
               archived?: ApiPrep[];
               starred?: ApiPrep[];
+              done?: ApiPrep[];
             };
             if (
               parsed.v === CACHE_VERSION &&
@@ -245,6 +315,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
               setPreppingPrepRows(dedupePrepsById(parsed.prepping));
               setArchivedPrepRows(dedupePrepsById(parsed.archived));
               setStarredPrepRows(dedupePrepsById(parsed.starred ?? []));
+              setDonePrepRows(dedupePrepsById(parsed.done ?? []));
               setLoading(false);
             }
           } catch {
@@ -252,7 +323,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
           }
         }
       }
-      const [r, p, a, st] = await Promise.all([
+      const [r, p, a, st, d] = await Promise.all([
         listPrepsPage(getTokenRef.current, {
           status: "ready",
           limit: PREP_PAGE_SIZE,
@@ -269,6 +340,10 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
           starredOnly: true,
           limit: PREP_PAGE_SIZE,
         }),
+        listPrepsPage(getTokenRef.current, {
+          status: "done",
+          limit: PREP_PAGE_SIZE,
+        }),
       ]);
       try {
         const c = await fetchPrepCounts(getTokenRef.current);
@@ -280,11 +355,13 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       setPreppingPrepRows(dedupePrepsById(p.items));
       setArchivedPrepRows(dedupePrepsById(a.items));
       setStarredPrepRows(dedupePrepsById(st.items));
+      setDonePrepRows(dedupePrepsById(d.items));
       setCursors({
         ready: r.next_cursor,
         prepping: p.next_cursor,
         archived: a.next_cursor,
         starred: st.next_cursor,
+        done: d.next_cursor,
       });
       if (key) {
         await AsyncStorage.setItem(
@@ -295,6 +372,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
             prepping: p.items,
             archived: a.items,
             starred: st.items,
+            done: d.items,
           }),
         );
       }
@@ -311,16 +389,41 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     if (!cursor || loadingMoreRef.current[tab]) return;
     setLoadingMore((m) => ({ ...m, [tab]: true }));
     try {
-      const status = tab === "archived" ? "archived" : tab === "ready" ? "ready" : "prepping";
+      if (tab === "starred") {
+        const res = await listPrepsPage(getTokenRef.current, {
+          starredOnly: true,
+          limit: PREP_PAGE_SIZE,
+          cursor,
+        });
+        setStarredPrepRows((prev) =>
+          dedupePrepsById([...prev, ...res.items.map((x) => mergeOpenedRow(x))]),
+        );
+        setCursors((c) => ({ ...c, starred: res.next_cursor }));
+        return;
+      }
+      const status =
+        tab === "archived"
+          ? "archived"
+          : tab === "ready"
+            ? "ready"
+            : tab === "done"
+              ? "done"
+              : "prepping";
       const res = await listPrepsPage(getTokenRef.current, {
         status,
         limit: PREP_PAGE_SIZE,
         cursor,
       });
       if (tab === "ready") {
-        setReadyPrepRows((prev) => dedupePrepsById([...prev, ...res.items]));
+        setReadyPrepRows((prev) =>
+          dedupePrepsById([...prev, ...res.items.map((x) => mergeOpenedRow(x))]),
+        );
       } else if (tab === "prepping") {
         setPreppingPrepRows((prev) => dedupePrepsById([...prev, ...res.items]));
+      } else if (tab === "done") {
+        setDonePrepRows((prev) =>
+          dedupePrepsById([...prev, ...res.items.map((x) => mergeOpenedRow(x))]),
+        );
       } else {
         setArchivedPrepRows((prev) => dedupePrepsById([...prev, ...res.items]));
       }
@@ -331,7 +434,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoadingMore((m) => ({ ...m, [tab]: false }));
     }
-  }, [cursors]);
+  }, [cursors, mergeOpenedRow]);
 
   useEffect(() => {
     void refresh();
@@ -346,13 +449,44 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, [refresh]);
 
-  const readyPreps = useMemo(() => readyPrepRows.map(apiPrepToPrep), [readyPrepRows]);
+  const readyPrepRowsEffective = useMemo(
+    () => readyPrepRows.map(mergeOpenedRow),
+    [readyPrepRows, mergeOpenedRow, sessionOpenedVersion],
+  );
 
-  const preppingPreps = useMemo(() => preppingPrepRows.map(apiPrepToPrep), [preppingPrepRows]);
+  const unreadReadyCount = useMemo(
+    () =>
+      readyPrepRowsEffective.filter(
+        (r) =>
+          r.status === "ready" && (r.opened_at === null || r.opened_at === undefined),
+      ).length,
+    [readyPrepRowsEffective],
+  );
 
-  const archivedPreps = useMemo(() => archivedPrepRows.map(apiPrepToPrep), [archivedPrepRows]);
+  const readyPreps = useMemo(
+    () => readyPrepRowsEffective.map(apiPrepToPrep),
+    [readyPrepRowsEffective],
+  );
 
-  const starredPreps = useMemo(() => starredPrepRows.map(apiPrepToPrep), [starredPrepRows]);
+  const preppingPreps = useMemo(
+    () => preppingPrepRows.map((r) => apiPrepToPrep(mergeOpenedRow(r))),
+    [preppingPrepRows, mergeOpenedRow, sessionOpenedVersion],
+  );
+
+  const archivedPreps = useMemo(
+    () => archivedPrepRows.map((r) => apiPrepToPrep(mergeOpenedRow(r))),
+    [archivedPrepRows, mergeOpenedRow, sessionOpenedVersion],
+  );
+
+  const starredPreps = useMemo(
+    () => starredPrepRows.map((r) => apiPrepToPrep(mergeOpenedRow(r))),
+    [starredPrepRows, mergeOpenedRow, sessionOpenedVersion],
+  );
+
+  const donePreps = useMemo(
+    () => donePrepRows.map((r) => apiPrepToPrep(mergeOpenedRow(r))),
+    [donePrepRows, mergeOpenedRow, sessionOpenedVersion],
+  );
 
   const hasMore = useMemo(
     () => ({
@@ -360,18 +494,31 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       prepping: Boolean(cursors.prepping),
       archived: Boolean(cursors.archived),
       starred: Boolean(cursors.starred),
+      done: Boolean(cursors.done),
     }),
     [cursors],
   );
 
   const getPrep = useCallback(
     (id: string) => {
-      const r = [...readyPrepRows, ...preppingPrepRows, ...archivedPrepRows, ...starredPrepRows].find(
-        (p) => p.id === id,
-      );
-      return r ? apiPrepToPrep(r) : undefined;
+      const r = [
+        ...readyPrepRows,
+        ...donePrepRows,
+        ...preppingPrepRows,
+        ...archivedPrepRows,
+        ...starredPrepRows,
+      ].find((p) => p.id === id);
+      return r ? apiPrepToPrep(mergeOpenedRow(r)) : undefined;
     },
-    [readyPrepRows, preppingPrepRows, archivedPrepRows, starredPrepRows],
+    [
+      readyPrepRows,
+      donePrepRows,
+      preppingPrepRows,
+      archivedPrepRows,
+      starredPrepRows,
+      mergeOpenedRow,
+      sessionOpenedVersion,
+    ],
   );
 
   const fetchPrepById = useCallback(async (id: string) => {
@@ -388,6 +535,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     if (ids.length === 0) return;
     const idSet = new Set(ids);
     setReadyPrepRows((prev) => prev.filter((x) => !idSet.has(x.id)));
+    setDonePrepRows((prev) => prev.filter((x) => !idSet.has(x.id)));
     setPreppingPrepRows((prev) => prev.filter((x) => !idSet.has(x.id)));
     setArchivedPrepRows((prev) => prev.filter((x) => !idSet.has(x.id)));
     setStarredPrepRows((prev) => prev.filter((x) => !idSet.has(x.id)));
@@ -403,11 +551,14 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   const restoreSnapshotFromApiPrep = useCallback((snapshot: ApiPrep) => {
     const id = snapshot.id;
     setReadyPrepRows((prev) => prev.filter((x) => x.id !== id));
+    setDonePrepRows((prev) => prev.filter((x) => x.id !== id));
     setPreppingPrepRows((prev) => prev.filter((x) => x.id !== id));
     setArchivedPrepRows((prev) => prev.filter((x) => x.id !== id));
     setStarredPrepRows((prev) => prev.filter((x) => x.id !== id));
     if (snapshot.status === "ready") {
       setReadyPrepRows((prev) => sortPrepsByCreatedAtDesc([...prev, snapshot]));
+    } else if (snapshot.status === "done") {
+      setDonePrepRows((prev) => sortPrepsByCreatedAtDesc([...prev, snapshot]));
     } else if (snapshot.status === "prepping" || snapshot.status === "failed") {
       setPreppingPrepRows((prev) => sortPrepsByCreatedAtDesc([...prev, snapshot]));
     } else if (snapshot.status === "archived") {
@@ -421,17 +572,30 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   const findPrepRow = useCallback(
     (id: string): ApiPrep | undefined =>
       readyPrepRows.find((x) => x.id === id) ??
+      donePrepRows.find((x) => x.id === id) ??
       preppingPrepRows.find((x) => x.id === id) ??
       archivedPrepRows.find((x) => x.id === id) ??
       starredPrepRows.find((x) => x.id === id),
-    [readyPrepRows, preppingPrepRows, archivedPrepRows, starredPrepRows],
+    [readyPrepRows, donePrepRows, preppingPrepRows, archivedPrepRows, starredPrepRows],
   );
 
   const bumpPrepCountsForArchive = useCallback((row: ApiPrep) => {
     setPrepCounts((c) => {
       if (!c) return c;
+      const d = c.done ?? 0;
       if (row.status === "ready") {
-        return { ...c, ready: Math.max(0, c.ready - 1), archived: c.archived + 1 };
+        return {
+          ...c,
+          ready: Math.max(0, c.ready - 1),
+          archived: c.archived + 1,
+        };
+      }
+      if (row.status === "done") {
+        return {
+          ...c,
+          done: Math.max(0, d - 1),
+          archived: c.archived + 1,
+        };
       }
       if (row.status === "prepping" || row.status === "failed") {
         return { ...c, preparing: Math.max(0, c.preparing - 1), archived: c.archived + 1 };
@@ -443,8 +607,20 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   const bumpPrepCountsRevertArchive = useCallback((snapshot: ApiPrep) => {
     setPrepCounts((c) => {
       if (!c) return c;
+      const d = c.done ?? 0;
       if (snapshot.status === "ready") {
-        return { ...c, ready: c.ready + 1, archived: Math.max(0, c.archived - 1) };
+        return {
+          ...c,
+          ready: c.ready + 1,
+          archived: Math.max(0, c.archived - 1),
+        };
+      }
+      if (snapshot.status === "done") {
+        return {
+          ...c,
+          done: d + 1,
+          archived: Math.max(0, c.archived - 1),
+        };
       }
       if (snapshot.status === "prepping" || snapshot.status === "failed") {
         return { ...c, preparing: c.preparing + 1, archived: Math.max(0, c.archived - 1) };
@@ -473,7 +649,19 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
         row.starred_at && typeof c.starred === "number"
           ? { ...c, starred: Math.max(0, starN - 1) }
           : c;
-      if (row.status === "ready") return { ...withStar, ready: Math.max(0, c.ready - 1) };
+      const d = c.done ?? 0;
+      if (row.status === "ready") {
+        return {
+          ...withStar,
+          ready: Math.max(0, withStar.ready - 1),
+        };
+      }
+      if (row.status === "done") {
+        return {
+          ...withStar,
+          done: Math.max(0, d - 1),
+        };
+      }
       if (row.status === "prepping" || row.status === "failed") {
         return { ...withStar, preparing: Math.max(0, c.preparing - 1) };
       }
@@ -487,7 +675,19 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       if (!c) return c;
       const starN = typeof c.starred === "number" ? c.starred : 0;
       const withStar = snapshot.starred_at ? { ...c, starred: starN + 1 } : c;
-      if (snapshot.status === "ready") return { ...withStar, ready: c.ready + 1 };
+      const d = c.done ?? 0;
+      if (snapshot.status === "ready") {
+        return {
+          ...withStar,
+          ready: withStar.ready + 1,
+        };
+      }
+      if (snapshot.status === "done") {
+        return {
+          ...withStar,
+          done: d + 1,
+        };
+      }
       if (snapshot.status === "prepping" || snapshot.status === "failed") {
         return { ...withStar, preparing: c.preparing + 1 };
       }
@@ -513,6 +713,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
         ...row,
         status: "archived",
         archived_at: new Date().toISOString(),
+        done_at: null,
       };
       removeIdFromAllLists(id);
       setArchivedPrepRows((prev) =>
@@ -589,7 +790,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       const snapshot = { ...row };
       const token = bumpHubOpToken(id);
       applyHubLayoutAnimation();
-      const readyRow: ApiPrep = { ...row, status: "ready", archived_at: null };
+      const readyRow: ApiPrep = { ...row, status: "ready", archived_at: null, done_at: null };
       removeIdFromAllLists(id);
       setReadyPrepRows((prev) =>
         sortPrepsByCreatedAtDesc([...prev.filter((x) => x.id !== id), readyRow]),
@@ -619,7 +820,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
         }
       };
 
-      showHubToast("Restored to For you", undo);
+      showHubToast("Restored to Inbox", undo);
 
       const p = unarchivePrepApi(getTokenRef.current, id);
       unarchiveInflightRef.current.set(id, p);
@@ -733,6 +934,85 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     [findPrepRow, upsertPrepRow, refresh],
   );
 
+  const setPrepDone = useCallback(
+    async (id: string, done: boolean) => {
+      const row = findPrepRow(id);
+      if (!row || (row.status !== "ready" && row.status !== "done")) return;
+      const snapshot = { ...row };
+      const token = bumpHubOpToken(id);
+      applyHubLayoutAnimation();
+      const ts = new Date().toISOString();
+      const next: ApiPrep = {
+        ...row,
+        status: done ? "done" : "ready",
+        done_at: done ? ts : null,
+      };
+      removeIdsFromAllLists(id);
+      if (done) {
+        setDonePrepRows((prev) =>
+          sortPrepsByCreatedAtDesc([...prev.filter((x) => x.id !== id), next]),
+        );
+      } else {
+        setReadyPrepRows((prev) =>
+          sortPrepsByCreatedAtDesc([...prev.filter((x) => x.id !== id), next]),
+        );
+      }
+      if (next.starred_at) {
+        setStarredPrepRows((prev) =>
+          sortPrepsByCreatedAtDesc([...prev.filter((x) => x.id !== id), next]),
+        );
+      }
+      setPrepCounts((c) => {
+        if (!c) return c;
+        const d = c.done ?? 0;
+        if (done && snapshot.status === "ready") {
+          return { ...c, ready: Math.max(0, c.ready - 1), done: d + 1 };
+        }
+        if (!done && snapshot.status === "done") {
+          return { ...c, ready: c.ready + 1, done: Math.max(0, d - 1) };
+        }
+        return c;
+      });
+
+      try {
+        const serverRow = await setPrepDoneApi(getTokenRef.current, id, done);
+        if (readHubOpToken(id) !== token) return;
+        upsertPrepRow(serverRow);
+        syncCountsFromServer();
+      } catch (e) {
+        if (readHubOpToken(id) !== token) return;
+        bumpHubOpToken(id);
+        applyHubLayoutAnimation();
+        restoreSnapshotFromApiPrep(snapshot);
+        setPrepCounts((c) => {
+          if (!c) return c;
+          const d = c.done ?? 0;
+          if (done && snapshot.status === "ready") {
+            return { ...c, ready: c.ready + 1, done: Math.max(0, d - 1) };
+          }
+          if (!done && snapshot.status === "done") {
+            return { ...c, ready: Math.max(0, c.ready - 1), done: d + 1 };
+          }
+          return c;
+        });
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        showHubToast("Couldn’t update. Try again.");
+        throw e;
+      }
+    },
+    [
+      findPrepRow,
+      bumpHubOpToken,
+      readHubOpToken,
+      removeIdsFromAllLists,
+      restoreSnapshotFromApiPrep,
+      upsertPrepRow,
+      syncCountsFromServer,
+      showHubToast,
+    ],
+  );
+
   const bulkArchivePreps = useCallback(
     async (ids: string[]) => {
       const unique = [...new Set(ids)].filter(Boolean);
@@ -753,6 +1033,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
           ...row,
           status: "archived" as const,
           archived_at: new Date().toISOString(),
+          done_at: null,
         }));
         return sortPrepsByCreatedAtDesc([...filtered, ...archived]);
       });
@@ -799,12 +1080,13 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
           ...row,
           status: "ready" as const,
           archived_at: null,
+          done_at: null,
         }));
         return sortPrepsByCreatedAtDesc([...filtered, ...ready]);
       });
       for (let i = 0; i < rows.length; i++) bumpPrepCountsForUnarchive();
       const n = rows.length;
-      showHubToast(`Restored ${n} ${n === 1 ? "prep" : "preps"} to For you`);
+      showHubToast(`Restored ${n} ${n === 1 ? "prep" : "preps"} to Inbox`);
       try {
         await Promise.all(rows.map((r) => unarchivePrepApi(getTokenRef.current, r.id)));
         syncCountsFromServer();
@@ -864,13 +1146,16 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       readyPrepRows,
+      readyPrepRowsEffective,
       preppingPrepRows,
       archivedPrepRows,
       starredPrepRows,
+      donePrepRows,
       readyPreps,
       preppingPreps,
       archivedPreps,
       starredPreps,
+      donePreps,
       archivePrep,
       unarchivePrep,
       retryPrep,
@@ -879,6 +1164,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       bulkUnarchivePreps,
       bulkDeletePreps,
       setStarPrep,
+      setPrepDone,
       scheduleHomeNavigationIntent,
       consumeHomeNavigationIntent,
       hubToast,
@@ -887,6 +1173,8 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       getPrep,
       fetchPrepById,
       upsertPrepRow,
+      markPrepOpenedOptimistic,
+      unreadReadyCount,
       refresh,
       loadMore,
       hasMore,
@@ -897,13 +1185,16 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
     }),
     [
       readyPrepRows,
+      readyPrepRowsEffective,
       preppingPrepRows,
       archivedPrepRows,
       starredPrepRows,
+      donePrepRows,
       readyPreps,
       preppingPreps,
       archivedPreps,
       starredPreps,
+      donePreps,
       archivePrep,
       unarchivePrep,
       retryPrep,
@@ -912,6 +1203,7 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       bulkUnarchivePreps,
       bulkDeletePreps,
       setStarPrep,
+      setPrepDone,
       scheduleHomeNavigationIntent,
       consumeHomeNavigationIntent,
       hubToast,
@@ -920,6 +1212,8 @@ export function PrepHubProvider({ children }: { children: ReactNode }) {
       getPrep,
       fetchPrepById,
       upsertPrepRow,
+      markPrepOpenedOptimistic,
+      unreadReadyCount,
       refresh,
       loadMore,
       hasMore,

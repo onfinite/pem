@@ -38,6 +38,7 @@ export function intentSystemAddendum(intent: PrepIntent): string {
     case 'SHOPPING':
       lines.push(
         'Call **google()** first with `vertical: shopping` — JSON includes **google_shopping** (Google Shopping) **and** **amazon_search** (Amazon PDPs) in parallel. Those arrays are your **only** sources for real product names, prices, thumbnails, and **buy links**.',
+        'This lane is **retail products** (gifts, gear, things to buy). **Amazon and major store PDPs are expected** — not a mistake. If the user wanted **local service businesses** (plumber, dentist, gym, “someone near me”), that belongs under **FIND_PLACE** / **BUSINESS** with `google(): local` or `local_services`, not SHOPPING.',
         'In your final answer, surface **at least two distinct products** when either array has 2+ rows — never a single news or magazine URL (e.g. today.com, CNN) as the only “buy” link.',
         'Use **search()** (Tavily) only for supplemental expert reviews or buying guides after google(). Use **fetch()** on real retailer PDP URLs (Amazon /dp/, Target /p/, etc.) to verify price and image.',
         'Do **not** use blog-only or maps links as the product purchase URL. Max 3 options. End with a clear recommendation.',

@@ -253,7 +253,10 @@ export type BusinessCardPayload = {
     photo: string;
     reviewSnippet: string;
     customerSatisfaction: string;
+    /** Google Maps place URL (listing), not the business homepage. */
     mapsUrl: string;
+    lat: number;
+    lng: number;
     pemNote: string;
   }[];
 };
@@ -786,6 +789,8 @@ export function parseAdaptiveFromResult(
         reviewSnippet: typeof b.reviewSnippet === "string" ? b.reviewSnippet : "",
         customerSatisfaction: typeof b.customerSatisfaction === "string" ? b.customerSatisfaction : "",
         mapsUrl: typeof b.mapsUrl === "string" ? b.mapsUrl : "",
+        lat: typeof b.lat === "number" && !Number.isNaN(b.lat) ? b.lat : 0,
+        lng: typeof b.lng === "number" && !Number.isNaN(b.lng) ? b.lng : 0,
         pemNote: typeof b.pemNote === "string" ? b.pemNote : "",
       });
     }

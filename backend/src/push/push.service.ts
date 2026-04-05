@@ -14,14 +14,27 @@ export class PushService {
 
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
-  async notifyPrepReady(userId: string, prepTitle: string): Promise<void> {
+  async notifyPrepReady(
+    userId: string,
+    prepId: string,
+    prepTitle: string,
+  ): Promise<void> {
     const rows = await this.db
       .select({ pushToken: usersTable.pushToken })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
     const token = rows[0]?.pushToken;
-    if (!token || !Expo.isExpoPushToken(token)) {
+    if (!token) {
+      this.log.debug(
+        `prep ready — no push_token stored for user (client must PATCH /users/me/push-token)`,
+      );
+      return;
+    }
+    if (!Expo.isExpoPushToken(token)) {
+      this.log.warn(
+        `prep ready — push_token is not a valid Expo token; skipping push`,
+      );
       return;
     }
 
@@ -30,17 +43,22 @@ export class PushService {
       sound: 'default',
       title: 'Prep ready',
       body: prepTitle.slice(0, 120),
-      data: { kind: 'prep_ready' },
+      data: { kind: 'prep_ready', prep_id: prepId },
     };
 
     try {
       const chunks = this.expo.chunkPushNotifications([message]);
       for (const chunk of chunks) {
         const tickets = await this.expo.sendPushNotificationsAsync(chunk);
+        let hadError = false;
         for (const t of tickets) {
           if (t.status === 'error') {
+            hadError = true;
             this.log.warn(`push error: ${t.message}`);
           }
+        }
+        if (!hadError && tickets.length > 0) {
+          this.log.log(`push sent for prep ${prepId}`);
         }
       }
     } catch (e) {

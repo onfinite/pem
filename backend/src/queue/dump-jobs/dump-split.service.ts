@@ -25,7 +25,7 @@ import { ProfileService } from '../../profile/profile.service';
 /**
  * After POST /dumps: **split** transcript → per-thought intent + prep row → queue jobs → SSE.
  * Split + intent classification decide granularity; rich multi-topic work is one prep with
- * structured / mixed result — not separate “bundle” parent/child rows.
+ * structured multi-block result — not separate “bundle” parent/child rows.
  */
 @Injectable()
 export class DumpSplitService {
@@ -129,7 +129,6 @@ export class DumpSplitService {
       intent: p.intent ?? null,
       status: p.status,
       prep_type: p.prepType,
-      is_composite: p.isComposite,
       summary: p.summary,
       result: p.result,
       created_at: p.createdAt.toISOString(),

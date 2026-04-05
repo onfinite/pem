@@ -10,7 +10,7 @@ See repo **`README.md`** (*What is Pem?*) for the human story. This file capture
 
 ## Vocabulary
 
-**Dump** (raw input) → **Prep** (unit of work — never “task”). **Prepping** / **Ready** / **Archived** for status.
+**Dump** (raw input) → **Prep** (unit of work — never “task”). **Prepping** / **Ready** / **Done** / **Archived** for status (`done` uses `done_at` like `archived` uses `archived_at`).
 
 ## Core loop
 
@@ -27,7 +27,7 @@ POST `/dumps` must **return immediately** after queuing BullMQ jobs — **never 
 
 ## Status
 
-`prepping` → `ready` → `archived` (forward only). Failures stay `prepping` with error logged.
+`prepping` → `ready` ↔ `done` (toggle; `done_at` set when `done`). `archived` from active states. Failures stay `failed` (listed with prepping in hub). Restore from archived → `ready` (clears `done_at`).
 
 ## Schema
 

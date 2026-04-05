@@ -1,6 +1,7 @@
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
+import { openExternalUrl } from "./openExternalUrl";
 import {
   isLikelyMapsHttpUrl,
   labelForBusinessMapsUrl,
@@ -61,6 +62,41 @@ export async function openNativeMapsForPlace(input: NativeMapOpenInput): Promise
   } catch (e) {
     console.warn("[openNativeMapsForPlace] failed", e);
   }
+}
+
+/**
+ * Same map-opening strategy as PLACE_CARD (`openPlaceRow`): prefer **lat/lng** → native Maps,
+ * then a **Google Maps HTTPS** URL, then **address + name** search; if `mapsUrl` is a non-map
+ * website, open it in the in-app browser path (mirrors place “Website” row).
+ */
+export async function openBusinessListingInMaps(input: {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  mapsUrl: string;
+}): Promise<void> {
+  const urlTrimmed = input.mapsUrl.trim();
+  if (shouldOpenPlaceRowAsMap({ lat: input.lat, lng: input.lng, urlTrimmed })) {
+    await openNativeMapsForPlace({
+      name: input.name,
+      address: input.address,
+      lat: input.lat,
+      lng: input.lng,
+      mapsHttpUrl: urlTrimmed && isLikelyMapsHttpUrl(urlTrimmed) ? urlTrimmed : undefined,
+    });
+    return;
+  }
+  if (urlTrimmed && /^https?:\/\//i.test(urlTrimmed)) {
+    await openExternalUrl(urlTrimmed);
+    return;
+  }
+  await openNativeMapsForPlace({
+    name: input.name,
+    address: input.address,
+    lat: 0,
+    lng: 0,
+  });
 }
 
 export async function openBusinessMapsUrl(mapsUrl: string): Promise<void> {

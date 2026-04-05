@@ -73,8 +73,8 @@ Include every distinct kind of content the user needs — one block per role, no
 
 You may combine blocks freely: e.g. research then options; search then action_steps; options + draft + follow_up.
 
-**primaryKind** (hub badge): search | research | options | draft | mixed
-- Use **mixed** when **blocks** contains more than one distinct type (e.g. research + options, or search + limitation).
+**primaryKind** (hub badge): search | research | options | draft
+- When **blocks** contains more than one distinct type (e.g. research + options, or search + limitation), set **primaryKind** to the **dominant** kind for the user’s goal, or **research** if no single kind clearly leads.
 
 ## Rules
 

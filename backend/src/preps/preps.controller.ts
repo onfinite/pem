@@ -13,6 +13,7 @@ import {
   Sse,
   UseGuards,
 } from '@nestjs/common';
+import type { PrepListStatus } from './preps.service';
 import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
@@ -25,13 +26,24 @@ import { Observable } from 'rxjs';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import type { PrepRow, PrepStatus, UserRow } from '../database/schemas';
+import { PREP_STATUSES, type PrepRow, type UserRow } from '../database/schemas';
 import { ClientHintsDto } from './dto/client-hints.dto';
+import { SetPrepDoneDto } from './dto/set-prep-done.dto';
 import { ShoppingMoreDto } from './dto/shopping-more.dto';
 import { StarPrepDto } from './dto/star-prep.dto';
 import { serializePrepForApi } from './prep-serialization';
 import { PrepsStreamService } from './preps-stream.service';
 import { PrepsService } from './preps.service';
+
+const PREP_LIST_STATUSES: readonly PrepListStatus[] = PREP_STATUSES;
+
+function parsePrepListStatus(raw?: string): PrepListStatus | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  if ((PREP_LIST_STATUSES as readonly string[]).includes(raw)) {
+    return raw as PrepListStatus;
+  }
+  throw new BadRequestException(`Invalid status: ${raw}`);
+}
 
 @ApiTags('preps')
 @Controller('preps')
@@ -46,7 +58,7 @@ export class PrepsController {
   @Get()
   @ApiOperation({
     summary:
-      'List preps. Use ?limit=&cursor= for pagination. status=prepping includes failed. ?dumpId= scopes to one dump.',
+      'List preps. Use ?limit=&cursor= for pagination. status=prepping includes failed. status=ready is Inbox. status=done is Done (`status` + done_at). ?dumpId= scopes to one dump.',
   })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'limit', required: false })
@@ -60,7 +72,7 @@ export class PrepsController {
   })
   async list(
     @CurrentUser() user: UserRow,
-    @Query('status') status?: PrepStatus,
+    @Query('status') statusRaw?: string,
     @Query('limit') limitRaw?: string,
     @Query('cursor') cursor?: string,
     @Query('dumpId') dumpId?: string,
@@ -72,6 +84,7 @@ export class PrepsController {
       !Number.isNaN(Number(limitRaw));
     if (hasLimit) {
       const limit = Math.min(Math.max(Number(limitRaw), 1), 50);
+      const status = parsePrepListStatus(statusRaw);
       let dumpUuid: string | undefined;
       if (dumpId !== undefined && dumpId !== '') {
         const uuidV4 =
@@ -100,13 +113,17 @@ export class PrepsController {
     if (dumpId) {
       throw new BadRequestException('dumpId requires limit (paginated list)');
     }
-    const rows = await this.preps.listForUser(user.id, status);
+    const rows = await this.preps.listForUser(
+      user.id,
+      parsePrepListStatus(statusRaw),
+    );
     return this.serializePrepRows(rows);
   }
 
   @Get('counts')
   @ApiOperation({
-    summary: 'Exact prep counts per hub tab (ready / preparing / archived)',
+    summary:
+      'Exact prep counts per hub tab (inbox ready / done / preparing / archived / starred)',
   })
   async counts(@CurrentUser() user: UserRow) {
     return this.preps.countByTabBuckets(user.id);
@@ -128,7 +145,7 @@ export class PrepsController {
   async search(
     @CurrentUser() user: UserRow,
     @Query('q') q: string,
-    @Query('status') status?: PrepStatus,
+    @Query('status') statusRaw?: string,
     @Query('limit') limitRaw?: string,
     @Query('cursor') cursor?: string,
     @Query('starred') starredRaw?: string,
@@ -137,12 +154,15 @@ export class PrepsController {
     if (!q?.trim()) {
       throw new BadRequestException('q is required');
     }
-    const st: 'ready' | 'prepping' | 'archived' =
-      status === 'archived'
+    const parsed = parsePrepListStatus(statusRaw);
+    const st: 'ready' | 'prepping' | 'archived' | 'done' =
+      parsed === 'archived'
         ? 'archived'
-        : status === 'prepping' || status === 'failed'
+        : parsed === 'prepping' || parsed === 'failed'
           ? 'prepping'
-          : 'ready';
+          : parsed === 'done'
+            ? 'done'
+            : 'ready';
     const starredOnly =
       starredRaw === '1' || starredRaw === 'true' || starredRaw === 'yes';
     const { rows, nextCursor } = await this.preps.searchPrepsPaginated(
@@ -234,6 +254,20 @@ export class PrepsController {
     @Body() body: StarPrepDto,
   ) {
     const p = await this.preps.setStarred(id, user.id, body.starred);
+    return serializePrepForApi(p);
+  }
+
+  @Patch(':id/done')
+  @ApiOperation({
+    summary:
+      'Mark prep done (Done tab) or move back to Inbox (ready preps only)',
+  })
+  async setDone(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: SetPrepDoneDto,
+  ) {
+    const p = await this.preps.setDone(id, user.id, body.done);
     return serializePrepForApi(p);
   }
 

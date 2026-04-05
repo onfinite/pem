@@ -1,4 +1,5 @@
 import LocationPrepCoordinator from "@/components/location/LocationPrepCoordinator";
+import PushNotificationRegistrar from "@/components/push/PushNotificationRegistrar";
 import HubToastBanner from "@/components/sections/home-sections/HubToastBanner";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import { PrepHubProvider } from "@/contexts/PrepHubContext";
@@ -35,6 +36,7 @@ export default function AppLayout() {
             }}
           />
           <HubToastBanner />
+          <PushNotificationRegistrar />
           <LocationPrepCoordinator />
         </View>
       </PrepHubProvider>

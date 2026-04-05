@@ -87,11 +87,11 @@ describe("extractPrepResultBody", () => {
     expect(
       extractPrepResultBody(
         {
-          primaryKind: "mixed",
+          primaryKind: "research",
           blocks: [{ type: "search", answer: "A", sources: [] }],
           summary: "Would be wrong if merged",
         },
-        "mixed",
+        "research",
         "ready",
       ),
     ).toEqual({});

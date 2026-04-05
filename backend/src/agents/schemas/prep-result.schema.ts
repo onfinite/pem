@@ -123,7 +123,6 @@ export const primaryKindSchema = z.enum([
   'research',
   'options',
   'draft',
-  'mixed',
 ]);
 
 export type PrimaryKind = z.infer<typeof primaryKindSchema>;

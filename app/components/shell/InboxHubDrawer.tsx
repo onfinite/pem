@@ -16,7 +16,7 @@ type Props = {
   active: PrepTab;
   onClose: () => void;
   onSelectTab: (t: PrepTab) => void;
-  /** Ready preps not yet opened — badge on For you. */
+  /** Inbox preps not yet opened — badge on Inbox. */
   unreadReadyCount: number;
 };
 

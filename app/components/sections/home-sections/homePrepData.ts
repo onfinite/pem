@@ -1,13 +1,14 @@
 import {
   Archive,
   Bell,
-  CheckCircle2,
   Dumbbell,
   FileText,
   Gift,
+  Inbox,
   Loader2,
   Mail,
   Scale,
+  ListChecks,
   Search,
   Star,
   type LucideIcon,
@@ -48,7 +49,7 @@ export type PrepKind =
   | "web"
   | "decide"
   | "follow_up"
-  | "mixed";
+  | "composite";
 
 /** Buckets for subtle tag tint (options vs draft vs research) — scanning, not loud brand amber. */
 export type PrepKindTagBucket = "options" | "draft" | "research";
@@ -105,7 +106,7 @@ export type Prep = {
   /** Email subject from API when render type is draft. */
   draftSubject?: string | null;
   /** Set when preps are loaded from the API (not demo seeds). */
-  status?: "prepping" | "ready" | "archived" | "failed";
+  status?: "prepping" | "ready" | "done" | "archived" | "failed";
   /** Present for API-backed preps; used to scope the post-dump “Pem’s got it” list. */
   dumpId?: string;
   /** ISO from API — hub sort key. */
@@ -116,6 +117,8 @@ export type Prep = {
   unread?: boolean;
   /** User starred (API `starred_at`). */
   starred?: boolean;
+  /** User marked done — hub Done bucket (`status: done` + `done_at`). */
+  done?: boolean;
   /** Composable sections (new API). When set, detail renders blocks in order. */
   blocks?: PrepResultBlock[];
   /** Adaptive layout — `SHOPPING_CARD` from API `result.schema`. */
@@ -290,13 +293,14 @@ export function getPrepById(id: string): Prep | undefined {
   return ALL_PREPS.find((p) => p.id === id);
 }
 
-export type PrepTab = "ready" | "prepping" | "archived" | "starred";
+export type PrepTab = "ready" | "prepping" | "archived" | "starred" | "done";
 
 export const TABS: { id: PrepTab; label: string; Icon: LucideIcon }[] = [
-  { id: "ready", label: "For you", Icon: CheckCircle2 },
+  { id: "ready", label: "Inbox", Icon: Inbox },
   { id: "prepping", label: "In progress", Icon: Loader2 },
   { id: "archived", label: "Archived", Icon: Archive },
   { id: "starred", label: "Starred", Icon: Star },
+  { id: "done", label: "Done", Icon: ListChecks },
 ];
 
 /** In-flight preps on the Prepping tab — set `SHOW_PREPPING_HUB_ROWS` false to preview empty state. */

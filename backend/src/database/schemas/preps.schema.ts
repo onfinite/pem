@@ -1,5 +1,4 @@
 import {
-  boolean,
   index,
   json,
   pgTable,
@@ -13,7 +12,9 @@ import { usersTable } from './users.schema';
 
 /**
  * Hub bucket for lists, filters, and initial row before the agent finishes.
- * Composable results also set `result.primaryKind` (same enum + `mixed`).
+ * Structured formatter sets `result.primaryKind` (search | research | options | draft).
+ * Multi-block output uses **research** or the dominant kind.
+ * **`prep_type: composite`** = multi-section intelligent brief (`result.schema` === COMPOSITE_BRIEF).
  * Adaptive card shape is **only** in `result.schema` (e.g. SHOPPING_CARD) — not duplicated here.
  */
 export const PREP_TYPES = [
@@ -21,13 +22,15 @@ export const PREP_TYPES = [
   'research',
   'options',
   'draft',
-  'mixed',
+  'composite',
 ] as const;
 export type PrepType = (typeof PREP_TYPES)[number];
 
 export const PREP_STATUSES = [
   'prepping',
   'ready',
+  /** User finished with this prep (`done_at` set); Done hub, not Inbox. */
+  'done',
   'archived',
   'failed',
 ] as const;
@@ -43,8 +46,6 @@ export const prepsTable = pgTable(
     dumpId: uuid('dump_id')
       .notNull()
       .references(() => dumpsTable.id, { onDelete: 'cascade' }),
-    /** Optional emoji prefix for hub row. */
-    displayEmoji: text('display_emoji'),
     /** Short card label — kept for backward compatibility; prefer `thought`. */
     title: text('title').notNull(),
     /** One extracted actionable line from the dump (agentic flow). */
@@ -57,11 +58,6 @@ export const prepsTable = pgTable(
     /** Enriched context: profile, intent, optional legacy keys, etc. */
     context: json('context').$type<Record<string, unknown>>(),
     prepType: text('prep_type').notNull(),
-    /**
-     * Multi-section intelligent brief (`result.schema` === COMPOSITE_BRIEF).
-     * Single-lane adaptive preps stay false.
-     */
-    isComposite: boolean('is_composite').notNull().default(false),
     status: text('status').notNull().default('prepping'),
     summary: text('summary'),
     result: json('result').$type<Record<string, unknown>>(),
@@ -75,6 +71,8 @@ export const prepsTable = pgTable(
     openedAt: timestamp('opened_at', { withTimezone: true, mode: 'date' }),
     /** User starred for hub; null = not starred. */
     starredAt: timestamp('starred_at', { withTimezone: true, mode: 'date' }),
+    /** Set when `status` becomes `done` (cleared when returned to Inbox or archived). */
+    doneAt: timestamp('done_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     index('ix_preps_user_id').on(t.userId),

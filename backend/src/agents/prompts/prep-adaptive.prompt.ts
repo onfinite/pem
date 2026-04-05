@@ -39,7 +39,7 @@ One warm line for the hub card (first person or direct "you" — like Pem textin
 Short restatement of what we shopped for (for UI subtitle).
 
 ## recommendation
-One punchy line: "Best overall: …" or "Pem's pick: …" — must follow from agent data.
+Short verdict (1–3 sentences). Plain prose or light markdown (**bold**, bullets); **no # headings** — the app renders this as body text, not a billboard title. Must follow from agent data.
 
 ## buyingGuide
 1–2 sentences of honest buying advice, or "" if nothing additive.

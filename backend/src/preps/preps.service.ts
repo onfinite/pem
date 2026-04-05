@@ -30,6 +30,9 @@ import {
   type PrepRow,
   type PrepStatus,
 } from '../database/schemas';
+
+/** Hub list filter (`ready` = Inbox, `done` = Done bucket). */
+export type PrepListStatus = PrepStatus;
 import {
   LOCATION_PREP_QUEUE_DELAY_MS,
   prepIntentNeedsLocation,
@@ -83,7 +86,7 @@ export class PrepsService {
   async listForUserPaginated(
     userId: string,
     opts: {
-      status?: PrepStatus;
+      status?: PrepListStatus;
       /** Starred preps only (any status); takes precedence over `status`. */
       starredOnly?: boolean;
       dumpId?: string;
@@ -102,6 +105,10 @@ export class PrepsService {
       conditions.push(isNotNull(prepsTable.starredAt));
     } else if (opts.status === 'prepping') {
       conditions.push(inArray(prepsTable.status, ['prepping', 'failed']));
+    } else if (opts.status === 'ready') {
+      conditions.push(eq(prepsTable.status, 'ready'));
+    } else if (opts.status === 'done') {
+      conditions.push(eq(prepsTable.status, 'done'));
     } else if (opts.status) {
       conditions.push(eq(prepsTable.status, opts.status));
     }
@@ -137,7 +144,37 @@ export class PrepsService {
     return { rows: page, nextCursor };
   }
 
-  async listForUser(userId: string, status?: PrepStatus) {
+  async listForUser(userId: string, status?: PrepListStatus) {
+    if (status === 'prepping') {
+      return this.db
+        .select()
+        .from(prepsTable)
+        .where(
+          and(
+            eq(prepsTable.userId, userId),
+            inArray(prepsTable.status, ['prepping', 'failed']),
+          ),
+        )
+        .orderBy(desc(prepsTable.createdAt));
+    }
+    if (status === 'ready') {
+      return this.db
+        .select()
+        .from(prepsTable)
+        .where(
+          and(eq(prepsTable.userId, userId), eq(prepsTable.status, 'ready')),
+        )
+        .orderBy(desc(prepsTable.createdAt));
+    }
+    if (status === 'done') {
+      return this.db
+        .select()
+        .from(prepsTable)
+        .where(
+          and(eq(prepsTable.userId, userId), eq(prepsTable.status, 'done')),
+        )
+        .orderBy(desc(prepsTable.createdAt));
+    }
     if (status) {
       return this.db
         .select()
@@ -154,9 +191,10 @@ export class PrepsService {
       .orderBy(desc(prepsTable.createdAt));
   }
 
-  /** Exact counts for hub tabs (ready / preparing+failed / archived / starred). */
+  /** Exact counts for hub tabs (inbox ready / done / preparing+failed / archived / starred). */
   async countByTabBuckets(userId: string): Promise<{
     ready: number;
+    done: number;
     preparing: number;
     archived: number;
     starred: number;
@@ -167,6 +205,10 @@ export class PrepsService {
       .where(
         and(eq(prepsTable.userId, userId), eq(prepsTable.status, 'ready')),
       );
+    const [rDone] = await this.db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(prepsTable)
+      .where(and(eq(prepsTable.userId, userId), eq(prepsTable.status, 'done')));
     const [rPrep] = await this.db
       .select({ c: sql<number>`count(*)::int` })
       .from(prepsTable)
@@ -190,6 +232,7 @@ export class PrepsService {
       );
     return {
       ready: Number(rReady?.c ?? 0),
+      done: Number(rDone?.c ?? 0),
       preparing: Number(rPrep?.c ?? 0),
       archived: Number(rArch?.c ?? 0),
       starred: Number(rStar?.c ?? 0),
@@ -204,7 +247,7 @@ export class PrepsService {
     userId: string,
     opts: {
       q: string;
-      status: 'ready' | 'prepping' | 'archived';
+      status: 'ready' | 'prepping' | 'archived' | 'done';
       limit: number;
       cursor?: string | null;
       starredOnly?: boolean;
@@ -232,6 +275,10 @@ export class PrepsService {
       conditions.push(isNotNull(prepsTable.starredAt));
     } else if (opts.status === 'prepping') {
       conditions.push(inArray(prepsTable.status, ['prepping', 'failed']));
+    } else if (opts.status === 'ready') {
+      conditions.push(eq(prepsTable.status, 'ready'));
+    } else if (opts.status === 'done') {
+      conditions.push(eq(prepsTable.status, 'done'));
     } else {
       conditions.push(eq(prepsTable.status, opts.status));
     }
@@ -261,6 +308,34 @@ export class PrepsService {
         ? encodePrepCursor(last.createdAt, last.id)
         : null;
     return { rows: page, nextCursor };
+  }
+
+  /** Mark a ready prep done (`status: done` + `done_at`) or return it to Inbox. */
+  async setDone(
+    prepId: string,
+    userId: string,
+    done: boolean,
+  ): Promise<PrepRow> {
+    const prep = await this.getByIdForUser(prepId, userId);
+    if (prep.status !== 'ready' && prep.status !== 'done') {
+      throw new BadRequestException(
+        'Only ready or done preps can be toggled for Inbox / Done',
+      );
+    }
+    const now = new Date();
+    const [updated] = await this.db
+      .update(prepsTable)
+      .set(
+        done
+          ? { status: 'done', doneAt: now }
+          : { status: 'ready', doneAt: null },
+      )
+      .where(eq(prepsTable.id, prepId))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException('Prep not found');
+    }
+    return updated;
   }
 
   async setStarred(
@@ -381,6 +456,7 @@ export class PrepsService {
         result: null,
         summary: null,
         readyAt: null,
+        doneAt: null,
       })
       .where(eq(prepsTable.id, prepId))
       .returning();
@@ -425,11 +501,12 @@ export class PrepsService {
     }
     if (
       prep.status !== 'ready' &&
+      prep.status !== 'done' &&
       prep.status !== 'prepping' &&
       prep.status !== 'failed'
     ) {
       throw new BadRequestException(
-        'Only active preps (prepping, ready, or failed) can be archived',
+        'Only active preps (prepping, ready, done, or failed) can be archived',
       );
     }
     const now = new Date();
@@ -438,13 +515,14 @@ export class PrepsService {
       .set({
         status: 'archived',
         archivedAt: now,
+        doneAt: null,
       })
       .where(eq(prepsTable.id, prepId))
       .returning();
     return updated;
   }
 
-  /** Restore an archived prep to Ready (user can reopen from the hub). */
+  /** Restore an archived prep to Inbox (clears Done — user re-marked complete from hub if they want). */
   async unarchive(prepId: string, userId: string) {
     const prep = await this.getByIdForUser(prepId, userId);
     if (prep.status !== 'archived') {
@@ -455,6 +533,7 @@ export class PrepsService {
       .set({
         status: 'ready',
         archivedAt: null,
+        doneAt: null,
       })
       .where(eq(prepsTable.id, prepId))
       .returning();
@@ -496,7 +575,7 @@ export class PrepsService {
       .where(
         and(
           eq(prepsTable.userId, userId),
-          inArray(prepsTable.status, ['ready', 'archived']),
+          inArray(prepsTable.status, ['ready', 'done', 'archived']),
           tokenClause,
         ),
       )
@@ -583,8 +662,8 @@ export class PrepsService {
     opts: { query?: string; batchSize?: number },
   ): Promise<PrepRow> {
     const prep = await this.getByIdForUser(prepId, userId);
-    if (prep.status !== 'ready') {
-      throw new BadRequestException('Prep must be ready');
+    if (prep.status !== 'ready' && prep.status !== 'done') {
+      throw new BadRequestException('Prep must be ready or done');
     }
     const r = prep.result;
     if (!r || r.schema !== 'SHOPPING_CARD') {

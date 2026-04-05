@@ -73,7 +73,11 @@ ${ctxBlocks(ctx)}
 ${clipped}
 """
 
-**businesses**: name, rating 0–5, reviewCount, phone, website, address, hours, photo, **reviewSnippet** (short; "" if none), **customerSatisfaction** (one line on what customers say; "" if none), mapsUrl (Google Maps link when present), pemNote. Real data only.
+**businesses**: name, rating 0–5, reviewCount, phone, website, address, hours, photo, **reviewSnippet** (short; "" if none), **customerSatisfaction** (one line on what customers say; "" if none), **mapsUrl** (Google Maps place URL — maps.google.com place links or goo.gl maps when present; "" otherwise), **lat** and **lng** (GPS from maps or local JSON when present; use 0 if unknown), pemNote. Real data only.
+
+**From tool JSON:** When the trace includes **google_local**, **google_local_services**, **maps**, or similar arrays, copy **phone**, **website**, **address**, and GPS into **lat** and **lng**, and the canonical Maps listing URL into **mapsUrl**. Serp rows may include **phone**, **website**, **mapsUrl**, **link** (often the Maps URL or fallback), and **title** — do not drop contact fields when the tool returned them. **website** is the business’s own site; **mapsUrl** is the Google Maps place link (not the same field).
+
+**recommendation** — one short verdict (plain sentences; you may use **bold** for emphasis; avoid # headings). The app renders it as readable text, not a giant headline.
 
 Forbidden: "Explore", "Discover", "I'd be happy to help".`;
 }

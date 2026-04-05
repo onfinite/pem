@@ -112,6 +112,11 @@ export type SerpSimpleRow = {
   link: string;
   snippet: string;
   thumbnail: string;
+  /** Present when the row came from Google Local / local_services mapping. */
+  phone?: string;
+  website?: string;
+  /** Maps place URL when distinct from `link` / website. */
+  mapsUrl?: string;
 };
 
 /**
@@ -831,12 +836,20 @@ export class SerpApiService {
 
   /** Align google_local rows with SerpSimpleRow for bundle JSON shape. */
   private mapLocalItemsToSimpleRows(items: SerpLocalItem[]): SerpSimpleRow[] {
-    return items.map((i) => ({
-      title: i.title,
-      link: i.placeUrl || i.website || '',
-      snippet: [i.address, i.type].filter(Boolean).join(' · ') || i.title,
-      thumbnail: i.thumbnail,
-    }));
+    return items.map((i) => {
+      const place = i.placeUrl.trim();
+      const site = i.website.trim();
+      const phone = i.phone.trim();
+      return {
+        title: i.title,
+        link: place || site || '',
+        snippet: [i.address, i.type].filter(Boolean).join(' · ') || i.title,
+        thumbnail: i.thumbnail,
+        ...(phone ? { phone } : {}),
+        ...(site ? { website: site } : {}),
+        ...(place ? { mapsUrl: place } : {}),
+      };
+    });
   }
 
   /** Travel Explore — inspiration / destinations (`engine=google_travel_explore`). */

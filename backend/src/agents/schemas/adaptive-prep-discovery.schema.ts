@@ -126,7 +126,11 @@ export const businessCardModelSchema = z.object({
         photo: z.string(),
         reviewSnippet: z.string(),
         customerSatisfaction: z.string(),
+        /** Google Maps place URL when present — same role as PLACE_CARD `url`. */
         mapsUrl: z.string(),
+        /** From maps/local tool rows when present; 0 if unknown (native Maps still uses address/name). */
+        lat: z.number(),
+        lng: z.number(),
         pemNote: z.string(),
       }),
     )
@@ -162,6 +166,8 @@ export function normalizeBusinessCard(
       pemNote: b.pemNote.trim(),
       rating: Math.min(5, Math.max(0, b.rating)),
       reviewCount: Math.max(0, Math.floor(b.reviewCount)),
+      lat: typeof b.lat === 'number' && !Number.isNaN(b.lat) ? b.lat : 0,
+      lng: typeof b.lng === 'number' && !Number.isNaN(b.lng) ? b.lng : 0,
     })),
   };
 }

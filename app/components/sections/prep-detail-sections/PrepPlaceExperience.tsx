@@ -17,6 +17,7 @@ import * as Clipboard from "expo-clipboard";
 import { ChevronRight, Copy, ExternalLink, MapPin, MessageCircle, Phone } from "lucide-react-native";
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import PrepShareRow from "./PrepShareRow";
+import { PICK_INTROS, PrepPickSectionHeader } from "./PrepPickSectionChrome";
 
 type Props = {
   data: PlaceCardPayload;
@@ -131,35 +132,19 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
 
   return (
     <View style={styles.root}>
-      <View
-        style={[
-          styles.hero,
-          {
-            backgroundColor: colors.cardBackground,
-            borderColor: colors.borderMuted,
-          },
-        ]}
-      >
-        <View style={styles.heroIconRow}>
-          <MapPin size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
-          <PemText style={[styles.heroKicker, { color: colors.pemAmber }]}>Places</PemText>
-        </View>
-        <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>{data.recommendation}</PemText>
-        {data.query.trim() ? (
-          <PemText variant="caption" style={[styles.heroSub, { color: colors.textSecondary }]}>
-            {data.query}
-          </PemText>
-        ) : null}
-      </View>
+      <PrepPickSectionHeader
+        icon={MapPin}
+        label="Places"
+        intro={PICK_INTROS.places}
+        meta={data.query.trim() || undefined}
+      />
 
-      <View style={styles.sectionBlock}>
-        <PemText style={[styles.sectionLabel, { color: colors.textSecondary }]}>Top places</PemText>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.hScroll}
-          decelerationRate="fast"
-        >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.hScroll}
+        decelerationRate="fast"
+      >
           {heroPlaces.map((p, i) => {
           const dial = phoneForDial(p.phone);
           const placeLinkKind = labelForPlaceRowAction({
@@ -376,14 +361,12 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
           </View>
           );
         })}
-        </ScrollView>
-      </View>
+      </ScrollView>
 
       {morePlaces.length > 0 ? (
         <View style={styles.morePlacesSection}>
-          <PemText style={[styles.morePlacesTitle, { color: colors.textSecondary }]}>More places</PemText>
           <PemText variant="caption" style={[styles.morePlacesHint, { color: colors.textTertiary }]}>
-            Additional matches — tap a row.
+            More matches — tap a row to open in Maps or the site.
           </PemText>
           <View style={styles.morePlacesList}>
             {morePlaces.map((p, i) => (
@@ -404,53 +387,13 @@ export default function PrepPlaceExperience({ data, prepTitle, sharePlainText }:
 
 const styles = StyleSheet.create({
   root: {
-    gap: space[5],
-  },
-  hero: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
-    gap: space[2],
-  },
-  heroIconRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[2],
-  },
-  heroKicker: {
-    fontFamily: fontFamily.sans.semibold,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    fontSize: fontSize.xs,
-  },
-  heroTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.xxl,
-    lineHeight: lh(fontSize.xxl, lineHeight.snug),
-  },
-  heroSub: {
-    marginTop: space[1],
-  },
-  sectionBlock: {
-    gap: space[2],
-  },
-  sectionLabel: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.sm,
-    letterSpacing: 0.2,
-    textTransform: "uppercase",
+    gap: space[4],
   },
   morePlacesSection: {
-    gap: space[2],
-  },
-  morePlacesTitle: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.sm,
-    letterSpacing: 0.2,
-    textTransform: "uppercase",
+    gap: space[3],
   },
   morePlacesHint: {
-    marginTop: -space[1],
+    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
   },
   morePlacesList: {
     gap: space[3],

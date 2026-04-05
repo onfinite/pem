@@ -14,7 +14,11 @@ import type {
   MarketCardPayload,
   TrendsCardPayload,
 } from "@/lib/adaptivePrep";
-import { labelForBusinessMapsUrl, openBusinessMapsUrl } from "@/lib/placeLinks";
+import {
+  isLikelyMapsHttpUrl,
+  labelForPlaceRowAction,
+  openBusinessListingInMaps,
+} from "@/lib/placeLinks";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -22,59 +26,36 @@ import {
   Building2,
   Calendar,
   ChevronRight,
+  Copy,
   ExternalLink,
   LineChart,
   MapPin,
+  Phone,
+  Plane,
   Star,
   TrendingUp,
 } from "lucide-react-native";
-import type { LucideIcon } from "lucide-react-native";
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { pemSelection } from "@/lib/pemHaptics";
-import PrepContentSectionHeader from "./PrepContentSectionHeader";
+import { PICK_INTROS, PrepPickSectionHeader } from "./PrepPickSectionChrome";
 import PrepShareRow from "./PrepShareRow";
 
-function Hero({
-  icon: Icon,
-  kicker,
-  title,
-  sub,
-}: {
-  icon: LucideIcon;
-  kicker: string;
-  title: string;
-  sub?: string;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={[
-        styles.hero,
-        {
-          backgroundColor: colors.cardBackground,
-          borderColor: colors.borderMuted,
-        },
-      ]}
-    >
-      <View style={styles.heroIconRow}>
-        <Icon size={18} stroke={colors.textSecondary} strokeWidth={2.25} />
-        <PemText style={[styles.heroKicker, { color: colors.textSecondary }]}>{kicker}</PemText>
-      </View>
-      <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>{title}</PemText>
-      {sub?.trim() ? (
-        <PemText variant="caption" style={[styles.heroSub, { color: colors.textSecondary }]}>
-          {sub}
-        </PemText>
-      ) : null}
-    </View>
-  );
-}
+const ADDR_COPY_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 } as const;
 
 async function copyLine(t: string): Promise<void> {
   const s = t.trim();
   if (!s) return;
   await Clipboard.setStringAsync(s);
   pemSelection();
+}
+
+/** Align with PLACE_CARD: native Maps when possible; label clarifies Google Maps listing vs site. */
+function businessPrimaryLinkLabel(b: BusinessCardPayload["businesses"][number]): string {
+  const u = b.mapsUrl.trim();
+  const kind = labelForPlaceRowAction({ lat: b.lat, lng: b.lng, urlTrimmed: u });
+  if (kind === "Map" && u && isLikelyMapsHttpUrl(u)) return "Google Maps";
+  if (kind === "Map") return "Maps";
+  return "Website";
 }
 
 export function PrepEventsExperience({
@@ -89,7 +70,13 @@ export function PrepEventsExperience({
   const { colors } = useTheme();
   return (
     <View style={styles.root}>
-      <Hero icon={Calendar} kicker="Events" title={data.recommendation} sub={data.query} />
+      <PrepPickSectionHeader
+        icon={Calendar}
+        label="Events"
+        intro={PICK_INTROS.events}
+        meta={data.query.trim() || undefined}
+        iconAccent="muted"
+      />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
         {data.events.map((e, i) => (
           <View
@@ -195,36 +182,20 @@ export function PrepFlightsExperience({
   /** Don’t repeat the screen title in the card. */
   const showRec = recLine.length > 0 && !titleMatchesRec;
 
-  const queryTrim = data.query.trim();
-  const summaryTrim = data.summary.trim();
-  let recommendationSubtitle: string | undefined;
-  if (queryTrim && queryTrim.toLowerCase() !== recLine.toLowerCase()) {
-    recommendationSubtitle = queryTrim;
-  } else if (summaryTrim && summaryTrim.toLowerCase() !== recLine.toLowerCase()) {
-    recommendationSubtitle = summaryTrim;
-  }
-
   const showRecommendationBlock = showRec;
 
   return (
     <View style={styles.root}>
+      <PrepPickSectionHeader
+        icon={Plane}
+        label="Flights"
+        intro={PICK_INTROS.flights}
+        meta={data.routeLabel.trim() || data.query.trim() || undefined}
+      />
       {showRecommendationBlock ? (
-        <View style={styles.flightRecSection}>
-          <PrepContentSectionHeader title="Recommendation" subtitle={recommendationSubtitle} />
-          <View style={styles.flightRecBody}>
-            <PemText
-              style={[styles.flightRecommendation, { color: colors.textPrimary }]}
-              selectable
-              numberOfLines={8}
-            >
-              {recLine}
-            </PemText>
-          </View>
-        </View>
-      ) : null}
-
-      {data.offers.length > 0 ? (
-        <PrepContentSectionHeader title="Flights" subtitle="Tap a result to view booking options" />
+        <PemText variant="caption" style={[styles.flightRecInline, { color: colors.textSecondary }]}>
+          {recLine}
+        </PemText>
       ) : null}
 
       {data.offers.length > 0 ? (
@@ -338,6 +309,21 @@ function starsLine(r: number, count: number): string | null {
   return [a, b].filter(Boolean).join(" · ");
 }
 
+function phoneForDial(phone: string): string | null {
+  const t = phone.trim();
+  if (!t) return null;
+  const core = t.replace(/[^\d+]/g, "");
+  if (!core) return null;
+  return core;
+}
+
+function ensureHttpWebsite(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  if (/^https?:\/\//i.test(t)) return t;
+  return `https://${t}`;
+}
+
 export function PrepBusinessExperience({
   data,
   prepTitle,
@@ -350,10 +336,24 @@ export function PrepBusinessExperience({
   const { colors } = useTheme();
   return (
     <View style={styles.root}>
-      <Hero icon={Building2} kicker="Businesses" title={data.recommendation} sub={data.query} />
+      <PrepPickSectionHeader
+        icon={Building2}
+        label="Local results"
+        intro={PICK_INTROS.local}
+        meta={data.query.trim() || undefined}
+      />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
         {data.businesses.map((b, i) => {
-          const mapsLinkKind = labelForBusinessMapsUrl(b.mapsUrl);
+          const primaryLabel = businessPrimaryLinkLabel(b);
+          const primaryIsMap = primaryLabel !== "Website";
+          const a11yPrimary =
+            primaryLabel === "Google Maps"
+              ? `Open ${b.name} in Google Maps`
+              : primaryIsMap
+                ? `Open ${b.name} in Maps`
+                : `Open website for ${b.name}`;
+          const dial = phoneForDial(b.phone);
+          const websiteUrl = ensureHttpWebsite(b.website);
           return (
           <View
             key={`${b.name}-${i}`}
@@ -409,36 +409,80 @@ export function PrepBusinessExperience({
                 </View>
               ) : null}
               {b.address.trim() ? (
-                <PemText variant="caption" style={{ color: colors.textSecondary }} numberOfLines={3}>
-                  {b.address}
-                </PemText>
+                <View style={styles.addrCopyRow}>
+                  <PemText variant="caption" style={[styles.addrCopyText, { color: colors.textSecondary }]} selectable>
+                    {b.address.trim()}
+                  </PemText>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Copy address"
+                    hitSlop={ADDR_COPY_HIT_SLOP}
+                    onPress={() => void copyLine(b.address)}
+                  >
+                    <Copy size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  </Pressable>
+                </View>
+              ) : null}
+              {dial ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Call ${b.name}`}
+                  onPress={() => {
+                    pemSelection();
+                    void openExternalUrl(`tel:${dial}`);
+                  }}
+                  style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted }]}
+                >
+                  <Phone size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
+                    {b.phone.trim()}
+                  </PemText>
+                </Pressable>
+              ) : null}
+              {websiteUrl ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Website for ${b.name}`}
+                  onPress={() => {
+                    pemSelection();
+                    void openExternalUrl(websiteUrl);
+                  }}
+                  style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted }]}
+                >
+                  <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                  <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
+                    Website
+                  </PemText>
+                </Pressable>
               ) : null}
               {b.pemNote.trim() ? (
                 <PemText variant="caption" style={{ color: colors.textSecondary }} numberOfLines={3}>
                   {b.pemNote}
                 </PemText>
               ) : null}
-              {b.mapsUrl.trim() ? (
-                <Pressable
-                  accessibilityRole="link"
-                  accessibilityLabel={
-                    mapsLinkKind === "Map"
-                      ? `Open ${b.name} in Maps`
-                      : `Open ${b.name} website`
-                  }
-                  onPress={() => void openBusinessMapsUrl(b.mapsUrl)}
-                  style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted }]}
-                >
-                  {mapsLinkKind === "Map" ? (
-                    <MapPin size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
-                  ) : (
-                    <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
-                  )}
-                  <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
-                    {mapsLinkKind}
-                  </PemText>
-                </Pressable>
-              ) : null}
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={a11yPrimary}
+                onPress={() =>
+                  void openBusinessListingInMaps({
+                    name: b.name,
+                    address: b.address,
+                    lat: b.lat,
+                    lng: b.lng,
+                    mapsUrl: b.mapsUrl,
+                  })
+                }
+                style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.85 : 1, borderTopColor: colors.borderMuted }]}
+              >
+                {primaryIsMap ? (
+                  <MapPin size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                ) : (
+                  <ExternalLink size={16} stroke={colors.pemAmber} strokeWidth={2.25} />
+                )}
+                <PemText style={[styles.linkText, { color: colors.pemAmber }]} numberOfLines={1}>
+                  {primaryLabel}
+                </PemText>
+              </Pressable>
             </View>
           </View>
           );
@@ -465,8 +509,14 @@ export function PrepTrendsExperience({
   const { colors } = useTheme();
   return (
     <View style={styles.root}>
-      <Hero icon={TrendingUp} kicker="Trends" title={data.recommendation} sub={data.keyword || data.query} />
-      <View style={[styles.article, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
+      <PrepPickSectionHeader
+        icon={TrendingUp}
+        label="Trends"
+        intro={PICK_INTROS.trends}
+        meta={data.keyword.trim() || data.query.trim() || undefined}
+        iconAccent="muted"
+      />
+      <View style={styles.trendsBody}>
         {data.timeframe.trim() ? (
           <PemText variant="caption" style={{ color: colors.textTertiary }}>
             {data.timeframe}
@@ -520,7 +570,13 @@ export function PrepMarketExperience({
   const { colors } = useTheme();
   return (
     <View style={styles.root}>
-      <Hero icon={LineChart} kicker="Market" title={data.recommendation} sub={data.query} />
+      <PrepPickSectionHeader
+        icon={LineChart}
+        label="Market"
+        intro={PICK_INTROS.market}
+        meta={data.query.trim() || undefined}
+        iconAccent="muted"
+      />
       <View style={[styles.marketHero, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
         <PemText style={[styles.sym, { color: colors.textPrimary }]}>{data.symbol}</PemText>
         <PemText variant="caption" style={{ color: colors.textSecondary }}>
@@ -584,7 +640,13 @@ export function PrepJobsExperience({
   const { colors } = useTheme();
   return (
     <View style={styles.root}>
-      <Hero icon={Briefcase} kicker="Jobs" title={data.recommendation} sub={data.query} />
+      <PrepPickSectionHeader
+        icon={Briefcase}
+        label="Jobs"
+        intro={PICK_INTROS.jobs}
+        meta={data.query.trim() || undefined}
+        iconAccent="muted"
+      />
       <View style={styles.stack}>
         {data.jobs.map((j, i) => (
           <View
@@ -666,26 +728,10 @@ export function PrepJobsExperience({
 }
 
 const styles = StyleSheet.create({
-  root: { gap: space[5] },
-  hero: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
-    gap: space[2],
+  root: { gap: space[4] },
+  trendsBody: {
+    gap: space[3],
   },
-  heroIconRow: { flexDirection: "row", alignItems: "center", gap: space[2] },
-  heroKicker: {
-    fontFamily: fontFamily.sans.semibold,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    fontSize: fontSize.xs,
-  },
-  heroTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.xxl,
-    lineHeight: lh(fontSize.xxl, lineHeight.snug),
-  },
-  heroSub: { marginTop: space[1] },
   hScroll: { gap: space[3], paddingVertical: space[1], paddingRight: space[2] },
   tile: {
     width: 280,
@@ -718,6 +764,12 @@ const styles = StyleSheet.create({
     paddingTop: space[3],
     borderTopWidth: StyleSheet.hairlineWidth,
   },
+  addrCopyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+  },
+  addrCopyText: { flex: 1, minWidth: 0 },
   linkText: { flex: 1, fontFamily: fontFamily.sans.medium, fontSize: fontSize.sm },
   shareFooter: {
     paddingTop: space[3],
@@ -732,12 +784,6 @@ const styles = StyleSheet.create({
     gap: space[1],
   },
   starRow: { flexDirection: "row", alignItems: "center", gap: space[1] },
-  article: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
-    gap: space[2],
-  },
   sourceLink: { fontFamily: fontFamily.sans.medium, fontSize: fontSize.sm },
   marketHero: {
     borderRadius: radii.lg,
@@ -747,18 +793,8 @@ const styles = StyleSheet.create({
   },
   sym: { fontFamily: fontFamily.display.semibold, fontSize: fontSize.xxxl },
   priceHuge: { fontFamily: fontFamily.display.semibold, fontSize: fontSize.xxl },
-  flightRecSection: {
-    alignSelf: "stretch",
-    width: "100%",
-    gap: space[2],
-  },
-  flightRecBody: {
-    gap: space[3],
-  },
-  flightRecommendation: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.md,
-    lineHeight: lh(fontSize.md, lineHeight.relaxed),
+  flightRecInline: {
+    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
   },
   /** Google Flights–style result card — flat, dense, price + times first. */
   gfCard: {

@@ -52,7 +52,7 @@ import {
   runCompositeFanout,
 } from './prep-runner-composite-fanout';
 
-/** Stored `prep_type` matches structured `primaryKind` (including `mixed`). */
+/** Stored `prep_type` matches structured `primaryKind` (search | research | options | draft). */
 function prepTypeFromPrimaryKind(pk: PrimaryKind): PrepType {
   return pk;
 }
@@ -461,13 +461,10 @@ export class PrepRunnerService {
       prepType: PrepType;
       result: Record<string, unknown>;
       logMeta?: Record<string, unknown>;
-      isComposite?: boolean;
-      displayEmoji?: string | null;
     },
   ): Promise<void> {
     const now = new Date();
     const { summary, prepType, result, logMeta } = params;
-    const isComposite = params.isComposite ?? false;
 
     const [updated] = await this.db
       .update(prepsTable)
@@ -478,10 +475,6 @@ export class PrepRunnerService {
         result,
         readyAt: now,
         errorMessage: null,
-        isComposite,
-        ...(params.displayEmoji !== undefined
-          ? { displayEmoji: params.displayEmoji }
-          : {}),
       })
       .where(and(eq(prepsTable.id, prepId), eq(prepsTable.status, 'prepping')))
       .returning();
@@ -503,14 +496,17 @@ export class PrepRunnerService {
         intent: updated.intent ?? null,
         status: updated.status,
         prep_type: updated.prepType,
-        is_composite: updated.isComposite,
         summary: updated.summary,
         result: updated.result,
         created_at: updated.createdAt.toISOString(),
       },
     });
 
-    await this.push.notifyPrepReady(updated.userId, prep.thought || prep.title);
+    await this.push.notifyPrepReady(
+      updated.userId,
+      updated.id,
+      prep.thought || prep.title,
+    );
   }
 
   private async maybeEmitStreamDone(dumpId: string): Promise<void> {

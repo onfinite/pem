@@ -42,7 +42,7 @@ export type ApiPrep = {
   intent?: string | null;
   prep_type: string;
   context?: Record<string, unknown> | null;
-  status: "prepping" | "ready" | "archived" | "failed";
+  status: "prepping" | "ready" | "done" | "archived" | "failed";
   summary: string | null;
   result: Record<string, unknown> | null;
   /** Omitted in API responses for failed preps (details are not shown in UI). */
@@ -54,11 +54,10 @@ export type ApiPrep = {
   opened_at?: string | null;
   /** User starred; null/omitted = not starred. */
   starred_at?: string | null;
+  /** Set when `status` is `done` (Done hub). */
+  done_at?: string | null;
   bundle_type?: string | null;
-  display_emoji?: string | null;
   bundle_detection_reason?: string | null;
-  /** Multi-section brief; `result.schema` is COMPOSITE_BRIEF when true. */
-  is_composite?: boolean;
   /** Parent dump text — detail only (GET /preps/:id). */
   dump_transcript?: string | null;
 };
@@ -112,8 +111,8 @@ function prepTypeToKind(prepType: string): PrepKind {
       return "options";
     case "draft":
       return "draft";
-    case "mixed":
-      return "mixed";
+    case "composite":
+      return "composite";
     default:
       return "web";
   }
@@ -173,7 +172,7 @@ function iconForLayout(layout: CardLayoutId): LucideIcon {
 }
 
 function iconForKind(kind: PrepKind): LucideIcon {
-  if (kind === "mixed") return Layers;
+  if (kind === "composite") return Layers;
   if (kind === "options" || kind === "decide" || kind === "follow_up") return Gift;
   if (kind === "draft") return Mail;
   if (kind === "web") return Search;
@@ -191,8 +190,8 @@ function tagForPrimaryKind(prepType: string): string {
       return "Options";
     case "draft":
       return "Draft";
-    case "mixed":
-      return "Prep";
+    case "composite":
+      return "Intelligent brief";
     default:
       return "Prep";
   }
@@ -210,7 +209,7 @@ function viewLabelForKind(kind: PrepKind): string {
       return "Read research";
     case "web":
       return "View summary";
-    case "mixed":
+    case "composite":
       return "Open";
     default:
       return "Open";
@@ -301,10 +300,7 @@ function optionsFromShoppingCard(
 
 /** Maps API prep row to hub `Prep` for lists and detail. */
 export function apiPrepToPrep(row: ApiPrep): Prep {
-  const compositeBrief = parseCompositeBriefFromResult(
-    row.result,
-    row.is_composite === true,
-  );
+  const compositeBrief = parseCompositeBriefFromResult(row.result);
   const adaptive = parseAdaptiveFromResult(row.result);
   const blocks = compositeBrief
     ? undefined
@@ -344,9 +340,9 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
       : row.status === "failed"
         ? "Failed"
         : tagForPrimaryKind(pk);
-  if (compositeBrief && row.status === "ready") {
+  if (compositeBrief && (row.status === "ready" || row.status === "done")) {
     tag = "Intelligent brief";
-  } else if (row.status === "ready" && layout) {
+  } else if ((row.status === "ready" || row.status === "done") && layout) {
     if (layout === "shopping_card") tag = "Shop picks";
     else if (layout === "draft_card") tag = "Draft ready";
     else if (layout === "place_card") tag = "Places";
@@ -405,8 +401,10 @@ export function apiPrepToPrep(row: ApiPrep): Prep {
     draftText: adaptive.draftCard?.body ?? draftText,
     draftSubject: adaptive.draftCard ? adaptive.draftCard.subject.trim() || null : draftSubject,
     status: row.status,
+    done: row.status === "done",
     unread:
-      row.status === "ready" && (row.opened_at === null || row.opened_at === undefined),
+      row.status === "ready" &&
+      (row.opened_at === null || row.opened_at === undefined),
     blocks: blocks ?? undefined,
     shoppingCard: adaptive.shoppingCard,
     draftCard: adaptive.draftCard,
@@ -466,7 +464,7 @@ export type ListPrepsPageResponse = {
 };
 
 export type ListPrepsPageParams = {
-  status?: "ready" | "prepping" | "archived" | "failed";
+  status?: "ready" | "prepping" | "done" | "archived" | "failed";
   limit: number;
   cursor?: string | null;
   /** Scope to one dump (post-dump screen); use with limit. */
@@ -490,6 +488,7 @@ export async function listPrepsPage(
 
 export type PrepCountsResponse = {
   ready: number;
+  done: number;
   preparing: number;
   archived: number;
   starred: number;
@@ -504,7 +503,7 @@ export async function fetchPrepCounts(
 
 export type SearchPrepsParams = {
   q: string;
-  status: "ready" | "prepping" | "archived";
+  status: "ready" | "prepping" | "archived" | "done";
   limit: number;
   cursor?: string | null;
   starredOnly?: boolean;
@@ -554,6 +553,18 @@ export async function unarchivePrepApi(
   id: string,
 ): Promise<ApiPrep> {
   return apiFetch(`/preps/${encodeURIComponent(id)}/unarchive`, { method: "PATCH", getToken });
+}
+
+export async function setPrepDoneApi(
+  getToken: () => Promise<string | null>,
+  id: string,
+  done: boolean,
+): Promise<ApiPrep> {
+  return apiFetch(`/preps/${encodeURIComponent(id)}/done`, {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ done }),
+  });
 }
 
 export async function retryPrepApi(
@@ -670,5 +681,17 @@ export async function deleteProfileFact(
   await apiFetch(`/users/me/profile/${encodeURIComponent(id)}`, {
     method: "DELETE",
     getToken,
+  });
+}
+
+/** Persists the Expo push token server-side (`users.push_token`) for prep-ready notifications. */
+export async function setUserPushToken(
+  getToken: () => Promise<string | null>,
+  token: string | null,
+): Promise<void> {
+  await apiFetch<{ ok: true }>("/users/me/push-token", {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ token }),
   });
 }

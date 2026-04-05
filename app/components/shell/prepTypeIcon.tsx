@@ -55,7 +55,7 @@ const KIND_ICONS: Record<PrepKind, LucideIcon> = {
   web: Search,
   decide: Scale,
   follow_up: Calendar,
-  mixed: Layers,
+  composite: Layers,
 };
 
 export function prepListIconFromIntent(
@@ -78,7 +78,7 @@ const ACCENT_LIGHT: Record<string, PrepListAccent> = {
   draft: { well: "#f3e8ff", icon: "#6d28d9" },
   decide: { well: "#d1fae5", icon: "#047857" },
   web: { well: "#f0f9ff", icon: "#0284c7" },
-  mixed: { well: "#ffedd5", icon: "#ea580c" },
+  composite: { well: "#ffedd5", icon: "#ea580c" },
   follow: { well: "#fef9c3", icon: "#b45309" },
   places: { well: "#dcfce7", icon: "#15803d" },
   person: { well: "#fce7f3", icon: "#be185d" },
@@ -92,7 +92,7 @@ const ACCENT_DARK: Record<string, PrepListAccent> = {
   draft: { well: "#2d1f4a", icon: "#a78bfa" },
   decide: { well: "#142923", icon: "#34d399" },
   web: { well: "#0c2840", icon: "#38bdf8" },
-  mixed: { well: "#3d2a1a", icon: "#fb923c" },
+  composite: { well: "#3d2a1a", icon: "#fb923c" },
   follow: { well: "#3d3510", icon: "#facc15" },
   places: { well: "#142923", icon: "#4ade80" },
   person: { well: "#3d1f2e", icon: "#f472b6" },
@@ -110,13 +110,13 @@ function accentKey(intent: string | null | undefined, kind: PrepKind): string {
       DECISION: "decide",
       LEGAL_FINANCIAL: "decide",
       LIFE_ADMIN: "admin",
-      TASK_UNCLEAR: "mixed",
+      TASK_UNCLEAR: "composite",
       SUMMARIZE: "research",
       EXPLAIN: "research",
       FIND_PERSON: "person",
       FIND_PLACE: "places",
       SCHEDULE_PREP: "follow",
-      CONTENT_IDEA: "mixed",
+      CONTENT_IDEA: "composite",
       TRANSLATE_SIMPLIFY: "draft",
       TRACK_MONITOR: "web",
       EVENTS: "follow",
@@ -124,7 +124,7 @@ function accentKey(intent: string | null | undefined, kind: PrepKind): string {
       BUSINESS: "places",
       TRENDS: "research",
       MARKET: "decide",
-      JOBS: "mixed",
+      JOBS: "composite",
     };
     const k = byIntent[intent];
     if (k) return k;
@@ -136,7 +136,7 @@ function accentKey(intent: string | null | undefined, kind: PrepKind): string {
     web: "web",
     decide: "decide",
     follow_up: "follow",
-    mixed: "mixed",
+    composite: "composite",
   };
   return byKind[kind] ?? "default";
 }

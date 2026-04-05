@@ -7,10 +7,7 @@ import type { PrepType } from '../database/schemas';
 import type { CompositeLaneResult } from './prep-runner-composite-fanout';
 import type { AdaptivePersistFn } from './prep-runner-adaptive';
 
-export type CompositePersistParams = Parameters<AdaptivePersistFn>[0] & {
-  isComposite?: boolean;
-  displayEmoji?: string | null;
-};
+export type CompositePersistParams = Parameters<AdaptivePersistFn>[0];
 
 const synthesisSchema = z.object({
   title: z
@@ -223,7 +220,7 @@ Be specific. Reference what the agents actually found. No filler.`,
 
   await persist({
     summary,
-    prepType: 'mixed' satisfies PrepType,
+    prepType: 'composite' satisfies PrepType,
     result: compositeBrief as unknown as Record<string, unknown>,
     logMeta: {
       schema: 'COMPOSITE_BRIEF',
@@ -231,8 +228,6 @@ Be specific. Reference what the agents actually found. No filler.`,
       sectionCount: allSections.length,
       cardSections: cardSections.length,
     },
-    isComposite: true,
-    displayEmoji: emoji || null,
   });
 
   return true;

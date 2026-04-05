@@ -7,6 +7,7 @@ import { RemoteImageOrPlaceholder } from "@/components/ui/SafeRemoteImage";
 import type { ShoppingCardPayload, ShoppingProduct } from "@/lib/adaptivePrep";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { ChevronRight, ExternalLink, ShoppingBag } from "lucide-react-native";
+import { PICK_INTROS, PrepPickSectionHeader } from "./PrepPickSectionChrome";
 import {
   Platform,
   Pressable,
@@ -226,48 +227,28 @@ export default function PrepShoppingExperience({ data, prepTitle, sharePlainText
 
   return (
     <View style={styles.root}>
-      <View
-        style={[
-          styles.hero,
-          {
-            backgroundColor: colors.cardBackground,
-            borderColor: colors.borderMuted,
-          },
-        ]}
-      >
-        <View style={styles.heroIconRow}>
-          <ShoppingBag size={18} stroke={colors.pemAmber} strokeWidth={2.25} />
-          <PemText style={[styles.heroKicker, { color: colors.pemAmber }]}>Pem&apos;s pick</PemText>
-        </View>
-        <PemText style={[styles.heroTitle, { color: colors.textPrimary }]}>{data.recommendation}</PemText>
-        {data.query.trim() ? (
-          <PemText variant="caption" style={[styles.heroSub, { color: colors.textSecondary }]}>
-            {data.query}
-          </PemText>
-        ) : null}
-      </View>
+      <PrepPickSectionHeader
+        icon={ShoppingBag}
+        label="Shopping"
+        intro={PICK_INTROS.shopping}
+        meta={data.query.trim() || undefined}
+      />
 
-      <View style={styles.sectionBlock}>
-        <PemText style={[styles.sectionLabel, { color: colors.textSecondary }]}>Top picks</PemText>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.hScroll}
-          decelerationRate="fast"
-        >
-          {hero.map((p, i) => (
-            <ProductTile key={`${p.name}-${p.url}-${i}`} p={p} />
-          ))}
-        </ScrollView>
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.hScroll}
+        decelerationRate="fast"
+      >
+        {hero.map((p, i) => (
+          <ProductTile key={`${p.name}-${p.url}-${i}`} p={p} />
+        ))}
+      </ScrollView>
 
       {morePicks.length > 0 ? (
         <View style={styles.moreSection}>
-          <PemText style={[styles.moreSectionTitle, { color: colors.textSecondary }]}>
-            More options
-          </PemText>
-          <PemText variant="caption" style={[styles.moreSectionHint, { color: colors.textTertiary }]}>
-            Same search — scroll down for additional products. Tap a row to open the store.
+          <PemText variant="caption" style={[styles.moreHint, { color: colors.textTertiary }]}>
+            More from the same search — tap a row to open the store.
           </PemText>
           <View style={styles.moreList}>
             {morePicks.map((p, i) => (
@@ -278,9 +259,9 @@ export default function PrepShoppingExperience({ data, prepTitle, sharePlainText
       ) : null}
 
       {data.buyingGuide.trim() ? (
-        <View style={[styles.guide, { backgroundColor: colors.secondarySurface, borderColor: colors.borderMuted }]}>
-          <PemText variant="caption" style={[styles.guideLabel, { color: colors.textSecondary }]}>
-            Quick tip
+        <View style={[styles.guideSlim, { borderTopColor: colors.borderMuted }]}>
+          <PemText variant="caption" style={[styles.guideLabel, { color: colors.textTertiary }]}>
+            Tip
           </PemText>
           <PemMarkdown variant="companion" selectable>
             {data.buyingGuide}
@@ -299,53 +280,13 @@ export default function PrepShoppingExperience({ data, prepTitle, sharePlainText
 
 const styles = StyleSheet.create({
   root: {
-    gap: space[5],
-  },
-  hero: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
-    gap: space[2],
-  },
-  heroIconRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[2],
-  },
-  heroKicker: {
-    fontFamily: fontFamily.sans.semibold,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    fontSize: fontSize.xs,
-  },
-  heroTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.xxl,
-    lineHeight: lh(fontSize.xxl, lineHeight.snug),
-  },
-  heroSub: {
-    marginTop: space[1],
-  },
-  sectionBlock: {
-    gap: space[2],
-  },
-  sectionLabel: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.sm,
-    letterSpacing: 0.2,
-    textTransform: "uppercase",
+    gap: space[4],
   },
   moreSection: {
-    gap: space[2],
+    gap: space[3],
   },
-  moreSectionTitle: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.sm,
-    letterSpacing: 0.2,
-    textTransform: "uppercase",
-  },
-  moreSectionHint: {
-    marginTop: -space[1],
+  moreHint: {
+    lineHeight: lh(fontSize.sm, lineHeight.relaxed),
   },
   moreList: {
     gap: space[3],
@@ -453,16 +394,17 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.sm,
   },
-  guide: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: space[4],
+  guideSlim: {
+    paddingTop: space[4],
+    marginTop: space[1],
+    borderTopWidth: StyleSheet.hairlineWidth,
     gap: space[2],
   },
   guideLabel: {
     fontFamily: fontFamily.sans.semibold,
     letterSpacing: 0.2,
     textTransform: "uppercase",
+    fontSize: fontSize.xs,
   },
   shareFooter: {
     paddingTop: space[3],

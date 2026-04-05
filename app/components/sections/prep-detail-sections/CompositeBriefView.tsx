@@ -22,7 +22,25 @@ import type {
   ShoppingCardPayload,
 } from "@/lib/adaptivePrep";
 import { pemSelection } from "@/lib/pemHaptics";
-import { AlertTriangle, Check } from "lucide-react-native";
+import {
+  AlertTriangle,
+  BadgeCheck,
+  BookOpen,
+  Briefcase,
+  Building2,
+  Calendar,
+  Check,
+  ClipboardList,
+  FileEdit,
+  FileText,
+  LayoutList,
+  ListTree,
+  MapPin,
+  Plane,
+  ShoppingBag,
+  StickyNote,
+} from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
 import type { MutableRefObject, RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -44,19 +62,94 @@ type Props = {
   scrollOffsetYRef?: MutableRefObject<number>;
 };
 
-function SectionHeader({ title, emoji }: { title: string; emoji: string }) {
+/** Structured icons — do not use LLM emoji for section chrome. */
+function iconForCardSchema(schema: CompositeSection["card_schema"]): LucideIcon | null {
+  switch (schema) {
+    case "SHOPPING_CARD":
+      return ShoppingBag;
+    case "PLACE_CARD":
+      return MapPin;
+    case "BUSINESS_CARD":
+      return Building2;
+    case "FLIGHTS_CARD":
+      return Plane;
+    case "EVENTS_CARD":
+      return Calendar;
+    case "JOBS_CARD":
+      return Briefcase;
+    case "DRAFT_CARD":
+      return FileEdit;
+    default:
+      return null;
+  }
+}
+
+function iconForSectionType(type: string): LucideIcon {
+  switch (type) {
+    case "OVERVIEW":
+      return LayoutList;
+    case "PEM_RECOMMENDATION":
+      return BadgeCheck;
+    case "KEY_FACTS":
+      return ListTree;
+    case "WARNINGS":
+      return AlertTriangle;
+    case "CHECKLIST":
+    case "TIMELINE":
+      return ClipboardList;
+    case "RESOURCES":
+      return BookOpen;
+    case "COSTS":
+      return StickyNote;
+    default:
+      return FileText;
+  }
+}
+
+/**
+ * Icon + title row for composite sections — matches `PrepPickSectionHeader` scale (display semibold, amber icon).
+ */
+function CompositeSectionTitle({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  icon: LucideIcon;
+  title: string;
+  subtitle?: string;
+}) {
   const { colors } = useTheme();
   return (
-    <View style={styles.sectionHeaderRow}>
-      {emoji.trim() ? (
-        <PemText style={[styles.sectionEmoji, { color: colors.textPrimary }]}>{emoji}</PemText>
-      ) : null}
-      <PemText style={[styles.sectionTitle, { color: colors.textPrimary }]}>{title}</PemText>
+    <View style={styles.compositeTitleRow}>
+      <Icon size={22} stroke={colors.pemAmber} strokeWidth={2.25} />
+      <View style={styles.compositeTitleTextBlock}>
+        <PemText style={[styles.compositeTitleText, { color: colors.textPrimary }]} numberOfLines={3}>
+          {title.trim()}
+        </PemText>
+        {subtitle?.trim() ? (
+          <PemText variant="caption" style={[styles.compositeTitleSub, { color: colors.textTertiary }]}>
+            {subtitle.trim()}
+          </PemText>
+        ) : null}
+      </View>
     </View>
   );
 }
 
-function PemRecommendationBlock({ data }: { data: Record<string, unknown> }) {
+function iconForCompositeSection(s: CompositeSection): LucideIcon {
+  const fromSchema = s.card_schema ? iconForCardSchema(s.card_schema) : null;
+  if (fromSchema) return fromSchema;
+  return iconForSectionType(s.type);
+}
+
+function PemRecommendationBlock({
+  data,
+  showChromeLabel = true,
+}: {
+  data: Record<string, unknown>;
+  /** When false, outer `CompositeSectionTitle` already labeled the block. */
+  showChromeLabel?: boolean;
+}) {
   const { colors } = useTheme();
   const parsed = parsePemRecommendationData(data);
   if (!parsed) {
@@ -67,9 +160,17 @@ function PemRecommendationBlock({ data }: { data: Record<string, unknown> }) {
     );
   }
   return (
-    <View style={[styles.pemRecCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]}>
-      <View style={styles.pemRecInner}>
-        <PemText style={[styles.pemRecLabel, { color: colors.textSecondary }]}>Pem&apos;s recommendation</PemText>
+    <View
+      style={
+        showChromeLabel
+          ? [styles.pemRecCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted }]
+          : styles.pemRecFlat
+      }
+    >
+      <View style={[styles.pemRecInner, !showChromeLabel && styles.pemRecInnerTight]}>
+        {showChromeLabel ? (
+          <PemText style={[styles.pemRecLabel, { color: colors.textSecondary }]}>Pem&apos;s recommendation</PemText>
+        ) : null}
         <PemText style={[styles.verdict, { color: colors.textPrimary }]}>{parsed.verdict}</PemText>
         <PemText style={[styles.subLabel, { color: colors.textSecondary }]}>Why this works</PemText>
         {parsed.reasons.map((r, i) => (
@@ -175,6 +276,7 @@ function coerceBusinessCard(d: Record<string, unknown>): BusinessCardPayload | n
       phone: str(r.phone), website: str(r.website), address: str(r.address),
       hours: str(r.hours), photo: str(r.photo), reviewSnippet: str(r.reviewSnippet),
       customerSatisfaction: str(r.customerSatisfaction), mapsUrl: str(r.mapsUrl ?? r.url),
+      lat: num(r.lat), lng: num(r.lng),
       pemNote: str(r.pemNote ?? r.why),
     })),
   };
@@ -378,7 +480,7 @@ function SectionBody({ section }: { section: CompositeSection }) {
     case "OVERVIEW":
       return <OverviewSection data={section.data} />;
     case "PEM_RECOMMENDATION":
-      return <PemRecommendationBlock data={section.data} />;
+      return <PemRecommendationBlock data={section.data} showChromeLabel={false} />;
     case "KEY_FACTS":
       return <KeyFactsSection data={section.data} />;
     case "WARNINGS":
@@ -417,13 +519,20 @@ function measureScrollHostInWindow(
 
 export default function CompositeBriefView({ brief, scrollParentRef, scrollOffsetYRef }: Props) {
   const { colors } = useTheme();
-  const sections = brief.sections;
+  const teaser = brief.overview_teaser.trim();
+  const overviewSection = brief.sections.find((s) => s.type === "OVERVIEW");
+  const showOverviewBlock = teaser.length > 0 || Boolean(overviewSection);
+  /** When the overview is its own block, skip duplicate OVERVIEW rows in the list below. */
+  const bodySections = brief.sections.filter(
+    (s) => !showOverviewBlock || s.type !== "OVERVIEW",
+  );
+
   const sectionRefs = useRef<(View | null)[]>([]);
 
   const scrollToSection = useCallback(
-    (index: number) => {
+    (blockIndex: number) => {
       const scroll = scrollParentRef?.current;
-      const target = sectionRefs.current[index];
+      const target = sectionRefs.current[blockIndex];
       if (!scroll || !target) return;
       pemSelection();
       /** Fabric / RN: `measureLayout(findNodeHandle(scroll))` breaks; use window coords + tracked offset. */
@@ -438,81 +547,121 @@ export default function CompositeBriefView({ brief, scrollParentRef, scrollOffse
     [scrollParentRef, scrollOffsetYRef],
   );
 
+  type PillItem = { key: string; icon: LucideIcon; title: string; blockIndex: number };
+  const pills: PillItem[] = [];
+  if (showOverviewBlock) {
+    pills.push({ key: "overview", icon: LayoutList, title: "Overview", blockIndex: 0 });
+  }
+  bodySections.forEach((s, i) => {
+    pills.push({
+      key: `${s.type}-${i}`,
+      icon: iconForCompositeSection(s),
+      title: s.title,
+      blockIndex: (showOverviewBlock ? 1 : 0) + i,
+    });
+  });
+
   return (
     <View style={styles.wrapper}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.pillScroll}
-        contentContainerStyle={styles.pillRow}
-      >
-        {sections.map((s, i) => (
-          <Pressable
-            key={`${s.type}-${i}-pill`}
-            accessibilityRole="button"
-            accessibilityLabel={`Go to ${s.title}`}
-            onPress={() => scrollToSection(i)}
-            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
-          >
-            <View
-              style={[styles.pill, { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface }]}
-            >
-              <PemText style={styles.pillEmoji}>{s.emoji}</PemText>
-              <PemText style={[styles.pillLabel, { color: colors.textPrimary }]} numberOfLines={1}>
-                {s.title}
-              </PemText>
-            </View>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {pills.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.pillScroll}
+          contentContainerStyle={styles.pillRow}
+        >
+          {pills.map((p) => {
+            const PillIcon = p.icon;
+            return (
+              <Pressable
+                key={p.key}
+                accessibilityRole="button"
+                accessibilityLabel={`Go to ${p.title}`}
+                onPress={() => scrollToSection(p.blockIndex)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
+              >
+                <View
+                  style={[styles.pill, { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface }]}
+                >
+                  <PillIcon size={15} stroke={colors.textSecondary} strokeWidth={2.25} />
+                  <PemText style={[styles.pillLabel, { color: colors.textPrimary }]} numberOfLines={1}>
+                    {p.title}
+                  </PemText>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      ) : null}
 
-      {sections.map((section, index) => {
+      {showOverviewBlock ? (
+        <View
+          ref={(el) => {
+            sectionRefs.current[0] = el;
+          }}
+          collapsable={false}
+          style={[
+            styles.sectionShell,
+            { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted },
+          ]}
+        >
+          <CompositeSectionTitle icon={LayoutList} title="Overview" />
+          {teaser ? (
+            <PemMarkdown variant="body" selectable>
+              {teaser}
+            </PemMarkdown>
+          ) : null}
+          {!teaser && overviewSection ? <OverviewSection data={overviewSection.data} /> : null}
+        </View>
+      ) : null}
+
+      {bodySections.map((section, index) => {
+        const blockIndex = (showOverviewBlock ? 1 : 0) + index;
         const cardNode = tryCardExperience(section);
+        const pemTitle = section.type === "PEM_RECOMMENDATION";
         return (
           <View
-            key={`${section.type}-${index}`}
+            key={`${section.type}-${index}-block`}
             ref={(el) => {
-              sectionRefs.current[index] = el;
+              sectionRefs.current[blockIndex] = el;
             }}
             collapsable={false}
             style={[
-              styles.sectionBlock,
-              { borderBottomColor: colors.borderMuted },
-              index === sections.length - 1 && styles.lastSection,
+              styles.sectionShell,
+              { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted },
             ]}
           >
             {cardNode ? (
               cardNode
             ) : (
               <>
-                {section.type !== "PEM_RECOMMENDATION" ? (
-                  <>
-                    <SectionHeader title={section.title} emoji={section.emoji} />
-                    {section.agent_note ? (
-                      <PemText style={[styles.agentNote, { color: colors.textSecondary }]}>{section.agent_note}</PemText>
-                    ) : null}
-                    {section.evidence_snippets && section.evidence_snippets.length > 0 ? (
-                      <View
-                        style={[
-                          styles.evidenceBox,
-                          { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface },
-                        ]}
+                <CompositeSectionTitle
+                  icon={pemTitle ? BadgeCheck : iconForCompositeSection(section)}
+                  title={pemTitle ? "Pem's recommendation" : section.title.trim() || "Section"}
+                />
+                {section.agent_note ? (
+                  <PemText style={[styles.agentNote, { color: colors.textSecondary }]}>{section.agent_note}</PemText>
+                ) : null}
+                {section.evidence_snippets && section.evidence_snippets.length > 0 ? (
+                  <View
+                    style={[
+                      styles.evidenceBox,
+                      { borderColor: colors.borderMuted, backgroundColor: colors.secondarySurface },
+                    ]}
+                  >
+                    <PemText style={[styles.evidenceLabel, { color: colors.textSecondary }]}>
+                      From research
+                    </PemText>
+                    {section.evidence_snippets.map((line, li) => (
+                      <PemText
+                        key={li}
+                        selectable
+                        style={[styles.evidenceLine, { color: colors.textPrimary }]}
                       >
-                        <PemText style={[styles.evidenceLabel, { color: colors.textSecondary }]}>
-                          From research
-                        </PemText>
-                        {section.evidence_snippets.map((line, li) => (
-                          <PemText
-                            key={li}
-                            selectable
-                            style={[styles.evidenceLine, { color: colors.textPrimary }]}
-                          >
-                            {line.trim()}
-                          </PemText>
-                        ))}
-                      </View>
-                    ) : null}
-                  </>
+                        {line.trim()}
+                      </PemText>
+                    ))}
+                  </View>
                 ) : null}
                 <SectionBody section={section} />
               </>
@@ -556,7 +705,33 @@ export function PrepOriginalDumpCollapsible({ text }: { text: string }) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    gap: space[4],
+    gap: space[5],
+  },
+  /** Bordered surface — each composite block is visually distinct. */
+  sectionShell: {
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: space[4],
+    gap: space[3],
+  },
+  compositeTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: space[2],
+  },
+  compositeTitleTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: space[1],
+  },
+  compositeTitleText: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize.lg,
+    lineHeight: lh(fontSize.lg, lineHeight.snug),
+  },
+  compositeTitleSub: {
+    fontSize: fontSize.xs,
+    lineHeight: lh(fontSize.xs, lineHeight.relaxed),
   },
   pillScroll: {
     maxHeight: 44,
@@ -576,33 +751,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     maxWidth: 220,
   },
-  pillEmoji: {
-    fontSize: fontSize.sm,
-  },
   pillLabel: {
     fontSize: fontSize.xs,
     fontFamily: fontFamily.sans.medium,
     flexShrink: 1,
-  },
-  sectionBlock: {
-    paddingVertical: space[4],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: space[3],
-  },
-  lastSection: {
-    borderBottomWidth: 0,
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[2],
-  },
-  sectionEmoji: {
-    fontSize: fontSize.md,
-  },
-  sectionTitle: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.md,
   },
   agentNote: {
     fontSize: fontSize.xs,
@@ -637,9 +789,16 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
   },
+  /** Nested under `CompositeSectionTitle` — no second card chrome. */
+  pemRecFlat: {
+    overflow: "hidden",
+  },
   pemRecInner: {
     padding: space[4],
     gap: space[3],
+  },
+  pemRecInnerTight: {
+    padding: 0,
   },
   pemRecLabel: {
     fontFamily: fontFamily.sans.semibold,

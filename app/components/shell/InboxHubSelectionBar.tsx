@@ -20,7 +20,7 @@ type Props = {
   /** False when no selected prep can be deleted (no dump). */
   canDelete: boolean;
   /**
-   * When set, overrides tab-based visibility (e.g. Starred tab with mixed ready + archived).
+   * When set, overrides tab-based visibility (e.g. Starred tab with both ready and archived).
    * Omit to use defaults from `tab`.
    */
   showArchiveAction?: boolean;
@@ -45,7 +45,8 @@ export default function InboxHubSelectionBar({
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const showArchive = showArchiveAction ?? (tab === "ready" || tab === "prepping");
+  const showArchive =
+    showArchiveAction ?? (tab === "ready" || tab === "prepping" || tab === "done");
   const showUnarchive = showUnarchiveAction ?? tab === "archived";
 
   return (

@@ -22,7 +22,8 @@ alwaysApply: false
 |------|--------|
 | Theme-aware shell (`useInboxShell`) + header + top tabs + FAB | Yes |
 | `PrepInboxRow` (Gmail-style) | Yes |
-| Unread-first sort on Preps tab | Yes |
+| Unread-first sort on **Inbox** tab | Yes |
+| **Done** tab (dimmed rows; `PATCH /preps/:id/done`) | Yes |
 | Swipe archive / delete / restore (`HubSwipeableRow`) | Yes |
 | Full-screen search overlay, FlashList, multi-select, “mark unread” swipe | Not yet — needs UX + API for unread |
 

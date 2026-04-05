@@ -50,7 +50,7 @@ function partialToApiPrep(p: NonNullable<StreamPayload["prep"]>, dumpId: string)
     error_message: null,
     opened_at: null,
     created_at: created,
-    ready_at: st === "ready" ? new Date().toISOString() : null,
+    ready_at: st === "ready" || st === "done" ? new Date().toISOString() : null,
     archived_at: null,
   };
 }

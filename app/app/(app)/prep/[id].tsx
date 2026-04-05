@@ -1,7 +1,6 @@
 import PrepDetailBody from "@/components/sections/prep-detail-sections/PrepDetailBody";
 import type { Prep } from "@/components/sections/home-sections/homePrepData";
 import PemButton from "@/components/ui/PemButton";
-import PemConfirmModal from "@/components/ui/PemConfirmModal";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemText from "@/components/ui/PemText";
 import { usePrepHub } from "@/contexts/PrepHubContext";
@@ -11,28 +10,26 @@ import { pemImpactLight, pemSelection } from "@/lib/pemHaptics";
 import { apiPrepToPrep, markPrepOpened } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { Archive, ArchiveRestore, Trash2, X } from "lucide-react-native";
+import { ArchiveRestore, ChevronLeft } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { InteractionManager, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** Full prep content — close returns to hub. */
+/** Full prep content — back returns to hub. */
 export default function PrepDetailScreen() {
   const raw = useLocalSearchParams<{ id: string | string[] }>().id;
   const id = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
   const {
     getPrep,
     fetchPrepById,
-    readyPreps,
-    preppingPreps,
-    archivePrep,
     unarchivePrep,
-    deletePrep,
     scheduleHomeNavigationIntent,
     showHubToast,
     retryPrep,
     refresh,
     upsertPrepRow,
+    markPrepOpenedOptimistic,
+    setPrepDone,
   } = usePrepHub();
   const { getToken } = useAuth();
   const markedOpenForId = useRef<string | null>(null);
@@ -45,8 +42,7 @@ export default function PrepDetailScreen() {
   const [prep, setPrep] = useState<Prep | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [archiveModalVisible, setArchiveModalVisible] = useState(false);
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [doneWorking, setDoneWorking] = useState(false);
 
   const syncFromHub = useCallback(() => {
     if (id === undefined) return;
@@ -75,6 +71,7 @@ export default function PrepDetailScreen() {
 
   useEffect(() => {
     if (id === undefined || !prep || prep.status !== "ready") return;
+    markPrepOpenedOptimistic(id);
     if (markedOpenForId.current === id) return;
     markedOpenForId.current = id;
     void (async () => {
@@ -86,7 +83,7 @@ export default function PrepDetailScreen() {
         /* ignore */
       }
     })();
-  }, [id, prep?.id, prep?.status, getToken, upsertPrepRow]); // eslint-disable-line react-hooks/exhaustive-deps -- mark opened once per prep id
+  }, [id, prep, getToken, upsertPrepRow, markPrepOpenedOptimistic]);
 
   useEffect(() => {
     if (id === undefined) return;
@@ -129,34 +126,9 @@ export default function PrepDetailScreen() {
     );
   }
 
-  const canArchive =
-    prep.status !== "archived" &&
-    (prep.status === "ready" ||
-      prep.status === "prepping" ||
-      prep.status === "failed" ||
-      (!prep.status &&
-        (readyPreps.some((p) => p.id === prep.id) ||
-          preppingPreps.some((p) => p.id === prep.id))));
-
   const canUnarchive = prep.status === "archived";
-  const canDelete = prep.dumpId !== undefined;
-
-  const openArchiveModal = () => {
-    pemImpactLight();
-    setArchiveModalVisible(true);
-  };
-
-  const confirmArchive = async () => {
-    setArchiveModalVisible(false);
-    pemSelection();
-    try {
-      await archivePrep(prep.id);
-      scheduleHomeNavigationIntent("ready");
-      router.replace("/home");
-    } catch {
-      /* hub refresh will surface errors on next poll */
-    }
-  };
+  const showDoneActions = prep.status === "ready" || prep.status === "done";
+  const isDone = prep.done === true;
 
   const onUnarchive = async () => {
     pemImpactLight();
@@ -169,28 +141,19 @@ export default function PrepDetailScreen() {
     }
   };
 
-  const openDeleteModal = () => {
-    pemImpactLight();
-    setDeleteModalVisible(true);
-  };
-
-  const confirmDelete = () => {
-    setDeleteModalVisible(false);
+  const onToggleDone = async () => {
+    if (!showDoneActions || doneWorking) return;
     pemSelection();
-    const prepId = prep.id;
-    InteractionManager.runAfterInteractions(() => {
-      setTimeout(() => {
-        void (async () => {
-          try {
-            await deletePrep(prepId);
-            scheduleHomeNavigationIntent("ready");
-            router.replace("/home");
-          } catch {
-            /* refresh on next visit */
-          }
-        })();
-      }, 48);
-    });
+    setDoneWorking(true);
+    try {
+      await setPrepDone(prep.id, !isDone);
+      scheduleHomeNavigationIntent(isDone ? "ready" : "done", isDone ? "Moved to Inbox" : "Marked done");
+      router.replace("/home");
+    } catch {
+      /* setPrepDone shows toast */
+    } finally {
+      setDoneWorking(false);
+    }
   };
 
   const onRetry = async () => {
@@ -209,27 +172,33 @@ export default function PrepDetailScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: colors.pageBackground }]}>
-      <View style={[styles.header, { paddingHorizontal: space[4] }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingLeft: insets.left,
+            paddingRight: space[4],
+          },
+        ]}
+      >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Close"
+          accessibilityLabel="Back"
           onPress={() => {
             pemImpactLight();
             router.back();
           }}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={({ pressed }) => [
-            styles.headerCtrl,
-            pressed && { opacity: 0.75 },
-          ]}
+          hitSlop={{ top: 12, bottom: 12, left: 4, right: 12 }}
+          style={({ pressed }) => [styles.backRow, pressed && { opacity: 0.75 }]}
         >
-          <X size={22} stroke={colors.textSecondary} strokeWidth={2} />
+          <ChevronLeft size={26} stroke={colors.textPrimary} strokeWidth={2.25} />
+          <PemText style={[styles.backLabel, { color: colors.textPrimary }]}>Back</PemText>
         </Pressable>
         <View style={styles.headerActions}>
           {canUnarchive ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Restore to Ready"
+              accessibilityLabel="Restore to Inbox"
               onPress={() => void onUnarchive()}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={({ pressed }) => [
@@ -244,71 +213,11 @@ export default function PrepDetailScreen() {
             >
               <ArchiveRestore size={22} stroke={colors.pemAmber} strokeWidth={2} />
             </Pressable>
-          ) : null}
-          {canArchive ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Archive ${prep.title}`}
-              onPress={openArchiveModal}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={({ pressed }) => [
-                styles.headerCtrl,
-                styles.archiveCtrl,
-                {
-                  borderColor: colors.borderMuted,
-                  backgroundColor: colors.secondarySurface,
-                  opacity: pressed ? 0.88 : 1,
-                },
-              ]}
-            >
-              <Archive size={22} stroke={colors.textSecondary} strokeWidth={2} />
-            </Pressable>
-          ) : null}
-          {canDelete ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Delete prep"
-              onPress={openDeleteModal}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={({ pressed }) => [
-                styles.headerCtrl,
-                styles.archiveCtrl,
-                {
-                  borderColor: colors.borderMuted,
-                  backgroundColor: colors.secondarySurface,
-                  opacity: pressed ? 0.88 : 1,
-                },
-              ]}
-            >
-              <Trash2 size={22} stroke={colors.error} strokeWidth={2} />
-            </Pressable>
-          ) : null}
-          {!canUnarchive && !canArchive && !canDelete ? <View style={styles.headerCtrl} /> : null}
+          ) : (
+            <View style={styles.headerCtrl} />
+          )}
         </View>
       </View>
-
-      <PemConfirmModal
-        visible={archiveModalVisible}
-        title="Archive this prep?"
-        body="It will move to Archived. You can restore it to Ready anytime from there or from this prep."
-        confirmLabel="Archive"
-        onCancel={() => setArchiveModalVisible(false)}
-        onConfirm={() => {
-          void confirmArchive();
-        }}
-      />
-
-      <PemConfirmModal
-        visible={deleteModalVisible}
-        title="Delete this prep?"
-        body="This can't be undone. Pem will remove it from your hub and stop any in-progress work for this prep."
-        confirmLabel="Delete"
-        confirmDestructive
-        onCancel={() => setDeleteModalVisible(false)}
-        onConfirm={() => {
-          void confirmDelete();
-        }}
-      />
 
       <ScrollView
         ref={prepScrollRef}
@@ -341,6 +250,18 @@ export default function PrepDetailScreen() {
           parentScrollViewRef={prepScrollRef}
           parentScrollOffsetYRef={prepScrollOffsetY}
         />
+        {showDoneActions ? (
+          doneWorking ? (
+            <PemLoadingIndicator placement="inlineStart" />
+          ) : (
+            <PemButton
+              variant={isDone ? "secondary" : "primary"}
+              onPress={() => void onToggleDone()}
+            >
+              {isDone ? "Move to Inbox" : "Done"}
+            </PemButton>
+          )
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -357,12 +278,25 @@ const styles = StyleSheet.create({
     minHeight: 44,
     marginBottom: space[2],
   },
+  /** Chevron + label — hug the leading edge (padding only from safe area). */
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[1],
+    minHeight: 44,
+    paddingRight: space[2],
+  },
+  backLabel: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.md,
+  },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: space[2],
+    flexShrink: 0,
   },
-  /** Same outer box for close, archive, and placeholder — keeps icons aligned. */
+  /** Same outer box for archive actions and placeholder — keeps icons aligned. */
   headerCtrl: {
     width: 44,
     height: 44,

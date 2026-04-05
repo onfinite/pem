@@ -1,5 +1,5 @@
 /**
- * Composite intelligent brief — `result.schema === "COMPOSITE_BRIEF"` + `is_composite` on API row.
+ * Composite intelligent brief — `result.schema === "COMPOSITE_BRIEF"` (hub `prep_type` is **`composite`**).
  */
 
 export type CompositeSectionType = string;
@@ -51,7 +51,6 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 export function parseCompositeBriefFromResult(
   result: Record<string, unknown> | null | undefined,
-  _isCompositeRow?: boolean,
 ): CompositeBriefPayload | undefined {
   if (!result || typeof result !== "object") return undefined;
   if (result.schema !== "COMPOSITE_BRIEF") return undefined;

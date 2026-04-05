@@ -12,7 +12,7 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Check, Star } from "lucide-react-native";
 
-type Mode = "ready" | "prepping" | "archived";
+type Mode = "ready" | "done" | "prepping" | "archived";
 
 type Props = {
   prep: Prep;
@@ -54,6 +54,7 @@ export default function PrepInboxRow({
   const accent = prepListAccentFromIntent(prep.intent ?? null, prep.kind, resolved);
   const isPrepping = mode === "prepping";
   const isArchived = mode === "archived";
+  const isDone = mode === "done";
   const unread = mode === "ready" && prep.unread === true;
   const failed = prep.status === "failed";
   const Icon = prepListIconFromIntent(prep.intent ?? null, prep.kind);
@@ -89,7 +90,7 @@ export default function PrepInboxRow({
           {
             backgroundColor: s.bg,
             opacity:
-              isArchived ? 0.82 : rowTapActive && pressed ? 0.94 : 1,
+              isDone ? 0.72 : isArchived ? 0.82 : rowTapActive && pressed ? 0.94 : 1,
           },
         ]}
       >
@@ -119,9 +120,13 @@ export default function PrepInboxRow({
                 styles.title,
                 {
                   color:
-                    isPrepping ? s.textSecondary : unread ? s.textPrimary : s.textSecondary,
+                    isPrepping || isDone
+                      ? s.textTertiary
+                      : unread
+                        ? s.textPrimary
+                        : s.textSecondary,
                 },
-                unread && !isPrepping && { fontFamily: fontFamily.sans.bold },
+                unread && !isPrepping && !isDone && { fontFamily: fontFamily.sans.bold },
               ]}
             >
               {prep.title}
@@ -145,7 +150,7 @@ export default function PrepInboxRow({
               style={[
                 styles.teaser,
                 {
-                  color: s.textSecondary,
+                  color: isDone ? s.textTertiary : s.textSecondary,
                   fontFamily: fontFamily.sans.regular,
                 },
               ]}
