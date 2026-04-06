@@ -1,12 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+
+import { DUMP_TEXT_MAX_CHARS } from '../dumps.service';
 
 export class CreateDumpDto {
-  @ApiProperty({
-    description: 'Dump text (typed or transcribed on client)',
-  })
+  @ApiProperty({ description: 'Raw dump text', maxLength: DUMP_TEXT_MAX_CHARS })
   @IsString()
-  @MinLength(1)
-  @MaxLength(16_000)
-  transcript!: string;
+  @IsNotEmpty()
+  @MaxLength(DUMP_TEXT_MAX_CHARS)
+  text!: string;
 }

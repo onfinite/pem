@@ -2,7 +2,7 @@ import {
   glassChromeBorder,
   TOP_BAR_ROW_PAD,
   TOP_ICON_CHIP,
-} from "@/components/sections/home-sections/homeLayout";
+} from "@/constants/layout";
 import HubEmptyState from "@/components/shell/HubEmptyState";
 import ProfileFactEditorModal from "@/components/sections/settings-sections/ProfileFactEditorModal";
 import PemButton from "@/components/ui/PemButton";

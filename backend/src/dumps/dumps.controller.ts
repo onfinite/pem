@@ -21,18 +21,14 @@ export class DumpsController {
 
   @Post()
   @ApiOperation({
-    summary:
-      'Create dump — queue split job, return immediately (preps appear via SSE)',
+    summary: 'Create dump — enqueue extraction, return immediately',
   })
-  @ApiCreatedResponse({
-    description:
-      '{ status, dumpId, prepIds: [] } — split + prep jobs run async',
-  })
+  @ApiCreatedResponse({ description: '{ dumpId }' })
   async create(
     @CurrentUser() user: UserRow,
     @Body() body: CreateDumpDto,
-  ): Promise<{ status: string; dumpId: string; prepIds: string[] }> {
-    return this.dumps.createDump(user, body.transcript);
+  ): Promise<{ dumpId: string }> {
+    return this.dumps.createDump(user, body.text);
   }
 
   @Get()
@@ -41,7 +37,7 @@ export class DumpsController {
     const rows = await this.dumps.listDumpsForUser(user.id);
     return rows.map((d) => ({
       id: d.id,
-      transcript: d.transcript,
+      text: d.dumpText,
       created_at: d.createdAt?.toISOString?.() ?? d.createdAt,
     }));
   }

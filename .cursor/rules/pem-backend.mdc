@@ -1,5 +1,5 @@
 ---
-description: NestJS backend in backend/ — Drizzle, Clerk, conventions
+description: NestJS backend in backend/ — Drizzle, Clerk, conventions (thought organizer)
 globs: backend/**
 ---
 
@@ -7,37 +7,26 @@ globs: backend/**
 
 **Package:** NestJS app under **`backend/`** — `npm install`, `npm run start:dev`, `npm run build` from `backend/`. No shared runtime code with `app/`.
 
-**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** session JWTs (**`jose`** + remote JWKS, issuer check), **Svix** webhook verification for `POST /webhooks/clerk`, **`@nestjs/throttler`** (global; **`@SkipThrottle()`** on the Clerk webhook controller), **`@nestjs/swagger`** (OpenAPI UI at `/docs`, disabled when `ENV === 'prod'`), **`ValidationPipe`** with **`class-validator`** + **`class-transformer`**. **Config** via **`@nestjs/config`** and **`src/config/configuration.ts`** (loads `.env`). Optional **`PREP_AGENT_TIMEOUT_MS`** / **`PREP_STRUCTURE_TIMEOUT_MS`** (defaults 600000 / 120000) cap **`generateText`** for the prep agent + structured formatter so stuck OpenAI calls eventually fail instead of hanging forever. Optional **`COMPOSITE_AGENT_MAX_STEPS`** / **`COMPOSITE_DETECT_TIMEOUT_MS`** (defaults 14 / 25000) tune composite briefs (multi-section **`COMPOSITE_BRIEF`**) after gpt-4o-mini composite detection. **Composite fan-out (default on):** **`COMPOSITE_FANOUT_ENABLED`** (`false` to disable), **`COMPOSITE_FANOUT_MAX_LANES`**, **`COMPOSITE_FANOUT_MAX_STEPS_PER_LANE`**, **`COMPOSITE_FANOUT_PLAN_TIMEOUT_MS`** — see **`prep-runner-composite-fanout.ts`**. After lanes, **`prep-runner-composite-merge.ts`** runs a **merge** LLM (no tools; **`COMPOSITE_MERGE_ENABLED`**, **`COMPOSITE_MERGE_TIMEOUT_MS`**) then the composite JSON formatter.
+**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, never `generateObject`). **BullMQ** + **Redis**: `dump` queue runs **extraction** after each dump. **Redis pub/sub** for **SSE** `GET /inbox/stream?dumpId=`. **Expo** push — **`notifyInboxUpdated`** (`data.kind: inbox_updated`). **No Tavily / SerpAPI / prep agents.**
 
-**Intent:** Pem’s HTTP API — PostgreSQL tables **`users`**, **`dumps`**, **`preps`** (incl. **`opened_at`** for read/unread, **`status: done`** + **`done_at`** for Done hub (vs Inbox **`ready`**); **`prep_type: composite`** for multi-section **`COMPOSITE_BRIEF`** briefs), **`memory_facts`** (natural-language memory + active/historical), **`agent_steps`** (UUID PKs). **BullMQ** + **Redis** queues dump-split + prep jobs; Redis **pub/sub** for **SSE** (`GET /preps/stream?dumpId=`). **Vercel AI SDK** + **OpenAI** for split + agentic prep (tools + structured output); **Tavily** for search; **Expo** push when a prep is ready. Prep runs inject **active memory** into system + user prompts, pass memory into the **structured formatter** for personalized card copy, and expose **`remember`/`save`** agent tools. Keep request/response shapes stable for the mobile client; document changes in OpenAPI and **`README.md`**.
+**Tables:** **`users`** (incl. **`timezone`** IANA), **`dumps`** (column **`text`** — raw dump), **`thoughts`** (journal copy per dump), **`actionables`** (extracted items: tone, urgency, batch_key, dates, status), **`memory_facts`** (no `source_prep_id`).
 
 **Layout:**
 
 | Area | Role |
 |------|------|
-| `src/database/schemas/index.ts` | Barrel — re-exports table modules; Drizzle Kit `schema` entry |
-| `src/database/schemas/*.schema.ts` | One Drizzle table per file |
-| `drizzle/` | Generated SQL migrations + `meta/` (commit with the repo) |
-| `src/database/database.module.ts` | `pg` `Pool` + `DRIZZLE` provider |
-| `src/users/` | `UserService` (Clerk upsert/delete), `UsersController` — `GET /users/me`, `GET/POST /users/me/profile` (GET: optional `?limit=` + `cursor=` for newest-first pagination; omit for full list by key), `PATCH/DELETE /users/me/profile/:id`, push token |
-| `src/dumps/` | `POST /dumps`, `GET /dumps` — queue split job; workers create preps |
-| `src/preps/` | `GET /preps` (paginated: `limit`/`cursor`/`status`; `status=ready` = Inbox; `status=done` = **`status`** **`done`** (with `done_at`); `dumpId=`; `status=prepping` = prepping+failed; prep JSON includes **`intent`**, **`done_at`**, **`prep_type`** incl. **`composite`** for intelligent briefs), `GET /preps/counts` (incl. **`done`**), `GET /preps/stream`, `GET /preps/:id` (includes **`dump_transcript`** for parent dump), **`POST /preps/:id/client-hints`** (ephemeral location / `locationUnavailable` → Redis for one prep run), **`PATCH /preps/:id/done`** (`{ done }` — Inbox vs Done), `PATCH /preps/:id/archive`, `PATCH /preps/:id/unarchive` (restore → Inbox, clears **`done_at`**), **`DELETE /preps/:id`** (hard delete), … |
-| `src/queue/` | **`queue.module.ts`** — global Bull connection + `prep`/`dump` queues + workers (`dump-jobs/` = split → preps + enqueue; `prep-jobs/` = run agent). Folders are **file organization only** (not separate Nest modules). Split is structural only — **`pem-intake-routing.mdc`**. |
-| `src/agents/` | Split agent + agentic `PrepRunnerService` (**composite-first** for situational / travel / partial asks via **`composite-heuristics.ts`** + gpt-4o-mini detection → **`COMPOSITE_BRIEF`** formatter, with **one retry** on formatter failure; **single-lane** only for explicit atomic asks, e.g. Serp **`flight|AAA|BBB|YYYY-MM-DD`**. **Composite** runs **parallel sub-agents** per planned lane (**`prep-runner-composite-fanout.ts`**) unless disabled, then merges for the formatter. If composite still fails, adaptive formatting uses **`intentForTools`** (same as the agent loop, e.g. **`RESEARCH`** in composite mode) — not the raw classified intent alone. **prompts** in **`prompts/*.prompt.ts`** — see **`prep-composite.prompt.ts`**. **`prep-runner-step.ts`** → **`agent_steps`**. See **`pem-adaptive-prep-cards.mdc`**. |
-| `src/profile/` | **`memory_facts`** — append-only rows (`memory_key`, `note`, `learned_at`, `status` active/historical, optional `source_prep_id` / `source_dump_id`); agent `remember`/`save` + `/users/me/profile` |
-| `src/steps/` | `agent_steps` logging |
-| `src/events/` | Redis prep event publisher (`PrepEventsModule` global) |
-| `src/push/` | Expo push (`notifyPrepReady` — **`data.prep_id`** for deep link; client **`PATCH /users/me/push-token`**) |
-| `src/integrations/` | Tavily |
-| `src/auth/` | `ClerkAuthGuard` (JWT verify + **JIT** `users` upsert when missing), `CurrentUser`, `clerk-jwt-profile.ts` |
-| `src/webhooks/` | `POST /webhooks/clerk` — Svix verify; syncs DB on **`user.created`** / **`user.updated`**, deletes on **`user.deleted`**; other events **200 OK but no DB write** (see logs) |
-| `src/health/` | `GET /health` |
-| `src/main.ts` | Creates app, calls **`configureApp()`**, listens on `PORT` |
-| `src/bootstrap/configure-app.ts` | JSON body (5mb, `rawBody` for Svix), CORS, `ValidationPipe`, Swagger |
-| `src/bootstrap/swagger.setup.ts` | OpenAPI — `/docs`, `/docs-json` when `ENV !== 'prod'` |
+| `src/dumps/` | `POST /dumps`, `GET /dumps` — save dump + thought, enqueue extraction |
+| `src/extraction/` | LLM extract actionables (`ExtractionService`) |
+| `src/queue/dump-jobs/` | `DumpExtractService` — worker; `dump.processor` |
+| `src/inbox-events/` | Redis pub/sub for inbox SSE (`InboxEventsModule` global) |
+| `src/inbox/` | `GET /inbox`, `GET /inbox/all`, `GET /inbox/stream` (SSE) |
+| `src/actionables/` | `GET /actionables/done`, `GET /actionables/:id`, PATCH done/dismiss/undone/undismiss/snooze |
+| `src/thoughts/` | `GET /thoughts`, `GET /thoughts/:id` |
+| `src/users/` | `GET /users/me`, `PATCH /users/me/timezone`, profile, push token |
+| `src/profile/` | `memory_facts` CRUD for `/users/me/profile` |
+| `src/push/` | Expo push |
+| `src/auth/`, `src/webhooks/`, `src/health/` | unchanged patterns |
 
-**Security:** Validate input, env-only secrets, parameterized Drizzle queries, do not trust client-supplied user ids — use **`ClerkAuthGuard`** + DB user row.
+**Security:** Validate input; use **`ClerkAuthGuard`** + DB user id from JWT.
 
-**Maintenance:** When you add packages, env vars, or routes under `backend/`, update **`pem-backend.mdc`** and repo-root **`README.md`** (`backend/` section) together.
-
-**Collaboration:** See `pem-project.mdc` → *Collaboration*.
+**Collaboration:** See `pem-project.mdc`.

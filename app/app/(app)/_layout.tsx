@@ -1,12 +1,11 @@
-import LocationPrepCoordinator from "@/components/location/LocationPrepCoordinator";
 import PushNotificationRegistrar from "@/components/push/PushNotificationRegistrar";
-import HubToastBanner from "@/components/sections/home-sections/HubToastBanner";
+import TimezoneRegistrar from "@/components/auth/TimezoneRegistrar";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
-import { PrepHubProvider } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { replaceAnimationForRoute } from "@/lib/mainTabNav";
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 export default function AppLayout() {
@@ -27,25 +26,18 @@ export default function AppLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <PrepHubProvider>
-        <View style={styles.appStack}>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: colors.pageBackground },
-            }}
-          />
-          <HubToastBanner />
-          <PushNotificationRegistrar />
-          <LocationPrepCoordinator />
-        </View>
-      </PrepHubProvider>
+      <TimezoneRegistrar />
+      <Stack
+        screenOptions={({ route }) => {
+          const replaceAnim = replaceAnimationForRoute(route.name);
+          return {
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.pageBackground },
+            ...(replaceAnim !== undefined ? { animationTypeForReplace: replaceAnim } : {}),
+          };
+        }}
+      />
+      <PushNotificationRegistrar />
     </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  appStack: {
-    flex: 1,
-  },
-});

@@ -1,6 +1,6 @@
 # Pem backend (NestJS + Drizzle)
 
-HTTP API for Pem: **PostgreSQL** (`user`, `dump`, `prep`), **Clerk** auth and webhooks, **OpenAPI** in non-prod.
+HTTP API for Pem: **PostgreSQL** (`users`, `dumps`, `actionables`, `memory_facts`), **Clerk** auth and webhooks, **OpenAPI** in non-prod.
 
 ## Stack
 
@@ -39,6 +39,19 @@ For a **new** database or after changing `src/database/schemas/`:
 npm run db:generate  # writes SQL under drizzle/ + meta snapshots
 npm run db:migrate   # apply pending migrations (uses DATABASE_URL from .env)
 ```
+
+The baseline migration is **`drizzle/0000_initial.sql`** (creates the four tables above). If an environment still has **legacy** tables from older Pem migrations, use a **fresh database** (or reconcile manually) before applying—there are no `DROP TABLE` shims in migrations anymore.
+
+**How Drizzle tracks applies (common confusion):**
+
+| Artifact | Role |
+|----------|------|
+| `drizzle/meta/*.json` + `_journal.json` | Used by **`db:generate`** to diff the schema and build the next migration. Not consulted by **`db:migrate`** against the server. |
+| Table **`__drizzle_migrations`** in Postgres | Written by **`db:migrate`**. Lists which migration SQL files (by hash) already ran on *this* database. |
+
+If you **replaced** the repo’s migration folder with a single new `0000_initial.sql` but the **same** Neon/Postgres still has old tables and/or old rows in `__drizzle_migrations`, `db:migrate` may try to apply the new baseline and fail with **relation "…" already exists**. Fix: **new database branch** (Neon) / drop dev tables and clear migration history, then run `db:migrate` again.
+
+The **`pg` SSL warning** during migrate is from the driver (Neon URLs often use `sslmode=require`). You can set `sslmode=verify-full` on `DATABASE_URL` if you want to align with future `pg` defaults; it does not mean migrate failed.
 
 **Note:** `drizzle.config.ts` loads **`.env`** via `dotenv` so CLI commands pick up `DATABASE_URL`.
 

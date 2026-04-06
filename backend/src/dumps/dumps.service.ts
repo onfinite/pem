@@ -8,8 +8,7 @@ import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import { dumpsTable, type UserRow } from '../database/schemas';
 
-/** Max transcript length (chars); aligned with CreateDumpDto and client. */
-export const DUMP_TRANSCRIPT_MAX_CHARS = 16_000;
+export const DUMP_TEXT_MAX_CHARS = 16_000;
 
 @Injectable()
 export class DumpsService {
@@ -20,20 +19,18 @@ export class DumpsService {
     @InjectQueue('dump') private readonly dumpQueue: Queue,
   ) {}
 
-  async createDump(
-    user: UserRow,
-    transcript: string,
-  ): Promise<{ status: string; dumpId: string; prepIds: string[] }> {
+  async createDump(user: UserRow, text: string): Promise<{ dumpId: string }> {
+    const trimmed = text.trim();
     const [dump] = await this.db
       .insert(dumpsTable)
       .values({
         userId: user.id,
-        transcript: transcript.trim(),
+        dumpText: trimmed,
       })
       .returning();
 
     await this.dumpQueue.add(
-      'split',
+      'extract',
       { dumpId: dump.id },
       {
         attempts: 3,
@@ -42,8 +39,8 @@ export class DumpsService {
       },
     );
 
-    this.log.log(`dump ${dump.id} queued for split for user ${user.id}`);
-    return { status: 'got it', dumpId: dump.id, prepIds: [] };
+    this.log.log(`dump ${dump.id} queued for extraction for user ${user.id}`);
+    return { dumpId: dump.id };
   }
 
   async listDumpsForUser(userId: string) {

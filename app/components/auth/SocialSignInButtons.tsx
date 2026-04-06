@@ -38,7 +38,7 @@ export default function SocialSignInButtons() {
 
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
-        router.replace("/home");
+        router.replace("/inbox");
         return;
       }
 

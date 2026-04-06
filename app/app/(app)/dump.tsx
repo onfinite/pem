@@ -4,7 +4,6 @@ import DumpMainStage from "@/components/sections/dump-sections/DumpMainStage";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import { amber, surfacePage } from "@/constants/theme";
 import { space } from "@/constants/typography";
-import { usePrepHub } from "@/contexts/PrepHubContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { createDump } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
@@ -38,7 +37,6 @@ export default function DumpScreen() {
   const insets = useSafeAreaInsets();
   const { colors, resolved } = useTheme();
   const { getToken } = useAuth();
-  const { refresh: refreshPreps } = usePrepHub();
   const { prefill: prefillParam } = useLocalSearchParams<{ prefill?: string | string[] }>();
   const prefill =
     typeof prefillParam === "string"
@@ -90,15 +88,14 @@ export default function DumpScreen() {
     setSubmitting(true);
     try {
       const res = await createDump(getToken, payload);
-      await refreshPreps();
-      router.replace({ pathname: "/prepping", params: { dumpId: res.dumpId } });
+      router.replace({ pathname: "/inbox", params: { dumpId: res.dumpId } });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong.";
       Alert.alert("Couldn’t send dump", msg);
     } finally {
       setSubmitting(false);
     }
-  }, [trimmed, submitting, getToken, refreshPreps]);
+  }, [trimmed, submitting, getToken]);
 
   const sendActive = !submitting && canSend;
 

@@ -15,7 +15,7 @@ export default function DumpCloseBar() {
         accessibilityLabel="Close"
         onPress={() => {
           Keyboard.dismiss();
-          router.push("/home");
+          router.push("/inbox");
         }}
         hitSlop={12}
         style={({ pressed }) => [

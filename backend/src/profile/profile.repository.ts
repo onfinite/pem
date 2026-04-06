@@ -162,7 +162,6 @@ export class ProfileRepository {
     note: string;
     learnedAt?: Date;
     sourceDumpId: string | null;
-    sourcePrepId: string | null;
     status: MemoryStatus;
     provenance: string | null;
   }): Promise<MemoryFactRow> {
@@ -174,7 +173,6 @@ export class ProfileRepository {
         note: row.note,
         learnedAt: row.learnedAt ?? new Date(),
         sourceDumpId: row.sourceDumpId,
-        sourcePrepId: row.sourcePrepId,
         status: row.status,
         provenance: row.provenance,
       })

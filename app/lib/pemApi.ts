@@ -1,66 +1,4 @@
-import type { Prep, PrepKind } from "@/components/sections/home-sections/homePrepData";
-import { extractPrepResultBody } from "@/lib/extractPrepResultBody";
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
-import { hasAnyAdaptiveCard, parseAdaptiveFromResult } from "@/lib/adaptivePrep";
-import { parseCompositeBriefFromResult } from "@/lib/compositePrep";
-import { cardLayoutFromResult, type CardLayoutId } from "@/lib/prepCardLayout";
-import {
-  primaryKindFromResult,
-  parsePrepBlocksFromResult,
-  type PrepResultBlock,
-} from "@/lib/prepBlocks";
-import {
-  BookOpen,
-  Briefcase,
-  Building2,
-  Calendar,
-  FileText,
-  Gavel,
-  Gift,
-  GitCompare,
-  Layers,
-  Lightbulb,
-  LineChart,
-  Mail,
-  MapPin,
-  Plane,
-  Scale,
-  Search,
-  ShoppingBag,
-  StickyNote,
-  TrendingUp,
-  User,
-  type LucideIcon,
-} from "lucide-react-native";
-
-export type ApiPrep = {
-  id: string;
-  dump_id: string;
-  title: string;
-  thought?: string;
-  /** Classifier intent; hub bucket is `prep_type` (and `result.schema` when adaptive). */
-  intent?: string | null;
-  prep_type: string;
-  context?: Record<string, unknown> | null;
-  status: "prepping" | "ready" | "done" | "archived" | "failed";
-  summary: string | null;
-  result: Record<string, unknown> | null;
-  /** Omitted in API responses for failed preps (details are not shown in UI). */
-  error_message: string | null;
-  created_at: string;
-  ready_at: string | null;
-  archived_at: string | null;
-  /** Set when user opened detail; omitted/null = unread (ready tab). */
-  opened_at?: string | null;
-  /** User starred; null/omitted = not starred. */
-  starred_at?: string | null;
-  /** Set when `status` is `done` (Done hub). */
-  done_at?: string | null;
-  bundle_type?: string | null;
-  bundle_detection_reason?: string | null;
-  /** Parent dump text — detail only (GET /preps/:id). */
-  dump_transcript?: string | null;
-};
 
 export async function apiFetch<T>(
   path: string,
@@ -83,7 +21,7 @@ export async function apiFetch<T>(
     const base = getApiBaseUrl();
     const hint =
       __DEV__ && (e instanceof TypeError || String(e).includes("Network request failed"))
-        ? ` Check API is running and reachable at ${base} (simulator vs device: see README).`
+        ? ` Check API is running at ${base}.`
         : "";
     throw new Error((e instanceof Error ? e.message : String(e)) + hint);
   }
@@ -100,565 +38,196 @@ export async function apiFetch<T>(
   return (await res.json()) as T;
 }
 
-/** Hub bucket from API (`prep_type` + optional `result.primaryKind`). Adaptive UX uses `layout`. */
-function prepTypeToKind(prepType: string): PrepKind {
-  switch (prepType) {
-    case "search":
-      return "web";
-    case "research":
-      return "deep_research";
-    case "options":
-      return "options";
-    case "draft":
-      return "draft";
-    case "composite":
-      return "composite";
-    default:
-      return "web";
-  }
-}
-
-function prepKindForHub(
-  blocks: PrepResultBlock[] | undefined,
-  layout: CardLayoutId | null,
-  prepType: string,
-): PrepKind {
-  if (blocks?.some((b) => b.type === "follow_up")) return "follow_up";
-  if (layout === "decision_card") return "decide";
-  return prepTypeToKind(prepType);
-}
-
-function iconForLayout(layout: CardLayoutId): LucideIcon {
-  switch (layout) {
-    case "shopping_card":
-      return ShoppingBag;
-    case "place_card":
-      return MapPin;
-    case "comparison_card":
-      return GitCompare;
-    case "research_card":
-      return BookOpen;
-    case "person_card":
-      return User;
-    case "meeting_brief_card":
-      return Calendar;
-    case "decision_card":
-      return Scale;
-    case "legal_financial_card":
-      return Gavel;
-    case "explain_card":
-      return Lightbulb;
-    case "summary_card":
-      return FileText;
-    case "idea_cards_card":
-      return StickyNote;
-    case "draft_card":
-      return Mail;
-    case "events_card":
-      return Calendar;
-    case "flights_card":
-      return Plane;
-    case "business_card":
-      return Building2;
-    case "trends_card":
-      return TrendingUp;
-    case "market_card":
-      return LineChart;
-    case "jobs_card":
-      return Briefcase;
-    default:
-      return Search;
-  }
-}
-
-function iconForKind(kind: PrepKind): LucideIcon {
-  if (kind === "composite") return Layers;
-  if (kind === "options" || kind === "decide" || kind === "follow_up") return Gift;
-  if (kind === "draft") return Mail;
-  if (kind === "web") return Search;
-  if (kind === "deep_research") return Scale;
-  return FileText;
-}
-
-function tagForPrimaryKind(prepType: string): string {
-  switch (prepType) {
-    case "search":
-      return "Search";
-    case "research":
-      return "Research";
-    case "options":
-      return "Options";
-    case "draft":
-      return "Draft";
-    case "composite":
-      return "Intelligent brief";
-    default:
-      return "Prep";
-  }
-}
-
-function viewLabelForKind(kind: PrepKind): string {
-  switch (kind) {
-    case "options":
-    case "decide":
-    case "follow_up":
-      return "View options";
-    case "draft":
-      return "View draft";
-    case "deep_research":
-      return "Read research";
-    case "web":
-      return "View summary";
-    case "composite":
-      return "Open";
-    default:
-      return "Open";
-  }
-}
-
-function extractBodyAndDraft(row: ApiPrep): ReturnType<typeof extractPrepResultBody> {
-  return extractPrepResultBody(row.result, row.prep_type, row.status);
-}
-
-function extractOptions(row: ApiPrep): Prep["options"] {
-  const pt = row.prep_type;
-  if (pt !== "options" || !row.result || !Array.isArray(row.result.options)) {
-    return undefined;
-  }
-  return row.result.options
-    .slice(0, 3)
-    .map((o) => {
-      if (!o || typeof o !== "object") return { label: "", price: "" };
-      const name = "name" in o && typeof o.name === "string" ? o.name : "";
-      const price = "price" in o && typeof o.price === "string" ? o.price : "";
-      const url = "url" in o && typeof o.url === "string" ? o.url.trim() : "";
-      const why = "why" in o && typeof o.why === "string" ? o.why : "";
-      const store = "store" in o && typeof o.store === "string" ? o.store : "";
-      const imageUrl =
-        "imageUrl" in o && typeof o.imageUrl === "string" ? o.imageUrl.trim() : "";
-      return {
-        label: name,
-        price,
-        url: url.length > 0 ? url : undefined,
-        why: why.length > 0 ? why : undefined,
-        store: store.length > 0 ? store : undefined,
-        imageUrl: imageUrl.length > 0 ? imageUrl : undefined,
-      };
-    })
-    .filter((o) => o.label.length > 0);
-}
-
-function optionsFromBlocks(blocks: PrepResultBlock[]): Prep["options"] | undefined {
-  const block = blocks.find((b) => b.type === "options");
-  if (!block || !block.options.length) return undefined;
-  return block.options
-    .map((o) => {
-      const url = o.url.trim();
-      const why = o.why.trim();
-      const store = o.store.trim();
-      const imageUrl = o.imageUrl.trim();
-      return {
-        label: o.name,
-        price: o.price,
-        url: url.length > 0 ? url : undefined,
-        why: why.length > 0 ? why : undefined,
-        store: store.length > 0 ? store : undefined,
-        imageUrl: imageUrl.length > 0 ? imageUrl : undefined,
-      };
-    })
-    .filter((o) => o.label.length > 0);
-}
-
-function optionsFromShoppingCard(
-  row: ApiPrep,
-): Prep["options"] | undefined {
-  const r = row.result;
-  if (!r || typeof r !== "object" || r.schema !== "SHOPPING_CARD" || !Array.isArray(r.products)) {
-    return undefined;
-  }
-  return r.products
-    .slice(0, 3)
-    .map((o) => {
-      if (!o || typeof o !== "object") return { label: "", price: "" };
-      const name = "name" in o && typeof o.name === "string" ? o.name : "";
-      const price = "price" in o && typeof o.price === "string" ? o.price : "";
-      const url = "url" in o && typeof o.url === "string" ? o.url.trim() : "";
-      const why = "why" in o && typeof o.why === "string" ? o.why : "";
-      const store = "store" in o && typeof o.store === "string" ? o.store : "";
-      const image = "image" in o && typeof o.image === "string" ? o.image.trim() : "";
-      return {
-        label: name,
-        price,
-        url: url.length > 0 ? url : undefined,
-        why: why.length > 0 ? why : undefined,
-        store: store.length > 0 ? store : undefined,
-        imageUrl: image.length > 0 ? image : undefined,
-      };
-    })
-    .filter((o) => o.label.length > 0);
-}
-
-/** Maps API prep row to hub `Prep` for lists and detail. */
-export function apiPrepToPrep(row: ApiPrep): Prep {
-  const compositeBrief = parseCompositeBriefFromResult(row.result);
-  const adaptive = parseAdaptiveFromResult(row.result);
-  const blocks = compositeBrief
-    ? undefined
-    : hasAnyAdaptiveCard(adaptive)
-      ? undefined
-      : parsePrepBlocksFromResult(row.result);
-  const layout = compositeBrief ? null : cardLayoutFromResult(row.result);
-  const pk = primaryKindFromResult(row.result) ?? row.prep_type;
-  const kind = prepKindForHub(blocks, layout, pk);
-  const useAdaptive = hasAnyAdaptiveCard(adaptive);
-  const Icon: LucideIcon = compositeBrief
-    ? Layers
-    : layout
-      ? iconForLayout(layout)
-      : iconForKind(kind);
-  const { body, draftText, detailIntro, draftSubject } =
-    compositeBrief || blocks?.length || useAdaptive ? {} : extractBodyAndDraft(row);
-  const options = compositeBrief
-    ? undefined
-    : blocks?.length
-      ? optionsFromBlocks(blocks)
-      : optionsFromShoppingCard(row) ?? extractOptions(row);
-
-  const summary =
-    row.summary?.trim() ||
-    (row.status === "prepping"
-      ? "Pem is working on this."
-      : row.status === "failed"
-        ? "Something went wrong. Tap to retry."
-        : "—");
-
-  const title = row.thought?.trim() || row.title;
-
-  let tag =
-    row.status === "prepping"
-      ? "Prepping"
-      : row.status === "failed"
-        ? "Failed"
-        : tagForPrimaryKind(pk);
-  if (compositeBrief && (row.status === "ready" || row.status === "done")) {
-    tag = "Intelligent brief";
-  } else if ((row.status === "ready" || row.status === "done") && layout) {
-    if (layout === "shopping_card") tag = "Shop picks";
-    else if (layout === "draft_card") tag = "Draft ready";
-    else if (layout === "place_card") tag = "Places";
-    else if (layout === "comparison_card") tag = "Compare";
-    else if (layout === "research_card") tag = "Research";
-    else if (layout === "person_card") tag = "Profile";
-    else if (layout === "meeting_brief_card") tag = "Brief";
-    else if (layout === "decision_card") tag = "Verdict";
-    else if (layout === "legal_financial_card") tag = "Legal & money";
-    else if (layout === "explain_card") tag = "Explained";
-    else if (layout === "summary_card") tag = "Summary";
-    else if (layout === "idea_cards_card") tag = "Ideas";
-    else if (layout === "events_card") tag = "Events";
-    else if (layout === "flights_card") tag = "Flights";
-    else if (layout === "business_card") tag = "Business";
-    else if (layout === "trends_card") tag = "Trends";
-    else if (layout === "market_card") tag = "Market";
-    else if (layout === "jobs_card") tag = "Jobs";
-  }
-
-  let viewLabel = viewLabelForKind(kind);
-  if (compositeBrief) {
-    viewLabel = "Open brief";
-  } else if (layout === "shopping_card") viewLabel = "View picks";
-  else if (layout === "place_card") viewLabel = "View places";
-  else if (layout === "comparison_card") viewLabel = "Compare";
-  else if (layout === "research_card") viewLabel = "Read";
-  else if (layout === "person_card") viewLabel = "View profile";
-  else if (layout === "meeting_brief_card") viewLabel = "Open brief";
-  else if (layout === "decision_card") viewLabel = "See verdict";
-  else if (layout === "legal_financial_card") viewLabel = "Read";
-  else if (layout === "explain_card") viewLabel = "Read";
-  else if (layout === "summary_card") viewLabel = "Read";
-  else if (layout === "idea_cards_card") viewLabel = "Browse ideas";
-  else if (layout === "events_card") viewLabel = "View events";
-  else if (layout === "flights_card") viewLabel = "View flights";
-  else if (layout === "business_card") viewLabel = "View picks";
-  else if (layout === "trends_card") viewLabel = "View trends";
-  else if (layout === "market_card") viewLabel = "View quote";
-  else if (layout === "jobs_card") viewLabel = "View listings";
-
-  return {
-    id: row.id,
-    dumpId: row.dump_id,
-    createdAt: row.created_at,
-    intent: row.intent ?? undefined,
-    Icon,
-    tag,
-    title,
-    summary,
-    viewLabel,
-    kind,
-    detailIntro,
-    options,
-    body: body || undefined,
-    draftText: adaptive.draftCard?.body ?? draftText,
-    draftSubject: adaptive.draftCard ? adaptive.draftCard.subject.trim() || null : draftSubject,
-    status: row.status,
-    done: row.status === "done",
-    unread:
-      row.status === "ready" &&
-      (row.opened_at === null || row.opened_at === undefined),
-    blocks: blocks ?? undefined,
-    shoppingCard: adaptive.shoppingCard,
-    draftCard: adaptive.draftCard,
-    placeCard: adaptive.placeCard,
-    comparisonCard: adaptive.comparisonCard,
-    researchCard: adaptive.researchCard,
-    personCard: adaptive.personCard,
-    meetingBrief: adaptive.meetingBrief,
-    decisionCard: adaptive.decisionCard,
-    legalFinancialCard: adaptive.legalFinancialCard,
-    explainCard: adaptive.explainCard,
-    summaryCard: adaptive.summaryCard,
-    ideaCards: adaptive.ideaCards,
-    eventsCard: adaptive.eventsCard,
-    flightsCard: adaptive.flightsCard,
-    businessCard: adaptive.businessCard,
-    trendsCard: adaptive.trendsCard,
-    marketCard: adaptive.marketCard,
-    jobsCard: adaptive.jobsCard,
-    starred: Boolean(row.starred_at),
-    compositeBrief: compositeBrief ?? undefined,
-    dumpTranscript:
-      typeof row.dump_transcript === "string" && row.dump_transcript.trim().length > 0
-        ? row.dump_transcript.trim()
-        : undefined,
-  };
-}
-
-export type CreateDumpResponse = {
-  status: string;
-  dumpId: string;
-  prepIds: string[];
-};
-
 export async function createDump(
   getToken: () => Promise<string | null>,
-  transcript: string,
-): Promise<CreateDumpResponse> {
-  return apiFetch("/dumps", {
+  text: string,
+): Promise<{ dumpId: string }> {
+  return apiFetch<{ dumpId: string }>("/dumps", {
     method: "POST",
     getToken,
-    body: JSON.stringify({ transcript }),
+    body: JSON.stringify({ text }),
   });
 }
 
-export async function listPreps(
-  getToken: () => Promise<string | null>,
-  status?: string,
-): Promise<ApiPrep[]> {
-  const q = status ? `?status=${encodeURIComponent(status)}` : "";
-  return apiFetch(`/preps${q}`, { method: "GET", getToken });
+export type ApiActionable = {
+  id: string;
+  dump_id: string;
+  text: string;
+  original_text: string;
+  status: string;
+  tone: string;
+  urgency: string;
+  batch_key: string | null;
+  due_at: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  period_label: string | null;
+  timezone_pending: boolean;
+  snoozed_until: string | null;
+  done_at: string | null;
+  dismissed_at: string | null;
+  pem_note: string | null;
+  draft_text: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getInboxToday(getToken: () => Promise<string | null>) {
+  return apiFetch<{ today: ApiActionable[] }>("/inbox", {
+    method: "GET",
+    getToken,
+  });
 }
 
-export type ListPrepsPageResponse = {
-  items: ApiPrep[];
-  next_cursor: string | null;
-};
+export async function getInboxAll(getToken: () => Promise<string | null>) {
+  return apiFetch<{
+    this_week: ApiActionable[];
+    someday: ApiActionable[];
+    ideas: ApiActionable[];
+    dismissed: ApiActionable[];
+    batch_groups: { batch_key: string; items: ApiActionable[] }[];
+  }>("/inbox/all", { method: "GET", getToken });
+}
 
-export type ListPrepsPageParams = {
-  status?: "ready" | "prepping" | "done" | "archived" | "failed";
-  limit: number;
-  cursor?: string | null;
-  /** Scope to one dump (post-dump screen); use with limit. */
-  dumpId?: string;
-  /** Starred preps only (any status); omit `status` when true. */
-  starredOnly?: boolean;
-};
-
-export async function listPrepsPage(
+export async function getDonePage(
   getToken: () => Promise<string | null>,
-  params: ListPrepsPageParams,
-): Promise<ListPrepsPageResponse> {
+  opts?: { limit?: number; cursor?: string | null },
+) {
   const q = new URLSearchParams();
-  q.set("limit", String(params.limit));
-  if (params.starredOnly) q.set("starred", "1");
-  else if (params.status) q.set("status", params.status);
-  if (params.cursor) q.set("cursor", params.cursor);
-  if (params.dumpId) q.set("dumpId", params.dumpId);
-  return apiFetch(`/preps?${q.toString()}`, { method: "GET", getToken });
+  if (opts?.limit) q.set("limit", String(opts.limit));
+  if (opts?.cursor) q.set("cursor", opts.cursor);
+  const qs = q.toString();
+  return apiFetch<{ items: ApiActionable[]; next_cursor: string | null }>(
+    `/actionables/done${qs ? `?${qs}` : ""}`,
+    { method: "GET", getToken },
+  );
 }
 
-export type PrepCountsResponse = {
-  ready: number;
-  done: number;
-  preparing: number;
-  archived: number;
-  starred: number;
-};
-
-/** Exact totals per hub tab (separate from paginated list). */
-export async function fetchPrepCounts(
+/** Inbox + snoozed — everything not done or dismissed. */
+export async function getActionablesOpen(
   getToken: () => Promise<string | null>,
-): Promise<PrepCountsResponse> {
-  return apiFetch("/preps/counts", { method: "GET", getToken });
-}
-
-export type SearchPrepsParams = {
-  q: string;
-  status: "ready" | "prepping" | "archived" | "done";
-  limit: number;
-  cursor?: string | null;
-  starredOnly?: boolean;
-};
-
-export async function searchPrepsPage(
-  getToken: () => Promise<string | null>,
-  params: SearchPrepsParams,
-): Promise<ListPrepsPageResponse> {
+  opts?: { limit?: number; cursor?: string | null },
+) {
   const q = new URLSearchParams();
-  q.set("q", params.q);
-  q.set("status", params.status);
-  q.set("limit", String(params.limit));
-  if (params.cursor) q.set("cursor", params.cursor);
-  if (params.starredOnly) q.set("starred", "1");
-  return apiFetch(`/preps/search?${q.toString()}`, { method: "GET", getToken });
+  if (opts?.limit) q.set("limit", String(opts.limit));
+  if (opts?.cursor) q.set("cursor", opts.cursor);
+  const qs = q.toString();
+  return apiFetch<{ items: ApiActionable[]; next_cursor: string | null }>(
+    `/actionables/open${qs ? `?${qs}` : ""}`,
+    { method: "GET", getToken },
+  );
 }
 
-export async function starPrepApi(
+export async function getThoughtsPage(
+  getToken: () => Promise<string | null>,
+  opts?: { limit?: number; cursor?: string | null },
+) {
+  const q = new URLSearchParams();
+  if (opts?.limit) q.set("limit", String(opts.limit));
+  if (opts?.cursor) q.set("cursor", opts.cursor ?? "");
+  const qs = q.toString();
+  return apiFetch<{
+    thoughts: {
+      id: string;
+      dump_id: string;
+      text: string;
+      created_at: string;
+      actionable_count: number;
+    }[];
+    next_cursor: string | null;
+  }>(`/thoughts${qs ? `?${qs}` : ""}`, { method: "GET", getToken });
+}
+
+export async function getThoughtDetail(
+  getToken: () => Promise<string | null>,
+  thoughtId: string,
+) {
+  return apiFetch<{
+    thought: {
+      id: string;
+      dump_id: string;
+      text: string;
+      raw_text?: string;
+      polished_text?: string | null;
+      created_at: string;
+    };
+    actionables: ApiActionable[];
+  }>(`/thoughts/${thoughtId}`, { method: "GET", getToken });
+}
+
+export async function patchActionableDone(
   getToken: () => Promise<string | null>,
   id: string,
-  starred: boolean,
-): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/star`, {
+) {
+  return apiFetch<{ item: ApiActionable }>(`/actionables/${id}/done`, {
     method: "PATCH",
     getToken,
-    body: JSON.stringify({ starred }),
+    body: "{}",
   });
 }
 
-export async function getPrepById(
+export async function patchTimezone(
   getToken: () => Promise<string | null>,
-  id: string,
-): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}`, { method: "GET", getToken });
-}
-
-export async function archivePrepApi(
-  getToken: () => Promise<string | null>,
-  id: string,
-): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/archive`, { method: "PATCH", getToken });
-}
-
-export async function unarchivePrepApi(
-  getToken: () => Promise<string | null>,
-  id: string,
-): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/unarchive`, { method: "PATCH", getToken });
-}
-
-export async function setPrepDoneApi(
-  getToken: () => Promise<string | null>,
-  id: string,
-  done: boolean,
-): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/done`, {
+  timezone: string,
+) {
+  return apiFetch<{ ok: true; timezone: string }>("/users/me/timezone", {
     method: "PATCH",
     getToken,
-    body: JSON.stringify({ done }),
+    body: JSON.stringify({ timezone }),
   });
 }
 
-export async function retryPrepApi(
-  getToken: () => Promise<string | null>,
-  id: string,
-): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/retry`, { method: "POST", getToken });
+export async function getMe(getToken: () => Promise<string | null>) {
+  return apiFetch<{
+    id: string;
+    timezone?: string | null;
+  }>("/users/me", { method: "GET", getToken });
 }
 
-/** Ephemeral device location for one prep run (server Redis only — not stored on the prep row). */
-export async function postPrepClientHints(
+export async function setUserPushToken(
   getToken: () => Promise<string | null>,
-  id: string,
-  body:
-    | { latitude: number; longitude: number }
-    | { locationUnavailable: true },
-): Promise<{ ok: true }> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/client-hints`, {
-    method: "POST",
+  token: string,
+) {
+  return apiFetch<{ ok: true }>("/users/me/push-token", {
+    method: "PATCH",
     getToken,
-    body: JSON.stringify(body),
+    body: JSON.stringify({ token }),
   });
-}
-
-/** Permanently removes the prep (204). */
-export async function deletePrepApi(
-  getToken: () => Promise<string | null>,
-  id: string,
-): Promise<void> {
-  await apiFetch(`/preps/${encodeURIComponent(id)}`, { method: "DELETE", getToken });
 }
 
 export type ApiProfileFact = {
   id: string;
   memory_key: string;
   note: string;
-  status: "active" | "historical";
+  status: string;
   learned_at: string;
-  source_prep_id: string | null;
   source_dump_id: string | null;
   provenance: string | null;
 };
 
-export type ApiUserProfileFacts = {
-  facts: ApiProfileFact[];
-};
-
-export async function getUserProfileFacts(
-  getToken: () => Promise<string | null>,
-): Promise<ApiUserProfileFacts> {
-  return apiFetch("/users/me/profile", { method: "GET", getToken });
-}
-
-export type ApiUserProfileFactsPage = {
-  facts: ApiProfileFact[];
-  next_cursor: string | null;
-};
-
 export async function getUserProfileFactsPage(
   getToken: () => Promise<string | null>,
-  opts: { limit: number; cursor?: string | null; status?: "active" | "historical" | "all" },
-): Promise<ApiUserProfileFactsPage> {
-  const params = new URLSearchParams();
-  params.set("limit", String(opts.limit));
-  if (opts.cursor) {
-    params.set("cursor", opts.cursor);
-  }
-  if (opts.status && opts.status !== "all") {
-    params.set("status", opts.status);
-  }
-  const qs = params.toString();
-  return apiFetch(`/users/me/profile?${qs}`, { method: "GET", getToken });
+  opts: { limit: number; cursor?: string | null; status?: string },
+) {
+  const q = new URLSearchParams();
+  q.set("limit", String(opts.limit));
+  if (opts.cursor) q.set("cursor", opts.cursor);
+  if (opts.status) q.set("status", opts.status);
+  return apiFetch<{ facts: ApiProfileFact[]; next_cursor: string | null }>(
+    `/users/me/profile?${q.toString()}`,
+    { method: "GET", getToken },
+  );
 }
 
 export async function createProfileFact(
   getToken: () => Promise<string | null>,
   key: string,
   note: string,
-): Promise<ApiProfileFact> {
-  const { fact } = await apiFetch<{ fact: ApiProfileFact }>("/users/me/profile", {
+) {
+  return apiFetch<{ fact: ApiProfileFact }>("/users/me/profile", {
     method: "POST",
     getToken,
     body: JSON.stringify({ key, note }),
-  });
-  return fact;
-}
-
-export async function markPrepOpened(
-  getToken: () => Promise<string | null>,
-  id: string,
-): Promise<ApiPrep> {
-  return apiFetch(`/preps/${encodeURIComponent(id)}/opened`, {
-    method: "PATCH",
-    getToken,
   });
 }
 
@@ -666,32 +235,20 @@ export async function updateProfileFact(
   getToken: () => Promise<string | null>,
   id: string,
   patch: { key?: string; note?: string },
-): Promise<ApiProfileFact> {
-  const { fact } = await apiFetch<{ fact: ApiProfileFact }>(
-    `/users/me/profile/${encodeURIComponent(id)}`,
-    { method: "PATCH", getToken, body: JSON.stringify(patch) },
-  );
-  return fact;
+) {
+  return apiFetch<{ fact: ApiProfileFact }>(`/users/me/profile/${id}`, {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify(patch),
+  });
 }
 
 export async function deleteProfileFact(
   getToken: () => Promise<string | null>,
   id: string,
-): Promise<void> {
-  await apiFetch(`/users/me/profile/${encodeURIComponent(id)}`, {
+) {
+  await apiFetch<void>(`/users/me/profile/${id}`, {
     method: "DELETE",
     getToken,
-  });
-}
-
-/** Persists the Expo push token server-side (`users.push_token`) for prep-ready notifications. */
-export async function setUserPushToken(
-  getToken: () => Promise<string | null>,
-  token: string | null,
-): Promise<void> {
-  await apiFetch<{ ok: true }>("/users/me/push-token", {
-    method: "PATCH",
-    getToken,
-    body: JSON.stringify({ token }),
   });
 }

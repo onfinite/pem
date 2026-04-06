@@ -4,7 +4,11 @@ import { eq } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
-import { usersTable, type UserRow } from '../database/schemas';
+import {
+  actionablesTable,
+  usersTable,
+  type UserRow,
+} from '../database/schemas';
 
 @Injectable()
 export class UserService {
@@ -129,5 +133,17 @@ export class UserService {
       .update(usersTable)
       .set({ pushToken: token })
       .where(eq(usersTable.id, userId));
+  }
+
+  async setTimezone(userId: string, timezone: string): Promise<void> {
+    const now = new Date();
+    await this.db
+      .update(usersTable)
+      .set({ timezone })
+      .where(eq(usersTable.id, userId));
+    await this.db
+      .update(actionablesTable)
+      .set({ timezonePending: false, updatedAt: now })
+      .where(eq(actionablesTable.userId, userId));
   }
 }

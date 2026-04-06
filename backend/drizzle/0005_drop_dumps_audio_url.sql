@@ -1,1 +1,0 @@
-ALTER TABLE "dumps" DROP COLUMN IF EXISTS "audio_url";

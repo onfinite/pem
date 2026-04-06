@@ -1,7 +1,6 @@
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { dumpsTable } from './dumps.schema';
-import { prepsTable } from './preps.schema';
 import { usersTable } from './users.schema';
 
 export const MEMORY_STATUSES = ['active', 'historical'] as const;
@@ -21,9 +20,6 @@ export const memoryFactsTable = pgTable(
       .notNull()
       .defaultNow(),
     sourceDumpId: uuid('source_dump_id').references(() => dumpsTable.id, {
-      onDelete: 'set null',
-    }),
-    sourcePrepId: uuid('source_prep_id').references(() => prepsTable.id, {
       onDelete: 'set null',
     }),
     status: text('status').notNull(),

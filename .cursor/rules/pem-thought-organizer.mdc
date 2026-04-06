@@ -1,0 +1,383 @@
+---
+description: Pem — Product pivot. Thought organizer replaces prep architecture. Read this first. Supersedes deleted prep-era .mdc rules.
+globs: **/*
+alwaysApply: true
+---
+
+# Pem — Product Pivot: Thought Organizer
+
+## Dev environment — no legacy support
+
+This is pre-production. Nothing is live. No users. No data to preserve.
+Delete everything that belonged to the old prep architecture without hesitation.
+No migration shims. No backwards compatibility. No feature flags wrapping old behavior.
+If it says "prep" and it is not the dump input — delete it.
+
+---
+
+## What Pem is now
+
+The problem: thoughts living rent-free in your head. The mental load that surfaces
+while driving, in bed, between meetings, in the middle of something else. You cannot
+act on them right now but you cannot stop carrying them either.
+
+The solution: dump your thoughts. Pem organizes them.
+
+Pem is not a todo app. Pem is not a productivity tool. Pem is not a prep engine.
+Pem is a mind-clearing tool. The primary feeling is relief — not productivity.
+
+**The loop:**
+
+```
+User dumps (voice or text, anytime, messy, no structure required)
+  → Pem extracts actionable items
+  → Pem classifies, batches, sequences, and tones each item
+  → Items land in the inbox — organized and prioritized
+  → User reads what Pem figured out
+  → User taps to go deeper or act
+  → Head is clear
+```
+
+The inbox is the output. Pem fills it. The user never "creates tasks."
+Items arrive like emails — something was figured out and sent to you.
+
+---
+
+## What to delete — completely
+
+Remove all of the following. No stubs. No comments. No "deprecated" wrappers.
+
+### Database tables / columns to drop
+
+- `preps` table — entire table gone
+- `agent_steps` table — gone
+- `prep_type` column — gone
+- `result` column and all `result.schema` variants — gone
+- `render_type` column — gone
+- `status: prepping | ready | failed | archived | done` on preps — gone
+- `opened_at` on preps — gone
+- `done_at` on preps — gone
+- `source_prep_id` on `memory_facts` — gone (keep `memory_facts` table, remove the FK)
+
+### Backend modules / files to delete
+
+- `src/preps/` — entire module gone
+- `src/agents/` — entire module gone (split agent, prep runner, composite, fanout, merge, all prompts)
+- `src/queue/prep-jobs/` — gone
+- `src/steps/` — gone
+- `src/integrations/tavily.ts` (and any Tavily wrappers) — gone
+- `src/events/` (Redis prep event publisher) — gone
+- All composite brief logic — gone
+- All SerpAPI integration — gone
+- All prep SSE endpoints (`GET /preps/stream`) — gone
+- All prep endpoints: `GET /preps`, `GET /preps/counts`, `GET /preps/:id`, `PATCH /preps/:id/done`, `PATCH /preps/:id/archive`, `DELETE /preps/:id`, `POST /preps/:id/client-hints` — gone
+
+### App screens / components to delete
+
+- `/prepping` screen — gone
+- `/prep/[id]` screen — gone
+- `PrepHubContext` — gone
+- `PrepCard`, `PrepCardSkeleton`, all prep card variants — gone
+- `CompositeBriefView` — gone
+- `HomeTabDock` prep-related tabs (Prepping, Ready, Archived, Done) — gone
+- `PushNotificationRegistrar` prep-ready handling — gone (keep push infra, remove prep-specific routing)
+- All optimistic skeleton prep logic — gone
+- `LocationPrepCoordinator` — gone (location strategy changes — see below)
+- `readyPrepRowsEffective`, `unreadReadyCount`, prep pagination — gone
+
+### Env vars to remove
+
+- `PREP_AGENT_TIMEOUT_MS`
+- `PREP_STRUCTURE_TIMEOUT_MS`
+- `COMPOSITE_AGENT_MAX_STEPS`
+- `COMPOSITE_DETECT_TIMEOUT_MS`
+- `COMPOSITE_FANOUT_ENABLED`
+- `COMPOSITE_FANOUT_MAX_LANES`
+- `COMPOSITE_FANOUT_MAX_STEPS_PER_LANE`
+- `COMPOSITE_FANOUT_PLAN_TIMEOUT_MS`
+- `COMPOSITE_MERGE_ENABLED`
+- `COMPOSITE_MERGE_TIMEOUT_MS`
+
+### MDC files that no longer apply (removed from repo; do not restore)
+
+Ignore prep-era rules if encountered in old branches: `pem-product-brief.mdc`, `pem-intake-routing.mdc`, `pem-adaptive-prep-cards.mdc`, `pem-adaptive-visual-prep.mdc`, `pem-prep-sections.mdc`, `pem-serpapi-engines.mdc`, `pem-search-provider-routing.mdc`, `pem-location-permission.mdc`.
+
+### Also delete all location-related code
+
+- `expo-location` — remove package and all usages
+- `LocationPrepCoordinator` — already listed above, confirmed gone
+- Any `POST /preps/:id/client-hints` location passing — already gone with preps
+- Any stored location fields anywhere in the DB — none should exist
+
+---
+
+## What stays
+
+- `dumps` table — unchanged. User dumps text. That is still the entry point.
+- `POST /dumps` endpoint — unchanged contract. Text in, acknowledgement out.
+- `users` table — unchanged.
+- `memory_facts` table — keep, remove `source_prep_id` FK only.
+- BullMQ + Redis — keep the infrastructure, repurpose for the new pipeline.
+- Clerk auth — unchanged.
+- Vercel AI SDK v6 patterns — keep. `generateText` + `Output`. Never `generateObject`.
+- `pem-project.mdc` — still applies. Stack, coding philosophy, collaboration rules.
+- `pem-backend.mdc` — still applies for NestJS patterns. Update module list as you build.
+- `pem-app.mdc` — still applies for RN/Expo patterns. Update screens as you build.
+- `pem-core-loop.mdc` — Vercel AI SDK patterns still valid. SSE architecture still valid for real-time updates. Delete prep-specific checklists.
+
+---
+
+## New data model
+
+### `dumps` table (unchanged)
+
+```
+id           uuid pk
+user_id      uuid fk users
+text         text
+created_at   timestamptz
+```
+
+### `actionables` table (replaces preps)
+
+```
+id              uuid pk
+user_id         uuid fk users
+dump_id         uuid fk dumps
+text            text        -- the extracted thought, clean and short
+original_text   text        -- raw fragment from dump that produced this
+status          enum        -- 'inbox' | 'done' | 'snoozed' | 'dismissed'
+tone            enum        -- 'confident' | 'tentative' | 'idea' | 'someday'
+urgency         enum        -- 'today' | 'this_week' | 'someday' | 'none'
+batch_key       text        -- nullable. 'shopping' | 'calls' | 'emails' | 'errands' | null
+due_at          timestamptz -- nullable. exact datetime if detected
+period_start    timestamptz -- nullable. for period-based timing (e.g. start of weekend)
+period_end      timestamptz -- nullable. for period-based timing (e.g. end of weekend)
+period_label    text        -- nullable. 'weekend' | 'this week' | 'next week' | 'morning' | etc.
+timezone_pending boolean    -- true if extracted before user timezone was known
+snoozed_until   timestamptz -- nullable. set when status = snoozed
+done_at         timestamptz -- nullable
+dismissed_at    timestamptz -- nullable
+created_at      timestamptz
+updated_at      timestamptz
+```
+
+No calendar fields. Calendar is not in scope for iteration 1.
+
+### `thoughts` table (the journal — every dump saved raw)
+
+```
+id           uuid pk
+user_id      uuid fk users
+dump_id      uuid fk dumps
+text         text        -- raw dump text, exactly as the user said it
+created_at   timestamptz -- always stored in UTC, displayed in user's local timezone
+```
+
+Every dump is saved as a thought automatically. No user action required.
+The thoughts page shows `created_at` formatted in the user's local timezone.
+If timezone is not yet known, display UTC with a soft note to set timezone in settings.
+Thoughts are permanent. Never deleted. Never archived. Always searchable.
+
+---
+
+## The pipeline (replaces the prep pipeline)
+
+```
+POST /dumps (text)
+  → save dump row
+  → save thought row (raw text preserved forever)
+  → enqueue extraction job
+  → return { dumpId } immediately
+
+Extraction worker (BullMQ):
+  → classify and extract actionable items from dump text
+  → for each actionable item:
+      - determine tone (confident | tentative | idea | someday)
+      - determine urgency (today | this_week | someday | none)
+      - detect exact datetime OR period
+      - detect batch_key if batchable
+  → insert actionable rows
+  → SSE push to client: inbox.updated
+
+GET /inbox
+  → today's view: actionables where status=inbox, urgency=today
+  → ordered: overdue first, then by due_at asc, then quick wins
+
+GET /inbox/all
+  → full list: this_week + batches + someday + dismissed
+  → grouped by batch_key where applicable
+```
+
+No calendar merging in iteration 1. Calendar is a future feature.
+
+---
+
+## Tone classification
+
+Every actionable extracted from a dump gets exactly one tone. This is non-negotiable —
+tone determines where it surfaces and how it is treated.
+
+- **confident** — user stated this clearly. Goes to inbox. Surfaces normally.
+- **tentative** — maybe, thinking about, not sure if. Saved. Lower priority. Does not pressure.
+- **idea** — non-actionable creative or business thought. Goes to ideas section, not inbox.
+- **someday** — aspirational. No deadline, no urgency. Lives at the bottom of everything.
+
+Tone is detected from language signals in the dump. Use gpt-4o-mini for classification.
+Never assume confident when language is vague. When in doubt, classify as tentative.
+
+---
+
+## Datetime and period handling
+
+Pem must understand both exact datetimes and natural period references.
+Never store a single timestamp for period-based timing. Use `period_start` + `period_end`.
+
+Weekend always means BOTH Saturday AND Sunday — never just Saturday.
+"This week" means Mon–Fri unless user says otherwise.
+"Next week" starts the following Monday.
+
+### Surfacing logic
+
+- exact `due_at` → surface when due_at is today or within the next hour
+- period (today) → surface all day
+- period (this week) → surface in "this week" section
+- someday / no date → never in today view; lives in someday
+
+---
+
+## Timezone — capture at auth, prompt if missing
+
+1. Mobile client reads `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+2. Client sends timezone to `PATCH /users/me/timezone` immediately after auth.
+3. Backend stores on `users.timezone` (IANA).
+
+If timezone is null when extracting time context: still extract; set `timezone_pending = true` on the actionable.
+One-time soft prompt on app open if needed; never block dump or extraction.
+
+---
+
+## Location — not used
+
+No permission ask. No `expo-location`. No location fields in DB.
+Local intent → detail can offer `[ Open Google Maps ]` only.
+
+---
+
+## Batching
+
+Batch keys: `shopping` | `calls` | `emails` | `errands` | null.
+When in doubt, do not batch. Batches require 2+ items with same `batch_key`.
+
+---
+
+## The inbox — UX structure (mobile)
+
+- Pem's statement (italic serif, 1–3 sentences) — gpt-4o, fresh each load.
+- **Today** — overdue first, then due_at asc, then quick wins.
+- **This week** — collapsed by default; urgency=this_week.
+- **Batches** — collapsed; only when 2+ share `batch_key`.
+- **Someday** — collapsed, low visual weight.
+
+**States:** `inbox` | `snoozed` | `done` | `dismissed`. No archive.
+
+**Done vs dismissed:** Done = handled (track record). Dismissed = not relevant (not on done page; recoverable from inbox/all).
+
+---
+
+## Thoughts page
+
+Raw dumps, newest first, full text, count of extracted actionables per row.
+Tap thought → detail + list of actionables. Search local-first when built.
+No delete in iteration 1.
+
+---
+
+## Done page
+
+Flat list, newest done first. Tap → detail with original fragment; un-done from detail.
+
+---
+
+## Helpfulness & detail view
+
+Mind-clearing first; helpfulness secondary. Three actions max on detail (primary optional, "I handled it", "Not relevant"). Snooze via "Later" sheet. No chat. No research for tentative items without user ask.
+
+---
+
+## Vercel AI SDK
+
+Use `generateText` with `Output.object({ schema })` and Zod — never `generateObject` / `streamObject` (AI SDK 6).
+
+---
+
+## AI model usage
+
+- **gpt-4o-mini** — extraction, classification, tone, urgency, batch detection.
+- **gpt-4o** — Pem's statement, drafts, context lookup when user-facing quality matters.
+
+---
+
+## SSE
+
+Events: `inbox.updated`, `item.created`, `stream.done`. Redis pub/sub + Nest `@Sse` after dump.
+
+---
+
+## App screens — iteration 1
+
+1. Dump  
+2. Inbox  
+3. Item detail (bottom sheet)  
+4. Thoughts  
+5. Done  
+6. Settings  
+
+Navigation: bottom bar Inbox · Thoughts · Done; floating amber mic → Dump; Settings top-right on Inbox.
+
+---
+
+## API shape — iteration 1
+
+```
+POST   /dumps
+GET    /inbox
+GET    /inbox/all
+GET    /inbox/stream?dumpId=
+PATCH  /actionables/:id/done | /dismiss | /undone | /undismiss | /snooze
+GET    /actionables/done
+GET    /thoughts
+GET    /thoughts/:id
+PATCH  /users/me/timezone
+```
+
+No `/preps` routes. No calendar endpoints in iteration 1.
+
+---
+
+## Build order — iteration 1
+
+1. Drop old tables. Create actionables + thoughts. Add `users.timezone`.
+2. POST /dumps → thought + enqueue extraction.
+3. Extraction worker (tone, urgency, batch, dates/periods).
+4. GET /inbox.
+5. GET /inbox/stream (SSE).
+6. PATCH actionables done/dismiss/undone/undismiss.
+7. PATCH actionables snooze (all options).
+8. GET /actionables/done.
+9. GET /thoughts + GET /thoughts/:id.
+10. GET /inbox/all.
+11. Pem's statement (gpt-4o).
+12. Timezone capture + timezone_pending.
+13. Detail helpfulness: drafts + external links (contextual).
+
+Calendar = iteration 2. Do not build calendar code in iteration 1.
+
+---
+
+## What does NOT change
+
+- `pem-project.mdc` — philosophy, collaboration.
+- NestJS / Expo patterns in `pem-backend.mdc` / `pem-app.mdc`.
+- Clerk, BullMQ+Redis, Vercel AI SDK v6, brand tokens, dump UX.
+- Push infra — inbox-oriented payloads.

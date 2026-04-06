@@ -2,17 +2,15 @@ import { BullModule } from '@nestjs/bullmq';
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
-import { AgentsModule } from '../agents/agents.module';
 import { DatabaseModule } from '../database/database.module';
-import { PrepEventsModule } from '../events/prep-events.module';
-import { ProfileModule } from '../profile/profile.module';
+import { ExtractionModule } from '../extraction/extraction.module';
+import { InboxEventsModule } from '../inbox-events/inbox-events.module';
+import { PushModule } from '../push/push.module';
 import { DumpProcessor } from './dump-jobs/dump.processor';
-import { DumpSplitService } from './dump-jobs/dump-split.service';
-import { PrepProcessor } from './prep-jobs/prep.processor';
+import { DumpExtractService } from './dump-jobs/dump-extract.service';
 
 /**
- * BullMQ connection (global), queue registration, and **workers** for `dump` + `prep`.
- * Processors live under `dump-jobs/` and `prep-jobs/` folders for clarity — not separate Nest modules.
+ * BullMQ connection (global), `dump` queue registration, and extraction worker.
  */
 @Global()
 @Module({
@@ -23,21 +21,20 @@ import { PrepProcessor } from './prep-jobs/prep.processor';
         const url = config.get<string>('redisUrl');
         if (!url) {
           throw new Error(
-            'REDIS_URL is required (BullMQ). Set it in .env for the prep worker queue.',
+            'REDIS_URL is required (BullMQ). Set it in .env for the worker queue.',
           );
         }
         return { connection: { url } };
       },
       inject: [ConfigService],
     }),
-    BullModule.registerQueue({ name: 'prep' }),
     BullModule.registerQueue({ name: 'dump' }),
     DatabaseModule,
-    AgentsModule,
-    ProfileModule,
-    PrepEventsModule,
+    ExtractionModule,
+    InboxEventsModule,
+    PushModule,
   ],
-  providers: [DumpProcessor, DumpSplitService, PrepProcessor],
+  providers: [DumpProcessor, DumpExtractService],
   exports: [BullModule],
 })
 export class QueueModule {}

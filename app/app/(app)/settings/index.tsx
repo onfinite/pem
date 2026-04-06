@@ -2,7 +2,7 @@ import {
   glassChromeBorder,
   TOP_BAR_ROW_PAD,
   TOP_ICON_CHIP,
-} from "@/components/sections/home-sections/homeLayout";
+} from "@/constants/layout";
 import PemButton from "@/components/ui/PemButton";
 import PemText from "@/components/ui/PemText";
 import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
@@ -64,7 +64,7 @@ export default function SettingsScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/home");
+      router.replace("/inbox");
     }
   }, []);
 

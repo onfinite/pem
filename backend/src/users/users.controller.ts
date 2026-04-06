@@ -29,6 +29,7 @@ import {
   UpdateProfileFactDto,
 } from './dto/profile-fact.dto';
 import { PushTokenDto } from './dto/push-token.dto';
+import { TimezoneDto } from './dto/timezone.dto';
 import { UserMeDto } from './dto/user-me.dto';
 import { UserService } from './user.service';
 
@@ -60,6 +61,7 @@ export class UsersController {
       email: user.email,
       name: user.name,
       push_token: user.pushToken,
+      timezone: user.timezone,
     };
   }
 
@@ -157,6 +159,18 @@ export class UsersController {
     return { ok: true };
   }
 
+  @Patch('me/timezone')
+  @UseGuards(ClerkAuthGuard)
+  @ApiBearerAuth('clerk')
+  @ApiOperation({ summary: 'Set IANA timezone (e.g. America/Los_Angeles)' })
+  async setTimezone(
+    @CurrentUser() user: UserRow,
+    @Body() body: TimezoneDto,
+  ): Promise<{ ok: true; timezone: string }> {
+    await this.users.setTimezone(user.id, body.timezone);
+    return { ok: true, timezone: body.timezone };
+  }
+
   private serializeFact(r: MemoryFactRow) {
     return {
       id: r.id,
@@ -164,7 +178,6 @@ export class UsersController {
       note: r.note,
       status: r.status,
       learned_at: r.learnedAt?.toISOString?.() ?? r.learnedAt,
-      source_prep_id: r.sourcePrepId,
       source_dump_id: r.sourceDumpId,
       provenance: r.provenance,
     };

@@ -107,7 +107,6 @@ Use this actively: tailor search terms, options, and tone to these facts. Call r
     userId: string,
     memoryKeyRaw: string,
     note: string,
-    sourcePrepId: string,
     sourceDumpId: string,
   ): Promise<void> {
     const memoryKey = normalizeProfileKey(memoryKeyRaw);
@@ -124,7 +123,6 @@ Use this actively: tailor search terms, options, and tone to these facts. Call r
       memoryKey,
       note: trimmed,
       sourceDumpId,
-      sourcePrepId,
       status: 'active',
       provenance: 'agent',
     });
@@ -160,7 +158,6 @@ Use this actively: tailor search terms, options, and tone to these facts. Call r
       memoryKey,
       note,
       sourceDumpId: null,
-      sourcePrepId: null,
       status: 'active',
       provenance: 'user',
     });

@@ -16,7 +16,7 @@ export default function WelcomeScreen() {
     return null;
   }
   if (isSignedIn) {
-    return <Redirect href="/home" />;
+    return <Redirect href="/inbox" />;
   }
 
   return (

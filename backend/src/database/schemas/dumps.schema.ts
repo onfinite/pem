@@ -9,7 +9,10 @@ export const dumpsTable = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => usersTable.id, { onDelete: 'cascade' }),
-    transcript: text('transcript').notNull(),
+    /** Raw dump text (column name `text` in Postgres). */
+    dumpText: text('text').notNull(),
+    /** Single AI-polished narrative of the whole dump; null until extraction completes. */
+    polishedText: text('polished_text'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
