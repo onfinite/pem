@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -32,14 +41,28 @@ export class DumpsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List current user dumps' })
-  async list(@CurrentUser() user: UserRow) {
-    const rows = await this.dumps.listDumpsForUser(user.id);
-    return rows.map((d) => ({
-      id: d.id,
-      text: d.dumpText,
-      status: d.status,
-      created_at: d.createdAt?.toISOString?.() ?? d.createdAt,
-    }));
+  @ApiOperation({
+    summary: 'List dump sessions (newest first); text is polished or raw',
+  })
+  async list(
+    @CurrentUser() user: UserRow,
+    @Query('limit') limitRaw?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 30;
+    return this.dumps.listPaginated(
+      user.id,
+      Number.isNaN(limit) ? 30 : limit,
+      cursor ?? null,
+    );
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Single dump + actionables for that dump' })
+  async getOne(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    return this.dumps.getById(user.id, id);
   }
 }

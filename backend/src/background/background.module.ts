@@ -3,14 +3,15 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { DatabaseModule } from '../database/database.module';
-import { ExtractionModule } from '../extraction/extraction.module';
-import { InboxEventsModule } from '../inbox-events/inbox-events.module';
 import { PushModule } from '../push/push.module';
-import { DumpProcessor } from './dump-jobs/dump.processor';
-import { DumpExtractService } from './dump-jobs/dump-extract.service';
+import { ExtractionModule } from './agents/extraction/extraction.module';
+import { InboxEventsModule } from './inbox-events/inbox-events.module';
+import { DumpExtractService } from './queues/dump/dump-extract.service';
+import { DumpProcessor } from './queues/dump/dump.processor';
 
 /**
- * BullMQ connection (global), `dump` queue registration, and extraction worker.
+ * Single entry for async work: **queues** (BullMQ), **agents** (LLM steps under `agents/`), and
+ * **inbox-events** (Redis pub/sub — bridge from workers to SSE on the HTTP process).
  */
 @Global()
 @Module({
@@ -35,6 +36,6 @@ import { DumpExtractService } from './dump-jobs/dump-extract.service';
     PushModule,
   ],
   providers: [DumpProcessor, DumpExtractService],
-  exports: [BullModule],
+  exports: [BullModule, InboxEventsModule],
 })
-export class QueueModule {}
+export class BackgroundModule {}

@@ -118,7 +118,7 @@ export async function getActionablesOpen(
   );
 }
 
-export async function getThoughtsPage(
+export async function getDumpsPage(
   getToken: () => Promise<string | null>,
   opts?: { limit?: number; cursor?: string | null },
 ) {
@@ -127,26 +127,24 @@ export async function getThoughtsPage(
   if (opts?.cursor) q.set("cursor", opts.cursor ?? "");
   const qs = q.toString();
   return apiFetch<{
-    thoughts: {
+    dumps: {
       id: string;
-      dump_id: string;
       text: string;
       status: "processing" | "processed" | "failed";
       created_at: string;
       actionable_count: number;
     }[];
     next_cursor: string | null;
-  }>(`/thoughts${qs ? `?${qs}` : ""}`, { method: "GET", getToken });
+  }>(`/dumps${qs ? `?${qs}` : ""}`, { method: "GET", getToken });
 }
 
-export async function getThoughtDetail(
+export async function getDumpDetail(
   getToken: () => Promise<string | null>,
-  thoughtId: string,
+  dumpId: string,
 ) {
   return apiFetch<{
-    thought: {
+    dump: {
       id: string;
-      dump_id: string;
       text: string;
       status: "processing" | "processed" | "failed";
       raw_text?: string;
@@ -154,7 +152,7 @@ export async function getThoughtDetail(
       created_at: string;
     };
     actionables: ApiActionable[];
-  }>(`/thoughts/${thoughtId}`, { method: "GET", getToken });
+  }>(`/dumps/${dumpId}`, { method: "GET", getToken });
 }
 
 export async function patchActionableDone(

@@ -4,7 +4,7 @@ import PemRefreshControl from "@/components/ui/PemRefreshControl";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
-import { getThoughtsPage } from "@/lib/pemApi";
+import { getDumpsPage } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
@@ -39,17 +39,17 @@ export default function ThoughtsScreen() {
         if (loadingMoreRef.current || !nextCursorRef.current) return;
         loadingMoreRef.current = true;
         const c = nextCursorRef.current;
-        const res = await getThoughtsPage(() => getTokenRef.current(), {
+        const res = await getDumpsPage(() => getTokenRef.current(), {
           limit: 40,
           cursor: c,
         });
         nextCursorRef.current = res.next_cursor;
-        setRows((prev) => [...prev, ...res.thoughts]);
+        setRows((prev) => [...prev, ...res.dumps]);
         return;
       }
-      const res = await getThoughtsPage(() => getTokenRef.current(), { limit: 40 });
+      const res = await getDumpsPage(() => getTokenRef.current(), { limit: 40 });
       nextCursorRef.current = res.next_cursor;
-      setRows(res.thoughts);
+      setRows(res.dumps);
     } finally {
       if (mode === "initial") setLoading(false);
       if (mode === "pull") setRefreshing(false);

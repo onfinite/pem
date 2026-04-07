@@ -6,7 +6,7 @@ import { Observable, Subject } from 'rxjs';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import { dumpsTable } from '../database/schemas';
-import { InboxEventsService } from '../inbox-events/inbox-events.service';
+import { InboxEventsService } from '../background/inbox-events/inbox-events.service';
 
 @Injectable()
 export class InboxStreamService {

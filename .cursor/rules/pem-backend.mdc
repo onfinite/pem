@@ -7,9 +7,9 @@ globs: backend/**
 
 **Package:** NestJS app under **`backend/`** — `npm install`, `npm run start:dev`, `npm run build` from `backend/`. No shared runtime code with `app/`.
 
-**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, never `generateObject`). **BullMQ** + **Redis**: `dump` queue runs **extraction** after each dump. **Redis pub/sub** for **SSE** `GET /inbox/stream?dumpId=`. **Expo** push — **`notifyInboxUpdated`** (`data.kind: inbox_updated`). **No Tavily / SerpAPI / prep agents.**
+**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, never `generateObject`). **Background work** lives under **`src/background/`** — see layout table. **Expo** push — **`notifyInboxUpdated`**. **No Tavily / SerpAPI / prep agents.**
 
-**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA), **`dumps`** (raw **`text`**, **`polished_text`**, **`status`**: `processing` \| `processed` \| `failed`), **`actionables`** (extracted items: tone, urgency, batch_key, dates, status), **`memory_facts`**. There is **no** separate **`thoughts`** table — **thoughts** are dump sessions exposed via **`GET /thoughts`** (polished or raw display text).
+**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA), **`dumps`** (raw **`text`**, **`polished_text`**, **`status`**: `processing` \| `processed` \| `failed`), **`actionables`** (extracted items: tone, urgency, batch_key, dates, status), **`memory_facts`**.
 
 **Drizzle:** Change schema in TS → **`npm run db:generate`** → review generated SQL → **`npm run db:migrate`**. Never hand-edit `drizzle/*.sql` or `drizzle/meta/`. Details: **`pem-project.mdc`** (*Drizzle workflow*).
 
@@ -17,13 +17,13 @@ globs: backend/**
 
 | Area | Role |
 |------|------|
-| `src/dumps/` | `POST /dumps`, `GET /dumps` — save dump, enqueue extraction |
-| `src/extraction/` | LLM extract actionables (`ExtractionService`) |
-| `src/queue/dump-jobs/` | `DumpExtractService` — worker; `dump.processor` |
-| `src/inbox-events/` | Redis pub/sub for inbox SSE (`InboxEventsModule` global) |
+| `src/background/` | **Single Nest entry** for async work: **`BackgroundModule`** (`@Global`) registers BullMQ, dump worker, agents, inbox-events. Import **`BackgroundModule`** (not separate queue/extraction modules). |
+| `src/background/agents/<name>/` | One folder per **LLM agent** (e.g. **`extraction/`** — `ExtractionService`, schema, module). Add new agents here. |
+| `src/background/queues/dump/` | BullMQ **`dump`** queue: `DumpProcessor`, `DumpExtractService` (orchestrates extraction agent + DB + events). |
+| `src/background/inbox-events/` | **Redis pub/sub** — workers `publish` per-dump events; **`InboxStreamService`** subscribes so **`GET /inbox/stream`** (SSE) pushes to the app. Bridges **worker process** ↔ **HTTP process**. Exported via **`BackgroundModule`**. |
+| `src/dumps/` | `POST /dumps`, `GET /dumps`, `GET /dumps/:id` |
 | `src/inbox/` | `GET /inbox`, `GET /inbox/all`, `GET /inbox/stream` (SSE) |
 | `src/actionables/` | `GET /actionables/done`, `GET /actionables/:id`, PATCH done/dismiss/undone/undismiss/snooze |
-| `src/thoughts/` | `GET /thoughts`, `GET /thoughts/:id` |
 | `src/users/` | `GET /users/me`, `PATCH /users/me/timezone`, profile, push token |
 | `src/profile/` | `memory_facts` CRUD for `/users/me/profile` |
 | `src/push/` | Expo push |

@@ -12,7 +12,7 @@ alwaysApply: false
 
 - **TypeScript strict** — functional components only.
 - **Navigation:** **expo-router** — file tree under **`app/app/`** (see repo layout).
-- **API:** **`lib/pemApi.ts`** — `createDump`, inbox, thoughts, actionables, profile, timezone.
+- **API:** **`lib/pemApi.ts`** — `createDump`, **`getDumpsPage`** / **`getDumpDetail`** (`GET /dumps`), inbox, actionables, profile, timezone.
 - **Real-time:** **`hooks/useDumpInboxStream.ts`** after dump → refresh inbox when extraction completes.
 - **Timezone:** **`components/auth/TimezoneRegistrar.tsx`** — PATCH **`/users/me/timezone`** from **`Intl`** after sign-in.
 - **Push:** **`PushNotificationRegistrar`** — **`inbox_updated`** → **`/inbox`**.

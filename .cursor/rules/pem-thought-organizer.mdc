@@ -166,20 +166,9 @@ updated_at      timestamptz
 
 No calendar fields. Calendar is not in scope for iteration 1.
 
-### `thoughts` table (the journal — every dump saved raw)
+### Journal / “Thoughts” screen (no separate `thoughts` table)
 
-```
-id           uuid pk
-user_id      uuid fk users
-dump_id      uuid fk dumps
-text         text        -- raw dump text, exactly as the user said it
-created_at   timestamptz -- always stored in UTC, displayed in user's local timezone
-```
-
-Every dump is saved as a thought automatically. No user action required.
-The thoughts page shows `created_at` formatted in the user's local timezone.
-If timezone is not yet known, display UTC with a soft note to set timezone in settings.
-Thoughts are permanent. Never deleted. Never archived. Always searchable.
+Raw input is **`dumps.text`**; polished copy is **`dumps.polished_text`**. List + detail for the hub **Thoughts** tab use **`GET /dumps`** and **`GET /dumps/:id`** (mobile route path can still be `/thoughts` for the tab label only).
 
 ---
 
@@ -187,8 +176,7 @@ Thoughts are permanent. Never deleted. Never archived. Always searchable.
 
 ```
 POST /dumps (text)
-  → save dump row
-  → save thought row (raw text preserved forever)
+  → save dump row (raw text on `dumps.text`)
   → enqueue extraction job
   → return { dumpId } immediately
 
@@ -348,8 +336,8 @@ GET    /inbox/all
 GET    /inbox/stream?dumpId=
 PATCH  /actionables/:id/done | /dismiss | /undone | /undismiss | /snooze
 GET    /actionables/done
-GET    /thoughts
-GET    /thoughts/:id
+GET    /dumps
+GET    /dumps/:id
 PATCH  /users/me/timezone
 ```
 
@@ -359,15 +347,15 @@ No `/preps` routes. No calendar endpoints in iteration 1.
 
 ## Build order — iteration 1
 
-1. Drop old tables. Create actionables + thoughts. Add `users.timezone`.
-2. POST /dumps → thought + enqueue extraction.
+1. Drop old tables. Create `dumps`, `actionables`, etc. Add `users.timezone`.
+2. POST /dumps → enqueue extraction.
 3. Extraction worker (tone, urgency, batch, dates/periods).
 4. GET /inbox.
 5. GET /inbox/stream (SSE).
 6. PATCH actionables done/dismiss/undone/undismiss.
 7. PATCH actionables snooze (all options).
 8. GET /actionables/done.
-9. GET /thoughts + GET /thoughts/:id.
+9. GET /dumps + GET /dumps/:id.
 10. GET /inbox/all.
 11. Pem's statement (gpt-4o).
 12. Timezone capture + timezone_pending.

@@ -6,13 +6,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ActionablesModule } from './actionables/actionables.module';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
+import { BackgroundModule } from './background/background.module';
 import { DumpsModule } from './dumps/dumps.module';
-import { ExtractionModule } from './extraction/extraction.module';
 import { HealthController } from './health/health.controller';
-import { InboxEventsModule } from './inbox-events/inbox-events.module';
 import { InboxModule } from './inbox/inbox.module';
-import { QueueModule } from './queue/queue.module';
-import { ThoughtsModule } from './thoughts/thoughts.module';
 import { UsersModule } from './users/users.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 
@@ -28,14 +25,11 @@ import { WebhooksModule } from './webhooks/webhooks.module';
         limit: 100,
       },
     ]),
-    InboxEventsModule,
-    QueueModule,
+    BackgroundModule,
     DatabaseModule,
-    ExtractionModule,
     DumpsModule,
     ActionablesModule,
     InboxModule,
-    ThoughtsModule,
     UsersModule,
     WebhooksModule,
   ],

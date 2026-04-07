@@ -8,7 +8,11 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 /**
- * Redis pub/sub for inbox / extraction lifecycle (SSE). Channel per dump.
+ * **Inbox events (Redis pub/sub)** — not HTTP. The extraction worker runs in the BullMQ
+ * process; the mobile app opens **`GET /inbox/stream?dumpId=`** (SSE) on the HTTP process.
+ * Workers call `publish(dumpId, payload)` so Redis carries **item.created**, **inbox.updated**,
+ * **stream.done** to the SSE subscriber for that dump. One Redis channel per dump:
+ * `inbox-events:${dumpId}`.
  */
 @Injectable()
 export class InboxEventsService implements OnModuleInit, OnModuleDestroy {

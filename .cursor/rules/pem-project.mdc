@@ -14,6 +14,7 @@ alwaysApply: true
 - **Consistent naming and patterns** across the repo.
 - **DRY:** centralize shared behavior; don’t copy-paste logic.
 - **Meaningful layout:** a file’s folder should signal its role (see stack-specific `.mdc` files).
+- **Architecture:** Prefer **one obvious place** per concern — **simple, straightforward, DRY**. Avoid parallel modules or routes that do the same job (e.g. one HTTP surface per resource). **After every meaningful change**, remove dead code, duplicate endpoints, and stale docs so the tree stays lean.
 - **Docs with code:** when behavior, structure, or APIs change, update **`README.md`** and relevant **`.mdc`** in the same effort—not only after. **Stale rules mislead** — worse than missing docs.
 - **Reuse before reinventing:** Before writing new helpers, check **framework and library APIs** (Expo, React Native, NestJS, Drizzle, etc.) and **existing code in this repo**—prefer extending or composing what’s already there over duplicating behavior.
 

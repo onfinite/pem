@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pem — Your prep work.</title>
+  <title>Pem — Dump your thoughts.</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200;1,9..144,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -22,7 +21,7 @@
       --amber:      #e8763a;
       --amber-dark: #c45e22;
       --amber-bg:   #fdf2ea;
-      --amber-b:    #f4d4bb;
+      --amber-b:    #fce0c4;
     }
 
     html { scroll-behavior: smooth; }
@@ -644,10 +643,10 @@
     <div class="hero-kicker">iOS · Coming soon</div>
 
     <h1 class="hero-h">
-      Whatever's on<br>your mind —<br><em>Pem's got it.</em>
+      Get it out of<br>your head —<br><em>Pem organizes it.</em>
     </h1>
-    <p class="hero-slogan">Your prep work, done.</p>
-    <p class="hero-sub">Tell Pem what's on your mind — it researches, drafts, and finds your options while you sleep, drive, or live. Come back ready to act.</p>
+    <p class="hero-slogan">Dump your thoughts. Come back to clarity.</p>
+    <p class="hero-sub">Tell Pem what's spinning in your head — voice or text, anytime, no structure needed. Pem extracts what matters, organizes it, and builds your inbox while you sleep, drive, or live.</p>
 
     <div class="step-indicators">
       <div class="step-ind active" id="ind-0" onclick="goToStep(0)">
@@ -657,12 +656,12 @@
       <div class="step-sep"></div>
       <div class="step-ind" id="ind-1" onclick="goToStep(1)">
         <div class="step-ind-num">2</div>
-        <div class="step-ind-label">Pem preps</div>
+        <div class="step-ind-label">Pem organizes</div>
       </div>
       <div class="step-sep"></div>
       <div class="step-ind" id="ind-2" onclick="goToStep(2)">
         <div class="step-ind-num">3</div>
-        <div class="step-ind-label">You act</div>
+        <div class="step-ind-label">Head clear</div>
       </div>
     </div>
 
@@ -696,7 +695,7 @@
   <div class="hero-right">
     <div class="mobile-above-phone">
       <span class="mobile-kicker">iOS · Coming soon</span>
-      <span class="mobile-tag">Whatever's on your mind —<br><em>Pem's got it.</em></span>
+      <span class="mobile-tag">Get it out of your head —<br><em>Pem organizes it.</em></span>
     </div>
     <div class="phone-wrap">
       <div class="iphone">
@@ -717,7 +716,7 @@
                 </div>
               </div>
               <div class="dump-top">
-                <div class="dump-top-title">Pem</div>
+                <div class="dump-top-title">pem</div>
                 <div class="dump-top-sub">Listening...</div>
               </div>
               <div class="dump-body">
@@ -737,7 +736,7 @@
               </div>
             </div>
 
-            <!-- SCREEN 2: WORKING -->
+            <!-- SCREEN 2: CONFIRMATION -->
             <div class="screen screen-working" id="screen-1">
               <div class="sb">
                 <div class="sb-t">11:02</div>
@@ -746,49 +745,36 @@
                   <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#1c1a16" stroke-opacity=".25"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#1c1a16"/><path d="M23 4.5v3a2 2 0 000-3z" fill="#1c1a16" opacity=".4"/></svg>
                 </div>
               </div>
-              <div class="working-top">
-                <div>
-                  <div class="working-title">Pem</div>
-                  <div class="working-sub">Got it. On it.</div>
+              <!-- confirmation content -->
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 20px;gap:14px;text-align:center;">
+                <!-- amber checkmark -->
+                <div style="width:52px;height:52px;border-radius:50%;background:var(--amber-bg);border:1.5px solid var(--amber-b);display:flex;align-items:center;justify-content:center;margin-bottom:4px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
-                <div class="working-badge">Working ⚡</div>
-              </div>
-              <div class="working-list">
-                <div class="work-item" id="wi-0">
-                  <div class="wi-icon">🎁</div>
-                  <div class="wi-body">
-                    <div class="wi-type">Finding options</div>
-                    <div class="wi-title">Gift ideas for mom</div>
+                <div style="font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:18px;color:#1c1a16;line-height:1.35;">Got it.<br>Pem's on it.</div>
+                <div style="font-size:10px;color:#8a8078;font-family:-apple-system,sans-serif;line-height:1.65;max-width:180px;">Head empty. Come back when you're ready.</div>
+                <!-- items appearing -->
+                <div style="width:100%;display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                  <div class="work-item show" style="opacity:1;transform:none;">
+                    <div class="wi-icon">🏋️</div>
+                    <div class="wi-body"><div class="wi-type">Organizing</div><div class="wi-title">Cancel gym membership</div></div>
+                    <div class="wi-status"><div class="loader"></div></div>
                   </div>
-                  <div class="wi-status"><div class="loader"></div></div>
-                </div>
-                <div class="work-item" id="wi-1">
-                  <div class="wi-icon">🏋️</div>
-                  <div class="wi-body">
-                    <div class="wi-type">Researching</div>
-                    <div class="wi-title">Gym cancellation</div>
+                  <div class="work-item show" id="wi-0" style="opacity:1;transform:none;">
+                    <div class="wi-icon">🎁</div>
+                    <div class="wi-body"><div class="wi-type">Organizing</div><div class="wi-title">Mom's birthday — Sat</div></div>
+                    <div class="wi-status"><div class="loader"></div></div>
                   </div>
-                  <div class="wi-status"><div class="loader"></div></div>
-                </div>
-                <div class="work-item" id="wi-2">
-                  <div class="wi-icon">🔍</div>
-                  <div class="wi-body">
-                    <div class="wi-type">Deep research</div>
-                    <div class="wi-title">Your app idea</div>
-                  </div>
-                  <div class="wi-status"><div class="loader"></div></div>
-                </div>
-                <div class="work-item" id="wi-3" style="margin-top:4px; background:var(--amber-bg); border-color:var(--amber-b);">
-                  <div class="wi-icon">💬</div>
-                  <div class="wi-body">
-                    <div class="wi-type" style="color:#8a7060;">Confirmed</div>
-                    <div class="wi-title" style="font-size:10.5px;font-weight:400;color:#6b6058;">You're free to sleep, drive, or live. I'll notify you when ready.</div>
+                  <div class="work-item show" id="wi-1" style="opacity:1;transform:none;">
+                    <div class="wi-icon">💡</div>
+                    <div class="wi-body"><div class="wi-type">Saving idea</div><div class="wi-title">Your app idea</div></div>
+                    <div class="wi-status"><div class="loader"></div></div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- SCREEN 3: READY -->
+            <!-- SCREEN 3: INBOX — PEM TALKS -->
             <div class="screen screen-ready" id="screen-2">
               <div class="sb">
                 <div class="sb-t">7:08</div>
@@ -797,48 +783,58 @@
                   <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#1c1a16" stroke-opacity=".25"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#1c1a16"/><path d="M23 4.5v3a2 2 0 000-3z" fill="#1c1a16" opacity=".4"/></svg>
                 </div>
               </div>
-              <div class="ready-top">
+              <!-- pem header -->
+              <div style="padding:6px 16px 8px;border-bottom:1px solid rgba(0,0,0,.07);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;">
                 <div>
-                  <div class="ready-title">Pem</div>
-                  <div class="ready-sub">Your prep work, ready</div>
+                  <div style="font-family:'Fraunces',serif;font-style:normal;font-size:13px;font-weight:300;letter-spacing:.12em;color:var(--amber);text-transform:uppercase;">pem</div>
+                  <div style="font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:10px;color:#6b6560;margin-top:1px;">Three things need you today.</div>
                 </div>
-                <div class="ready-badge">3 ready</div>
               </div>
-              <div class="prep-cards">
-                <div class="pc">
-                  <div class="pc-head">
-                    <div class="pc-ico">🎁</div>
-                    <div class="pc-meta"><div class="pc-type">Options found</div><div class="pc-title">Gift ideas for mom</div></div>
-                    <div class="pc-dot dot-g"></div>
+              <!-- inbox items -->
+              <div style="flex:1;padding:8px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden;">
+
+                <!-- overdue item -->
+                <div style="background:#fff;border:1px solid rgba(0,0,0,.07);border-left:2px solid #e24b4a;border-radius:10px;padding:9px 10px;display:flex;align-items:center;gap:8px;">
+                  <div style="font-size:14px;flex-shrink:0;">🏋️</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:8px;color:#e24b4a;font-family:-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.1em;font-weight:600;margin-bottom:1px;">3 weeks overdue</div>
+                    <div style="font-size:11px;font-weight:600;color:#1c1a16;font-family:-apple-system,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Cancel gym membership</div>
+                    <div style="font-size:9.5px;color:#8a7060;font-family:-apple-system,sans-serif;margin-top:1px;">Draft ready · 5 min</div>
                   </div>
-                  <div class="pc-opts">
-                    <div class="pc-opt"><div class="pc-opt-t">🌱 Seed subscription box</div><div class="pc-opt-p">$48</div><div class="pc-opt-a">→</div></div>
-                    <div class="pc-opt"><div class="pc-opt-t">🌿 Herb garden kit</div><div class="pc-opt-p">$55</div><div class="pc-opt-a">→</div></div>
-                    <div class="pc-opt"><div class="pc-opt-t">🍳 Cooking class for two</div><div class="pc-opt-p">$60</div><div class="pc-opt-a">→</div></div>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c0b8b0" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+
+                <!-- birthday item -->
+                <div style="background:#fff;border:1px solid rgba(0,0,0,.07);border-radius:10px;padding:9px 10px;display:flex;align-items:center;gap:8px;">
+                  <div style="font-size:14px;flex-shrink:0;">🎁</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:8px;color:var(--amber);font-family:-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.1em;font-weight:600;margin-bottom:1px;">This week · Sat</div>
+                    <div style="font-size:11px;font-weight:600;color:#1c1a16;font-family:-apple-system,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Mom's birthday</div>
+                    <div style="font-size:9.5px;color:#8a7060;font-family:-apple-system,sans-serif;margin-top:1px;">3 gift options found</div>
                   </div>
-                  <div class="pc-action">
-                    <div class="pc-act-btn">Mark done</div>
-                    <div class="pc-act-note">Pending your pick</div>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c0b8b0" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+
+                <!-- idea saved -->
+                <div style="background:#fff;border:1px solid rgba(0,0,0,.07);border-radius:10px;padding:9px 10px;display:flex;align-items:center;gap:8px;opacity:.65;">
+                  <div style="font-size:14px;flex-shrink:0;">💡</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:8px;color:#b8b0a0;font-family:-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.1em;font-weight:600;margin-bottom:1px;">Idea saved</div>
+                    <div style="font-size:11px;font-weight:500;color:#6b6058;font-family:-apple-system,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Your app idea</div>
+                    <div style="font-size:9.5px;color:#b8b0a0;font-family:-apple-system,sans-serif;margin-top:1px;">Nothing to do today</div>
                   </div>
                 </div>
-                <div class="pc">
-                  <div class="pc-head">
-                    <div class="pc-ico">🏋️</div>
-                    <div class="pc-meta"><div class="pc-type">Research done</div><div class="pc-title">Gym cancellation</div></div>
-                    <div class="pc-dot dot-g"></div>
-                  </div>
-                  <div class="pc-body">30-day notice required. Draft message ready — firm and polite.</div>
-                  <div class="pc-foot"><div class="pc-foot-t">Review draft</div><div class="pc-foot-a">→</div></div>
+
+                <!-- someday soft text -->
+                <div style="padding:6px 2px 0;">
+                  <div style="font-size:9.5px;color:#c0b8b0;font-family:-apple-system,sans-serif;line-height:1.6;">Someday — learn guitar, move to Denver. No rush.</div>
                 </div>
-                <div class="pc">
-                  <div class="pc-head">
-                    <div class="pc-ico">🔍</div>
-                    <div class="pc-meta"><div class="pc-type">Deep research</div><div class="pc-title">Your app idea</div></div>
-                    <div class="pc-dot dot-g"></div>
-                  </div>
-                  <div class="pc-body">No direct competitor. Real gap exists. Tap to read full findings.</div>
-                  <div class="pc-foot"><div class="pc-foot-t">Read findings</div><div class="pc-foot-a">→</div></div>
+
+                <!-- dump fab -->
+                <div style="position:absolute;bottom:20px;right:14px;width:36px;height:36px;border-radius:18px;background:var(--amber);display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(232,118,58,.4);">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4zm6.5 9a1 1 0 012 0 8.5 8.5 0 01-7.5 8.45V21h3a1 1 0 010 2h-8a1 1 0 010-2h3v-2.55A8.5 8.5 0 013.5 10a1 1 0 012 0 6.5 6.5 0 0013 0z"/></svg>
                 </div>
+
               </div>
             </div>
 
@@ -850,9 +846,9 @@
     <div class="mobile-steps">
       <div class="mob-step active" id="mob-0" onclick="goToStep(0)"><span class="mob-num">1</span><span class="mob-lbl">You dump</span></div>
       <div class="mob-sep"></div>
-      <div class="mob-step" id="mob-1" onclick="goToStep(1)"><span class="mob-num">2</span><span class="mob-lbl">Pem preps</span></div>
+      <div class="mob-step" id="mob-1" onclick="goToStep(1)"><span class="mob-num">2</span><span class="mob-lbl">Pem organizes</span></div>
       <div class="mob-sep"></div>
-      <div class="mob-step" id="mob-2" onclick="goToStep(2)"><span class="mob-num">3</span><span class="mob-lbl">You act</span></div>
+      <div class="mob-step" id="mob-2" onclick="goToStep(2)"><span class="mob-num">3</span><span class="mob-lbl">Head clear</span></div>
     </div>
     <div class="mobile-progress-bar"><div class="mobile-progress-fill" id="mob-progress"></div></div>
   </div>
@@ -886,7 +882,7 @@
         <div class="ba-item"><span class="ba-ico">😮‍💨</span><span class="ba-txt ok">Dump it and actually sleep</span></div>
         <div class="ba-item"><span class="ba-ico">✅</span><span class="ba-txt ok">Research done while you lived your life</span></div>
         <div class="ba-item"><span class="ba-ico">📨</span><span class="ba-txt ok">Draft written. Just review and send.</span></div>
-        <div class="ba-item"><span class="ba-ico">🧠</span><span class="ba-txt ok">Brain empty. Preps waiting.</span></div>
+        <div class="ba-item"><span class="ba-ico">🧠</span><span class="ba-txt ok">Head empty. Inbox organized.</span></div>
         <div class="ba-item"><span class="ba-ico">🎯</span><span class="ba-txt ok">3 options researched. Pick one. Done.</span></div>
       </div>
     </div>
@@ -927,33 +923,33 @@
 
 <div class="section-div"></div>
 
-<!-- WHAT PEM PREPARES -->
+<!-- WHAT PEM DOES -->
 <div class="prep-wrap">
-  <div class="sec-label">What Pem prepares for you</div>
+  <div class="sec-label">How Pem organizes your thoughts</div>
   <div class="prep-grid">
     <div class="prep-card">
-      <span class="prep-icon">🔍</span>
-      <div class="prep-title">Web search</div>
-      <div class="prep-body">Quick answers, current info, prices, reviews. Pem searches so you don't spend 40 minutes on Google.</div>
-      <div class="prep-eg">"Is this neighborhood in Denver safe for families?"</div>
+      <span class="prep-icon">🎯</span>
+      <div class="prep-title">Extracts what matters</div>
+      <div class="prep-body">Pem reads your messy dump and pulls out every actionable item. You don't structure anything — Pem does.</div>
+      <div class="prep-eg">"...also the gym thing, and mom's birthday, and I need to call John..."</div>
     </div>
     <div class="prep-card">
-      <span class="prep-icon">📖</span>
-      <div class="prep-title">Deep research</div>
-      <div class="prep-body">For bigger questions. Pem synthesizes multiple sources into one clear, usable answer.</div>
-      <div class="prep-eg">"Should I take this job offer? Here's everything I know..."</div>
+      <span class="prep-icon">📬</span>
+      <div class="prep-title">Builds your inbox</div>
+      <div class="prep-body">Items land in a smart inbox — organized by urgency, deadline, and what's overdue. Like email, but for your thoughts.</div>
+      <div class="prep-eg">Today · This week · Someday. Always clear, never overwhelming.</div>
     </div>
     <div class="prep-card">
-      <span class="prep-icon">🛍️</span>
-      <div class="prep-title">Find options</div>
-      <div class="prep-body">Real picks with links, prices, and context. Tap to explore. You choose — Pem narrows it down.</div>
-      <div class="prep-eg">"Gift for mom — gardening lover, budget $60."</div>
+      <span class="prep-icon">🛒</span>
+      <div class="prep-title">Groups similar things</div>
+      <div class="prep-body">Three shopping items across three different dumps? Pem creates one shopping list automatically. You tackle them together.</div>
+      <div class="prep-eg">Coffee, olive oil, toothpaste → Shopping list · 3 items</div>
     </div>
     <div class="prep-card">
       <span class="prep-icon">✏️</span>
-      <div class="prep-title">Draft it</div>
-      <div class="prep-body">The email or text you've been putting off. Drafted, ready to review. You send — Pem writes.</div>
-      <div class="prep-eg">"Write to my landlord about the leak."</div>
+      <div class="prep-title">Drafts when it can</div>
+      <div class="prep-body">When Pem has enough context — the email you've been putting off, the cancellation message — it drafts it. You copy and send.</div>
+      <div class="prep-eg">"Write to my landlord about the leak." → Draft ready.</div>
     </div>
   </div>
 </div>
@@ -962,7 +958,7 @@
 
 <!-- FINAL CTA -->
 <div class="cta-section" id="access">
-  <h2 class="cta-h">Whatever's on your mind —<br><em>Pem's got it.</em></h2>
+  <h2 class="cta-h">Get it out of your head.<br><em>Pem organizes it.</em></h2>
   <p class="cta-sub">iOS · Coming soon. Be the first to know.</p>
   <div class="cta-form-wrap" id="cta-wrap">
     <div class="ef open" id="cta-ef">
@@ -1028,28 +1024,7 @@
   }
 
   function animateWorkItems() {
-    for (let i = 0; i < 4; i++) {
-      const el = document.getElementById(`wi-${i}`);
-      if (el) el.classList.remove('show');
-    }
-    [0, 300, 700, 1400].forEach((delay, i) => {
-      setTimeout(() => {
-        const el = document.getElementById(`wi-${i}`);
-        if (el) el.classList.add('show');
-      }, delay);
-    });
-    [
-      { id: 'wi-0', delay: 3200 },
-      { id: 'wi-1', delay: 3600 },
-      { id: 'wi-2', delay: 4100 },
-    ].forEach(({ id, delay }) => {
-      setTimeout(() => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        const status = el.querySelector('.wi-status');
-        if (status) status.innerHTML = `<div class="check-done"><svg viewBox="0 0 12 10"><polyline points="1 5 4.5 8.5 11 1"/></svg></div>`;
-      }, delay);
-    });
+    // screen 2 is now a static confirmation — nothing to animate
   }
 
   window.addEventListener('load', () => goToStep(0));
