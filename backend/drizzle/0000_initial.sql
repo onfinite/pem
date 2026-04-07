@@ -27,6 +27,7 @@ CREATE TABLE "dumps" (
 	"user_id" uuid NOT NULL,
 	"text" text NOT NULL,
 	"polished_text" text,
+	"status" text DEFAULT 'processing' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

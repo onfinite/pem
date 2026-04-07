@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { DatabaseError } from 'pg';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -82,41 +81,23 @@ export class UserService {
       }
     }
 
-    try {
-      const [created] = await this.db
-        .insert(usersTable)
-        .values({
-          clerkId,
-          email,
-          name,
-        })
-        .returning();
-      return created;
-    } catch (e) {
-      if (e instanceof DatabaseError && e.code === '23505') {
-        const race = await this.findByClerkId(clerkId);
-        if (race) {
-          return this.upsertUserFromClerk(clerkId, email, name);
-        }
-        if (email) {
-          const again = await this.findByEmail(email);
-          if (again) {
-            const [relinked] = await this.db
-              .update(usersTable)
-              .set({
-                clerkId,
-                name: name !== null ? name : again.name,
-              })
-              .where(eq(usersTable.id, again.id))
-              .returning();
-            this.log.log(`user_relinked_clerk_id_after_race ${clerkId}`);
-            return relinked;
-          }
-        }
-        this.log.warn(`user_create_integrity_conflict_unresolved ${clerkId}`);
-      }
-      throw e;
-    }
+    /** Concurrent requests (e.g. two clients) used to race here and throw 23505; `ON CONFLICT` is atomic. */
+    const [created] = await this.db
+      .insert(usersTable)
+      .values({
+        clerkId,
+        email,
+        name,
+      })
+      .onConflictDoUpdate({
+        target: usersTable.clerkId,
+        set: {
+          email: sql`COALESCE(excluded.email, ${usersTable.email})`,
+          name: sql`COALESCE(excluded.name, ${usersTable.name})`,
+        },
+      })
+      .returning();
+    return created;
   }
 
   async deleteUserByClerkId(clerkId: string): Promise<boolean> {

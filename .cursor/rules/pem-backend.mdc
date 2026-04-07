@@ -9,13 +9,15 @@ globs: backend/**
 
 **Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, never `generateObject`). **BullMQ** + **Redis**: `dump` queue runs **extraction** after each dump. **Redis pub/sub** for **SSE** `GET /inbox/stream?dumpId=`. **Expo** push — **`notifyInboxUpdated`** (`data.kind: inbox_updated`). **No Tavily / SerpAPI / prep agents.**
 
-**Tables:** **`users`** (incl. **`timezone`** IANA), **`dumps`** (column **`text`** — raw dump), **`thoughts`** (journal copy per dump), **`actionables`** (extracted items: tone, urgency, batch_key, dates, status), **`memory_facts`** (no `source_prep_id`).
+**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA), **`dumps`** (raw **`text`**, **`polished_text`**, **`status`**: `processing` \| `processed` \| `failed`), **`actionables`** (extracted items: tone, urgency, batch_key, dates, status), **`memory_facts`**. There is **no** separate **`thoughts`** table — **thoughts** are dump sessions exposed via **`GET /thoughts`** (polished or raw display text).
+
+**Drizzle:** Change schema in TS → **`npm run db:generate`** → review generated SQL → **`npm run db:migrate`**. Never hand-edit `drizzle/*.sql` or `drizzle/meta/`. Details: **`pem-project.mdc`** (*Drizzle workflow*).
 
 **Layout:**
 
 | Area | Role |
 |------|------|
-| `src/dumps/` | `POST /dumps`, `GET /dumps` — save dump + thought, enqueue extraction |
+| `src/dumps/` | `POST /dumps`, `GET /dumps` — save dump, enqueue extraction |
 | `src/extraction/` | LLM extract actionables (`ExtractionService`) |
 | `src/queue/dump-jobs/` | `DumpExtractService` — worker; `dump.processor` |
 | `src/inbox-events/` | Redis pub/sub for inbox SSE (`InboxEventsModule` global) |
@@ -28,5 +30,7 @@ globs: backend/**
 | `src/auth/`, `src/webhooks/`, `src/health/` | unchanged patterns |
 
 **Security:** Validate input; use **`ClerkAuthGuard`** + DB user id from JWT.
+
+**Maintenance:** When **schema, routes, queues, or env** change, update **this file** in the same effort as the code. See **`pem-project.mdc`** — *Keeping `.cursor/rules` in sync*.
 
 **Collaboration:** See `pem-project.mdc`.

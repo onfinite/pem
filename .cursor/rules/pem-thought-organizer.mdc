@@ -13,6 +13,8 @@ Delete everything that belonged to the old prep architecture without hesitation.
 No migration shims. No backwards compatibility. No feature flags wrapping old behavior.
 If it says "prep" and it is not the dump input — delete it.
 
+When **this pivot** (product, schema, routes, or UX) changes, update **this file** and any other **`.mdc`** / **`README.md`** sections that describe the same facts — see **`pem-project.mdc`** (*Keeping `.cursor/rules` in sync*).
+
 ---
 
 ## What Pem is now

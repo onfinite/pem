@@ -20,3 +20,10 @@ export function pemImpactLight(): void {
 export function pemSelection(): void {
   safe(() => Haptics.selectionAsync());
 }
+
+/** Success toast–style — e.g. payment / confirmation complete. */
+export function pemNotificationSuccess(): void {
+  safe(() =>
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
+  );
+}

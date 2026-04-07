@@ -131,6 +131,7 @@ export async function getThoughtsPage(
       id: string;
       dump_id: string;
       text: string;
+      status: "processing" | "processed" | "failed";
       created_at: string;
       actionable_count: number;
     }[];
@@ -147,6 +148,7 @@ export async function getThoughtDetail(
       id: string;
       dump_id: string;
       text: string;
+      status: "processing" | "processed" | "failed";
       raw_text?: string;
       polished_text?: string | null;
       created_at: string;

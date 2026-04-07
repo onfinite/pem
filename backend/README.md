@@ -31,27 +31,21 @@ Default port **8000**.
 
 ## Database
 
-Drizzle table definitions live in `src/database/schemas/` (one file per table; `index.ts` is the barrel for Drizzle Kit and app imports).
+Drizzle table definitions live in **`src/database/schemas/`** (one file per table; `index.ts` is the barrel). **Do not** hand-write SQL under `drizzle/` or edit `drizzle/meta/` — **Drizzle Kit** maintains that when you generate migrations.
 
-For a **new** database or after changing `src/database/schemas/`:
+Workflow:
 
-```bash
-npm run db:generate  # writes SQL under drizzle/ + meta snapshots
-npm run db:migrate   # apply pending migrations (uses DATABASE_URL from .env)
-```
+1. Edit the schema (`.ts` files in `src/database/schemas/`).
+2. **`npm run db:generate`** — produces the next migration SQL and updates `drizzle/meta/` (snapshots + journal). Review the generated `.sql`.
+3. **`npm run db:migrate`** — applies pending migrations to Postgres (uses `DATABASE_URL` from `.env`). This **does not** generate files; only **`db:generate`** does.
 
-The baseline migration is **`drizzle/0000_initial.sql`** (creates the four tables above). If an environment still has **legacy** tables from older Pem migrations, use a **fresh database** (or reconcile manually) before applying—there are no `DROP TABLE` shims in migrations anymore.
+One-off SQL (data fixes, exploratory `ALTER` in dev): run via Neon SQL editor or a **temporary** local script, then discard it — **don’t** commit random SQL into `drizzle/` unless it came from **`db:generate`**.
 
-**How Drizzle tracks applies (common confusion):**
+**Tracking:** Postgres table **`__drizzle_migrations`** records which migrations ran. `drizzle/meta/` is for **generate**’s diffing, not for **`migrate`** at runtime.
 
-| Artifact | Role |
-|----------|------|
-| `drizzle/meta/*.json` + `_journal.json` | Used by **`db:generate`** to diff the schema and build the next migration. Not consulted by **`db:migrate`** against the server. |
-| Table **`__drizzle_migrations`** in Postgres | Written by **`db:migrate`**. Lists which migration SQL files (by hash) already ran on *this* database. |
+If the DB already has tables from an old migration history and a fresh baseline conflicts (**relation already exists**), use a **new empty database** or reconcile manually before migrating.
 
-If you **replaced** the repo’s migration folder with a single new `0000_initial.sql` but the **same** Neon/Postgres still has old tables and/or old rows in `__drizzle_migrations`, `db:migrate` may try to apply the new baseline and fail with **relation "…" already exists**. Fix: **new database branch** (Neon) / drop dev tables and clear migration history, then run `db:migrate` again.
-
-The **`pg` SSL warning** during migrate is from the driver (Neon URLs often use `sslmode=require`). You can set `sslmode=verify-full` on `DATABASE_URL` if you want to align with future `pg` defaults; it does not mean migrate failed.
+The **`pg` SSL warning** during migrate is from the driver; optional: set `sslmode=verify-full` on `DATABASE_URL`.
 
 **Note:** `drizzle.config.ts` loads **`.env`** via `dotenv` so CLI commands pick up `DATABASE_URL`.
 

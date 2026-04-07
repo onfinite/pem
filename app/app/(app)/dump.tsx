@@ -88,7 +88,10 @@ export default function DumpScreen() {
     setSubmitting(true);
     try {
       const res = await createDump(getToken, payload);
-      router.replace({ pathname: "/inbox", params: { dumpId: res.dumpId } });
+      router.replace({
+        pathname: "/dump-confirmed",
+        params: { dumpId: res.dumpId },
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong.";
       Alert.alert("Couldn’t send dump", msg);

@@ -19,7 +19,13 @@ export default function ThoughtsScreen() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<
-    { id: string; text: string; created_at: string; actionable_count: number }[]
+    {
+      id: string;
+      text: string;
+      status: "processing" | "processed" | "failed";
+      created_at: string;
+      actionable_count: number;
+    }[]
   >([]);
   const [refreshing, setRefreshing] = useState(false);
   const nextCursorRef = useRef<string | null>(null);

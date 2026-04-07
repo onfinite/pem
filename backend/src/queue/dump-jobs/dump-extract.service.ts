@@ -9,6 +9,7 @@ import {
   actionablesTable,
   dumpsTable,
   usersTable,
+  type DumpStatus,
   type ActionableRow,
 } from '../../database/schemas';
 import { InboxEventsService } from '../../inbox-events/inbox-events.service';
@@ -42,78 +43,102 @@ export class DumpExtractService {
       throw new NotFoundException(`dump ${dumpId} not found`);
     }
 
-    const [userRow] = await this.db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, dump.userId))
-      .limit(1);
+    await this.setDumpStatus(dumpId, 'processing');
 
-    const tz = userRow?.timezone ?? null;
-    const { polishedText, items } = await this.extraction.extractFromDump(
-      dump.dumpText,
-      tz,
-    );
+    try {
+      const [userRow] = await this.db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, dump.userId))
+        .limit(1);
 
-    const polished = polishedText.trim() || null;
+      const tz = userRow?.timezone ?? null;
+      const { polishedText, items } = await this.extraction.extractFromDump(
+        dump.dumpText,
+        tz,
+      );
+
+      const polished = polishedText.trim() || null;
+      await this.db
+        .update(dumpsTable)
+        .set({ polishedText: polished })
+        .where(eq(dumpsTable.id, dumpId));
+
+      if (items.length === 0) {
+        await this.inboxEvents.publish(dumpId, {
+          type: 'inbox.updated',
+          dumpId,
+        });
+        await this.inboxEvents.publish(dumpId, { type: 'stream.done', dumpId });
+        await this.push.notifyInboxUpdated(dump.userId);
+        this.log.log(
+          `dump ${dumpId} → 0 actionables (polished saved: ${!!polished})`,
+        );
+      } else {
+        for (const item of items) {
+          const dueAt = parseIsoDate(item.due_at);
+          const pStart = parseIsoDate(item.period_start);
+          const pEnd = parseIsoDate(item.period_end);
+          const tzPending =
+            !tz && (!!item.due_at?.trim() || !!item.period_start?.trim());
+
+          const [row] = await this.db
+            .insert(actionablesTable)
+            .values({
+              userId: dump.userId,
+              dumpId: dump.id,
+              actionableText: item.text.trim(),
+              originalText: item.original_text.trim(),
+              status: 'inbox',
+              tone: item.tone,
+              urgency: item.urgency,
+              batchKey: item.batch_key,
+              dueAt,
+              periodStart: pStart,
+              periodEnd: pEnd,
+              periodLabel: item.period_label,
+              timezonePending: tzPending,
+              pemNote: item.pem_note?.trim() || null,
+              draftText: item.draft_text?.trim() || null,
+              updatedAt: new Date(),
+            })
+            .returning();
+
+          if (row) {
+            await this.inboxEvents.publish(dumpId, {
+              type: 'item.created',
+              dumpId,
+              item: this.serializeActionable(row),
+            });
+          }
+        }
+
+        await this.inboxEvents.publish(dumpId, {
+          type: 'inbox.updated',
+          dumpId,
+        });
+        await this.inboxEvents.publish(dumpId, { type: 'stream.done', dumpId });
+
+        await this.push.notifyInboxUpdated(dump.userId);
+
+        this.log.log(`dump ${dumpId} → ${items.length} actionable(s)`);
+      }
+
+      await this.setDumpStatus(dumpId, 'processed');
+    } catch (err) {
+      await this.setDumpStatus(dumpId, 'failed');
+      throw err;
+    }
+  }
+
+  private async setDumpStatus(
+    dumpId: string,
+    status: DumpStatus,
+  ): Promise<void> {
     await this.db
       .update(dumpsTable)
-      .set({ polishedText: polished })
+      .set({ status })
       .where(eq(dumpsTable.id, dumpId));
-
-    if (items.length === 0) {
-      await this.inboxEvents.publish(dumpId, { type: 'inbox.updated', dumpId });
-      await this.inboxEvents.publish(dumpId, { type: 'stream.done', dumpId });
-      await this.push.notifyInboxUpdated(dump.userId);
-      this.log.log(
-        `dump ${dumpId} → 0 actionables (polished saved: ${!!polished})`,
-      );
-      return;
-    }
-
-    for (const item of items) {
-      const dueAt = parseIsoDate(item.due_at);
-      const pStart = parseIsoDate(item.period_start);
-      const pEnd = parseIsoDate(item.period_end);
-      const tzPending =
-        !tz && (!!item.due_at?.trim() || !!item.period_start?.trim());
-
-      const [row] = await this.db
-        .insert(actionablesTable)
-        .values({
-          userId: dump.userId,
-          dumpId: dump.id,
-          actionableText: item.text.trim(),
-          originalText: item.original_text.trim(),
-          status: 'inbox',
-          tone: item.tone,
-          urgency: item.urgency,
-          batchKey: item.batch_key,
-          dueAt,
-          periodStart: pStart,
-          periodEnd: pEnd,
-          periodLabel: item.period_label,
-          timezonePending: tzPending,
-          pemNote: item.pem_note?.trim() || null,
-          draftText: item.draft_text?.trim() || null,
-          updatedAt: new Date(),
-        })
-        .returning();
-
-      if (row) {
-        await this.inboxEvents.publish(dumpId, {
-          type: 'item.created',
-          dumpId,
-          item: this.serializeActionable(row),
-        });
-      }
-    }
-
-    await this.inboxEvents.publish(dumpId, { type: 'inbox.updated', dumpId });
-    await this.inboxEvents.publish(dumpId, { type: 'stream.done', dumpId });
-
-    await this.push.notifyInboxUpdated(dump.userId);
-
-    this.log.log(`dump ${dumpId} → ${items.length} actionable(s)`);
   }
 
   private serializeActionable(row: ActionableRow) {

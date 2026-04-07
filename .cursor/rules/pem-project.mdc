@@ -14,7 +14,7 @@ alwaysApply: true
 - **Consistent naming and patterns** across the repo.
 - **DRY:** centralize shared behavior; don’t copy-paste logic.
 - **Meaningful layout:** a file’s folder should signal its role (see stack-specific `.mdc` files).
-- **Docs with code:** when behavior, structure, or APIs change, update **`README.md`** and relevant **`.mdc`** in the same effort—not only after.
+- **Docs with code:** when behavior, structure, or APIs change, update **`README.md`** and relevant **`.mdc`** in the same effort—not only after. **Stale rules mislead** — worse than missing docs.
 - **Reuse before reinventing:** Before writing new helpers, check **framework and library APIs** (Expo, React Native, NestJS, Drizzle, etc.) and **existing code in this repo**—prefer extending or composing what’s already there over duplicating behavior.
 
 **When in doubt:** Prefer a quick alignment question over a large wrong implementation. Flag assumptions in PRs or reviews. If two approaches are equal, pick the **simpler** one.
@@ -38,7 +38,26 @@ alwaysApply: true
 
 **`README.md` as source of truth:** The repo-root **`README.md`** is canonical **human-facing documentation** (stack, layout, how to run, env, contributor workflow). Whenever a change affects what contributors need to know—**new packages**, **dependencies**, **patterns**, **setup**, **commands**, or **folder roles**—**update `README.md` in the same effort** so it stays accurate. Do not leave README stale while code or `.mdc` files move ahead.
 
-**Keeping `.cursor/rules` in sync:** Whenever you add **new packages**, **dependencies**, or **new patterns** (architecture, folders, tooling, env vars), **update the relevant `.mdc` files in the same effort** so agents and humans stay aligned: `pem-project.mdc` for stack and repo-wide facts; `pem-app.mdc` for Expo/RN/UI conventions; `pem-backend.mdc` for the Nest API (`backend/`). Treat rule updates as part of the change, not an optional afterthought. **README and `.mdc` updates should land together** when the same facts change.
+**Keeping `.cursor/rules` in sync (mandatory bar):** Any change that would confuse a new contributor or an agent if the rules stayed old **must** update the right docs in the **same PR / same coding session** — not “later.” This is how we stay on track; skipping it is a process failure.
+
+| What changed | Update (non-exhaustive) |
+|----------------|-------------------------|
+| **DB** — Drizzle schema, new/renamed columns, table drops | Edit **`src/database/schemas/`** only; run **`npm run db:generate`** (never hand-write SQL under `drizzle/` or hand-edit `meta/`). See **Drizzle workflow** below. Update `pem-backend.mdc` + `backend/README.md` when workflow or tables change. |
+| **API** — routes, payloads, SSE/event names, auth | `pem-backend.mdc`; keep DTOs / OpenAPI accurate; **`app/lib/pemApi.ts`** types when the client consumes it |
+| **Styling & UI architecture** — tokens, navigation routes, new patterns | `pem-app.mdc`; **`app/constants/theme.ts`** & **typography** stay the implementation source of truth |
+| **Product / strategy** — what Pem is, intake, naming (“prep” vs actionables, etc.) | `pem-thought-organizer.mdc`, `pem-product-brief.mdc`, **`README.md`** *What is Pem?* — whichever files own that story |
+| **Dependencies, env vars, scripts, folder roles** | `pem-project.mdc` stack table; **root `README.md`** |
+
+Also update **`README.md`** whenever contributor-facing facts change (see above). **README and `.mdc` should move together** for the same facts.
+
+**Are we doing it in practice?** Only if every change follows the table. When you notice drift (e.g. backend `.mdc` still describing dropped tables), **fix the `.mdc` in the same fix** as the code correction.
+
+**Drizzle workflow (`backend/`):**
+
+- **Source of truth:** `src/database/schemas/` (TypeScript). Do **not** add or edit `.sql` files under `drizzle/` by hand, and do **not** manually edit `drizzle/meta/` (snapshots, `_journal.json`) — **Drizzle Kit** owns that state when you run **`npm run db:generate`**.
+- **`npm run db:generate`** — diffs schema → writes the next migration SQL + updates `meta/`. Use whenever the schema changes.
+- **`npm run db:migrate`** — applies pending migrations to the database (reads migrations + `__drizzle_migrations` on the server). It does **not** generate SQL; generation is **`db:generate`** only.
+- **One-off / emergency SQL** (e.g. fix prod data, exploratory column drop): use a **temporary** script or Neon SQL editor, run it, then **delete** the temp file — do **not** commit ad-hoc SQL into `drizzle/` unless it came from **`db:generate`**.
 
 **Docs (cross-cutting):** New modules or cross-cutting patterns deserve a short **why** (intent, tradeoff), not a restatement of the code. API **request/response** shapes stay documented—OpenAPI / DTOs are part of that contract.
 

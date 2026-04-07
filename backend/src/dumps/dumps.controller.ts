@@ -38,6 +38,7 @@ export class DumpsController {
     return rows.map((d) => ({
       id: d.id,
       text: d.dumpText,
+      status: d.status,
       created_at: d.createdAt?.toISOString?.() ?? d.createdAt,
     }));
   }

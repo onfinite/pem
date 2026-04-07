@@ -27,6 +27,7 @@ export class ThoughtsService {
       id: string;
       dump_id: string;
       text: string;
+      status: string;
       created_at: string;
       actionable_count: number;
     }[];
@@ -53,6 +54,7 @@ export class ThoughtsService {
         id: dumpsTable.id,
         dumpText: dumpsTable.dumpText,
         polishedText: dumpsTable.polishedText,
+        status: dumpsTable.status,
         createdAt: dumpsTable.createdAt,
       })
       .from(dumpsTable)
@@ -68,6 +70,7 @@ export class ThoughtsService {
       id: string;
       dump_id: string;
       text: string;
+      status: string;
       created_at: string;
       actionable_count: number;
     }[] = [];
@@ -82,6 +85,7 @@ export class ThoughtsService {
         id: r.id,
         dump_id: r.id,
         text: display,
+        status: r.status,
         created_at: r.createdAt.toISOString(),
         actionable_count: cnt?.c ?? 0,
       });
@@ -117,6 +121,7 @@ export class ThoughtsService {
         id: dump.id,
         dump_id: dump.id,
         text: display,
+        status: dump.status,
         raw_text: dump.dumpText,
         polished_text: dump.polishedText,
         created_at: dump.createdAt.toISOString(),

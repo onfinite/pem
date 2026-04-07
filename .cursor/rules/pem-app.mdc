@@ -23,6 +23,6 @@ alwaysApply: false
 
 Prefer named booleans above the return, early returns for loading/error, small child components — same discipline as before.
 
-**Maintenance:** When **`app/`** stack or patterns change, update this file and **`README.md`** if contributors need it.
+**Maintenance:** When **routes, UI patterns, tokens, hooks, or API client shapes** change, update **this file** in the same effort. DB/API contract changes often imply **`pemApi.ts`** + **`pem-backend.mdc`** updates too. See **`pem-project.mdc`** — *Keeping `.cursor/rules` in sync*.
 
 **Collaboration:** See **`pem-project.mdc`**.

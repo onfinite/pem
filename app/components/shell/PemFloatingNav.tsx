@@ -16,6 +16,7 @@ export default function PemFloatingNav() {
 
   if (
     pathname.includes("/dump") ||
+    pathname.includes("/dump-confirmed") ||
     pathname.includes("/settings") ||
     pathname.includes("/welcome")
   ) {
