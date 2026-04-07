@@ -1,11 +1,111 @@
 {
-  "id": "2f21a80b-cbe6-4a91-bd97-c3c2c7b47c36",
+  "id": "5e83b6be-d77c-4519-8b07-bcad98220647",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.actionables": {
-      "name": "actionables",
+    "public.dumps": {
+      "name": "dumps",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "polished_text": {
+          "name": "polished_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'processing'"
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "additional_context": {
+          "name": "additional_context",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_assumptions": {
+          "name": "agent_assumptions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ix_dumps_user_id": {
+          "name": "ix_dumps_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "dumps_user_id_users_id_fk": {
+          "name": "dumps_user_id_users_id_fk",
+          "tableFrom": "dumps",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.extracts": {
+      "name": "extracts",
       "schema": "",
       "columns": {
         "id": {
@@ -118,6 +218,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "recommended_at": {
+          "name": "recommended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "draft_text": {
           "name": "draft_text",
           "type": "text",
@@ -140,8 +246,8 @@
         }
       },
       "indexes": {
-        "ix_actionables_user_id": {
-          "name": "ix_actionables_user_id",
+        "ix_extracts_user_id": {
+          "name": "ix_extracts_user_id",
           "columns": [
             {
               "expression": "user_id",
@@ -155,8 +261,8 @@
           "method": "btree",
           "with": {}
         },
-        "ix_actionables_dump_id": {
-          "name": "ix_actionables_dump_id",
+        "ix_extracts_dump_id": {
+          "name": "ix_extracts_dump_id",
           "columns": [
             {
               "expression": "dump_id",
@@ -170,8 +276,8 @@
           "method": "btree",
           "with": {}
         },
-        "ix_actionables_user_status_urgency": {
-          "name": "ix_actionables_user_status_urgency",
+        "ix_extracts_user_status_urgency": {
+          "name": "ix_extracts_user_status_urgency",
           "columns": [
             {
               "expression": "user_id",
@@ -197,8 +303,8 @@
           "method": "btree",
           "with": {}
         },
-        "ix_actionables_batch": {
-          "name": "ix_actionables_batch",
+        "ix_extracts_batch": {
+          "name": "ix_extracts_batch",
           "columns": [
             {
               "expression": "user_id",
@@ -220,9 +326,9 @@
         }
       },
       "foreignKeys": {
-        "actionables_user_id_users_id_fk": {
-          "name": "actionables_user_id_users_id_fk",
-          "tableFrom": "actionables",
+        "extracts_user_id_users_id_fk": {
+          "name": "extracts_user_id_users_id_fk",
+          "tableFrom": "extracts",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
@@ -233,9 +339,9 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "actionables_dump_id_dumps_id_fk": {
-          "name": "actionables_dump_id_dumps_id_fk",
-          "tableFrom": "actionables",
+        "extracts_dump_id_dumps_id_fk": {
+          "name": "extracts_dump_id_dumps_id_fk",
+          "tableFrom": "extracts",
           "tableTo": "dumps",
           "columnsFrom": [
             "dump_id"
@@ -253,8 +359,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.dumps": {
-      "name": "dumps",
+    "public.follow_ups": {
+      "name": "follow_ups",
       "schema": "",
       "columns": {
         "id": {
@@ -270,24 +376,29 @@
           "primaryKey": false,
           "notNull": true
         },
-        "text": {
-          "name": "text",
-          "type": "text",
+        "extract_id": {
+          "name": "extract_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "polished_text": {
-          "name": "polished_text",
+        "note": {
+          "name": "note",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "status": {
-          "name": "status",
-          "type": "text",
+        "recommended_at": {
+          "name": "recommended_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'processing'"
+          "notNull": false
+        },
+        "source_dump_id": {
+          "name": "source_dump_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -295,11 +406,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
-        "ix_dumps_user_id": {
-          "name": "ix_dumps_user_id",
+        "ix_follow_ups_user_id": {
+          "name": "ix_follow_ups_user_id",
           "columns": [
             {
               "expression": "user_id",
@@ -312,12 +430,33 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "ix_follow_ups_recommended_at": {
+          "name": "ix_follow_ups_recommended_at",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recommended_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
-        "dumps_user_id_users_id_fk": {
-          "name": "dumps_user_id_users_id_fk",
-          "tableFrom": "dumps",
+        "follow_ups_user_id_users_id_fk": {
+          "name": "follow_ups_user_id_users_id_fk",
+          "tableFrom": "follow_ups",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
@@ -326,6 +465,229 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "follow_ups_extract_id_extracts_id_fk": {
+          "name": "follow_ups_extract_id_extracts_id_fk",
+          "tableFrom": "follow_ups",
+          "tableTo": "extracts",
+          "columnsFrom": [
+            "extract_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "follow_ups_source_dump_id_dumps_id_fk": {
+          "name": "follow_ups_source_dump_id_dumps_id_fk",
+          "tableFrom": "follow_ups",
+          "tableTo": "dumps",
+          "columnsFrom": [
+            "source_dump_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "follow_ups_extract_id_unique": {
+          "name": "follow_ups_extract_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "extract_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.logs": {
+      "name": "logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extract_id": {
+          "name": "extract_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dump_id": {
+          "name": "dump_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_agent": {
+          "name": "is_agent",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "pem_note": {
+          "name": "pem_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ix_logs_user_created": {
+          "name": "ix_logs_user_created",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_logs_extract": {
+          "name": "ix_logs_extract",
+          "columns": [
+            {
+              "expression": "extract_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_logs_dump": {
+          "name": "ix_logs_dump",
+          "columns": [
+            {
+              "expression": "dump_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ix_logs_type": {
+          "name": "ix_logs_type",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "logs_user_id_users_id_fk": {
+          "name": "logs_user_id_users_id_fk",
+          "tableFrom": "logs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "logs_extract_id_extracts_id_fk": {
+          "name": "logs_extract_id_extracts_id_fk",
+          "tableFrom": "logs",
+          "tableTo": "extracts",
+          "columnsFrom": [
+            "extract_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "logs_dump_id_dumps_id_fk": {
+          "name": "logs_dump_id_dumps_id_fk",
+          "tableFrom": "logs",
+          "tableTo": "dumps",
+          "columnsFrom": [
+            "dump_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

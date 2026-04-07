@@ -13,7 +13,8 @@ module.exports = function (api) {
           },
         },
       ],
-      "react-native-worklets/plugin",
+      /** Reanimated’s plugin includes worklet transforms — do not add `react-native-worklets/plugin` (Babel duplicate). */
+      "react-native-reanimated/plugin",
     ],
   };
 };

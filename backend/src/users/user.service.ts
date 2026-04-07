@@ -3,11 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
-import {
-  actionablesTable,
-  usersTable,
-  type UserRow,
-} from '../database/schemas';
+import { extractsTable, usersTable, type UserRow } from '../database/schemas';
 
 @Injectable()
 export class UserService {
@@ -54,10 +50,7 @@ export class UserService {
       if (changed) {
         const [updated] = await this.db
           .update(usersTable)
-          .set({
-            email: nextEmail ?? null,
-            name: nextName ?? null,
-          })
+          .set({ email: nextEmail ?? null, name: nextName ?? null })
           .where(eq(usersTable.id, existing.id))
           .returning();
         return updated;
@@ -70,10 +63,7 @@ export class UserService {
       if (byEmail && byEmail.clerkId !== clerkId) {
         const [relinked] = await this.db
           .update(usersTable)
-          .set({
-            clerkId,
-            name: name !== null ? name : byEmail.name,
-          })
+          .set({ clerkId, name: name !== null ? name : byEmail.name })
           .where(eq(usersTable.id, byEmail.id))
           .returning();
         this.log.log(`user_relinked_clerk_id ${clerkId}`);
@@ -81,14 +71,9 @@ export class UserService {
       }
     }
 
-    /** Concurrent requests (e.g. two clients) used to race here and throw 23505; `ON CONFLICT` is atomic. */
     const [created] = await this.db
       .insert(usersTable)
-      .values({
-        clerkId,
-        email,
-        name,
-      })
+      .values({ clerkId, email, name })
       .onConflictDoUpdate({
         target: usersTable.clerkId,
         set: {
@@ -102,9 +87,7 @@ export class UserService {
 
   async deleteUserByClerkId(clerkId: string): Promise<boolean> {
     const user = await this.findByClerkId(clerkId);
-    if (!user) {
-      return false;
-    }
+    if (!user) return false;
     await this.db.delete(usersTable).where(eq(usersTable.id, user.id));
     return true;
   }
@@ -123,8 +106,8 @@ export class UserService {
       .set({ timezone })
       .where(eq(usersTable.id, userId));
     await this.db
-      .update(actionablesTable)
+      .update(extractsTable)
       .set({ timezonePending: false, updatedAt: now })
-      .where(eq(actionablesTable.userId, userId));
+      .where(eq(extractsTable.userId, userId));
   }
 }

@@ -6,10 +6,14 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiOperation,
   ApiTags,
@@ -40,6 +44,18 @@ export class DumpsController {
     return this.dumps.createDump(user, body.text);
   }
 
+  @Post('voice')
+  @ApiOperation({ summary: 'Voice dump — transcribe audio and create dump' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('audio'))
+  @ApiCreatedResponse({ description: '{ dumpId, text }' })
+  async createFromVoice(
+    @CurrentUser() user: UserRow,
+    @UploadedFile() audio: Express.Multer.File,
+  ): Promise<{ dumpId: string; text: string }> {
+    return this.dumps.createFromVoice(user, audio);
+  }
+
   @Get()
   @ApiOperation({
     summary: 'List dump sessions (newest first); text is polished or raw',
@@ -58,7 +74,7 @@ export class DumpsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Single dump + actionables for that dump' })
+  @ApiOperation({ summary: 'Single dump + extracts for that dump' })
   async getOne(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,

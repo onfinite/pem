@@ -1,0 +1,202 @@
+import AppMenuButton from "@/components/navigation/AppMenuButton";
+import PemListRow from "@/components/ui/PemListRow";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
+import PemMindEmptyState from "@/components/ui/PemMindEmptyState";
+import PemRefreshControl from "@/components/ui/PemRefreshControl";
+import PemText from "@/components/ui/PemText";
+import { inboxChrome } from "@/constants/inboxChrome";
+import { pemAmber } from "@/constants/theme";
+import { fontSize, space } from "@/constants/typography";
+import { useTheme } from "@/contexts/ThemeContext";
+import { getExtractsQuery, type ApiExtract } from "@/lib/pemApi";
+import { firstParam } from "@/lib/routeParams";
+import { useAuth } from "@clerk/expo";
+import { useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FlatList, Pressable, StyleSheet, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const SLUG_CONFIG: Record<
+  string,
+  { title: string; icon: string; emptyTitle: string; emptySubtitle: string; filter: Record<string, string> }
+> = {
+  ideas: {
+    title: "Ideas",
+    icon: "💡",
+    emptyTitle: "No ideas yet.",
+    emptySubtitle: "Dump a creative thought and Pem will catch it here.",
+    filter: { tone: "idea" },
+  },
+  someday: {
+    title: "Someday",
+    icon: "🌅",
+    emptyTitle: "Nothing in someday.",
+    emptySubtitle: "Aspirational things land here — no pressure.",
+    filter: { urgency: "someday" },
+  },
+  shopping: {
+    title: "Shopping",
+    icon: "🛒",
+    emptyTitle: "Shopping list is empty.",
+    emptySubtitle: "Mention shopping items in your dumps.",
+    filter: { batch_key: "shopping" },
+  },
+  calls: {
+    title: "Calls",
+    icon: "📞",
+    emptyTitle: "No calls to make.",
+    emptySubtitle: "Mention calls in your dumps and they'll appear here.",
+    filter: { batch_key: "calls" },
+  },
+  emails: {
+    title: "Emails",
+    icon: "📧",
+    emptyTitle: "No emails to send.",
+    emptySubtitle: "Mention emails in your dumps and they'll appear here.",
+    filter: { batch_key: "emails" },
+  },
+  errands: {
+    title: "Errands",
+    icon: "🏃",
+    emptyTitle: "No errands.",
+    emptySubtitle: "Mention errands in your dumps and they'll appear here.",
+    filter: { batch_key: "errands" },
+  },
+};
+
+export default function CategoryScreen() {
+  const params = useLocalSearchParams<{ slug?: string | string[] }>();
+  const slug = firstParam(params.slug) ?? "ideas";
+  const config = SLUG_CONFIG[slug] ?? SLUG_CONFIG.ideas;
+  const { resolved } = useTheme();
+  const chrome = inboxChrome(resolved);
+  const insets = useSafeAreaInsets();
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [items, setItems] = useState<ApiExtract[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const nextCursorRef = useRef<string | null>(null);
+  const loadingMoreRef = useRef(false);
+
+  const load = useCallback(
+    async (mode: "initial" | "pull" | "more" = "initial") => {
+      if (mode === "initial") setLoading(true);
+      if (mode === "pull") setRefreshing(true);
+      if (mode !== "more") setErr(null);
+      try {
+        if (mode === "more") {
+          if (loadingMoreRef.current || !nextCursorRef.current) return;
+          loadingMoreRef.current = true;
+          const res = await getExtractsQuery(() => getTokenRef.current(), {
+            ...config.filter,
+            limit: 40,
+            cursor: nextCursorRef.current,
+          } as any);
+          nextCursorRef.current = res.next_cursor;
+          setItems((prev) => [...prev, ...res.items]);
+          return;
+        }
+        const res = await getExtractsQuery(() => getTokenRef.current(), {
+          ...config.filter,
+          limit: 40,
+        } as any);
+        nextCursorRef.current = res.next_cursor;
+        setItems(res.items);
+      } catch (e) {
+        if (mode !== "more") setErr(e instanceof Error ? e.message : "Couldn't load");
+      } finally {
+        if (mode === "initial") setLoading(false);
+        if (mode === "pull") setRefreshing(false);
+        if (mode === "more") loadingMoreRef.current = false;
+      }
+    },
+    [config.filter],
+  );
+
+  useEffect(() => {
+    void load("initial");
+  }, [load]);
+
+  return (
+    <View style={[styles.root, { backgroundColor: chrome.page, paddingTop: insets.top }]}>
+      <StatusBar style={resolved === "dark" ? "light" : "dark"} />
+      <View style={styles.top}>
+        <AppMenuButton tintColor={chrome.text} />
+        <PemText
+          style={{
+            flex: 1,
+            marginLeft: space[2],
+            fontSize: fontSize.lg,
+            fontWeight: "500",
+            color: chrome.text,
+          }}
+        >
+          {config.title}
+        </PemText>
+      </View>
+
+      {loading ? (
+        <PemLoadingIndicator placement="pageCenter" />
+      ) : err && items.length === 0 ? (
+        <View style={{ paddingHorizontal: space[5], paddingTop: space[4] }}>
+          <PemText variant="body" style={{ color: chrome.textMuted }}>
+            {err}
+          </PemText>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void load("initial")}
+            style={{ marginTop: space[4] }}
+          >
+            <PemText variant="body" style={{ color: pemAmber }}>
+              Try again
+            </PemText>
+          </Pressable>
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item) => item.id}
+          refreshControl={
+            <PemRefreshControl refreshing={refreshing} onRefresh={() => void load("pull")} />
+          }
+          onEndReached={() => void load("more")}
+          onEndReachedThreshold={0.35}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <PemListRow
+              chrome={chrome}
+              icon={config.icon}
+              title={item.text}
+              subtitle={item.pem_note ?? item.tone}
+              showChevron
+            />
+          )}
+          ListEmptyComponent={
+            <PemMindEmptyState
+              chrome={chrome}
+              title={config.emptyTitle}
+              subtitle={config.emptySubtitle}
+              micHint="tap the mic on Inbox"
+            />
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  top: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: space[4],
+    paddingBottom: space[3],
+  },
+  listContent: { flexGrow: 1, paddingBottom: space[10] },
+});

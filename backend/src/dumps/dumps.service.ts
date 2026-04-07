@@ -1,17 +1,19 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
-import { ActionablesService } from '../actionables/actionables.service';
-import {
-  actionablesTable,
-  dumpsTable,
-  type UserRow,
-} from '../database/schemas';
+import { ExtractsService } from '../extracts/extracts.service';
+import { extractsTable, dumpsTable, type UserRow } from '../database/schemas';
 
 export const DUMP_TEXT_MAX_CHARS = 16_000;
 
@@ -22,17 +24,15 @@ export class DumpsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     @InjectQueue('dump') private readonly dumpQueue: Queue,
-    private readonly actionables: ActionablesService,
+    private readonly extracts: ExtractsService,
+    private readonly config: ConfigService,
   ) {}
 
   async createDump(user: UserRow, text: string): Promise<{ dumpId: string }> {
     const trimmed = text.trim();
     const [dump] = await this.db
       .insert(dumpsTable)
-      .values({
-        userId: user.id,
-        dumpText: trimmed,
-      })
+      .values({ userId: user.id, dumpText: trimmed })
       .returning();
 
     await this.dumpQueue.add(
@@ -49,9 +49,49 @@ export class DumpsService {
     return { dumpId: dump.id };
   }
 
-  /**
-   * Paginated dump sessions for the hub. Display text prefers `polished_text`, else raw dump text.
-   */
+  async createFromVoice(
+    user: UserRow,
+    audio: Express.Multer.File,
+  ): Promise<{ dumpId: string; text: string }> {
+    if (!audio?.buffer) {
+      throw new BadRequestException('No audio file provided');
+    }
+
+    const apiKey = this.config.get<string>('openai.apiKey');
+    if (!apiKey) {
+      throw new BadRequestException('Transcription service unavailable');
+    }
+
+    const formData = new FormData();
+    const blob = new Blob([new Uint8Array(audio.buffer)], {
+      type: audio.mimetype || 'audio/m4a',
+    });
+    formData.append('file', blob, audio.originalname || 'recording.m4a');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'en');
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      this.log.error(`Whisper API error: ${res.status} ${errBody}`);
+      throw new BadRequestException('Transcription failed');
+    }
+
+    const json = (await res.json()) as { text: string };
+    const text = json.text?.trim();
+    if (!text) {
+      throw new BadRequestException('Could not transcribe audio');
+    }
+
+    const result = await this.createDump(user, text);
+    return { dumpId: result.dumpId, text };
+  }
+
   async listPaginated(
     userId: string,
     limit: number,
@@ -61,8 +101,9 @@ export class DumpsService {
       id: string;
       text: string;
       status: string;
+      last_error: string | null;
       created_at: string;
-      actionable_count: number;
+      extract_count: number;
     }[];
     next_cursor: string | null;
   }> {
@@ -88,6 +129,7 @@ export class DumpsService {
         dumpText: dumpsTable.dumpText,
         polishedText: dumpsTable.polishedText,
         status: dumpsTable.status,
+        lastError: dumpsTable.lastError,
         createdAt: dumpsTable.createdAt,
       })
       .from(dumpsTable)
@@ -103,22 +145,24 @@ export class DumpsService {
       id: string;
       text: string;
       status: string;
+      last_error: string | null;
       created_at: string;
-      actionable_count: number;
+      extract_count: number;
     }[] = [];
 
     for (const r of page) {
       const [cnt] = await this.db
         .select({ c: sql<number>`count(*)::int` })
-        .from(actionablesTable)
-        .where(eq(actionablesTable.dumpId, r.id));
+        .from(extractsTable)
+        .where(eq(extractsTable.dumpId, r.id));
       const display = r.polishedText?.trim() || r.dumpText;
       dumps.push({
         id: r.id,
         text: display,
         status: r.status,
+        last_error: r.lastError ?? null,
         created_at: r.createdAt.toISOString(),
-        actionable_count: cnt?.c ?? 0,
+        extract_count: cnt?.c ?? 0,
       });
     }
 
@@ -136,14 +180,12 @@ export class DumpsService {
       .where(and(eq(dumpsTable.id, dumpId), eq(dumpsTable.userId, userId)))
       .limit(1);
     const dump = rows[0];
-    if (!dump) {
-      throw new NotFoundException('Dump not found');
-    }
+    if (!dump) throw new NotFoundException('Dump not found');
 
     const items = await this.db
       .select()
-      .from(actionablesTable)
-      .where(eq(actionablesTable.dumpId, dump.id));
+      .from(extractsTable)
+      .where(eq(extractsTable.dumpId, dump.id));
 
     const display = dump.polishedText?.trim() || dump.dumpText;
 
@@ -152,11 +194,14 @@ export class DumpsService {
         id: dump.id,
         text: display,
         status: dump.status,
+        last_error: dump.lastError ?? null,
         raw_text: dump.dumpText,
         polished_text: dump.polishedText,
+        additional_context: dump.additionalContext ?? null,
+        agent_assumptions: dump.agentAssumptions ?? null,
         created_at: dump.createdAt.toISOString(),
       },
-      actionables: items.map((a) => this.actionables.serialize(a)),
+      extracts: items.map((a) => this.extracts.serialize(a)),
     };
   }
 }
@@ -176,8 +221,7 @@ function decodeDumpCursor(raw: string): { createdAt: Date; id: string } | null {
     };
     if (typeof j.c !== 'string' || typeof j.i !== 'string') return null;
     const d = new Date(j.c);
-    if (Number.isNaN(d.getTime())) return null;
-    return { createdAt: d, id: j.i };
+    return Number.isNaN(d.getTime()) ? null : { createdAt: d, id: j.i };
   } catch {
     return null;
   }

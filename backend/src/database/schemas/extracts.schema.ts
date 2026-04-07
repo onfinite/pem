@@ -10,35 +10,35 @@ import {
 import { dumpsTable } from './dumps.schema';
 import { usersTable } from './users.schema';
 
-export const ACTIONABLE_STATUSES = [
+export const EXTRACT_STATUSES = [
   'inbox',
   'done',
   'snoozed',
   'dismissed',
 ] as const;
-export type ActionableStatus = (typeof ACTIONABLE_STATUSES)[number];
+export type ExtractStatus = (typeof EXTRACT_STATUSES)[number];
 
-export const ACTIONABLE_TONES = [
+export const EXTRACT_TONES = [
   'confident',
   'tentative',
   'idea',
   'someday',
 ] as const;
-export type ActionableTone = (typeof ACTIONABLE_TONES)[number];
+export type ExtractTone = (typeof EXTRACT_TONES)[number];
 
-export const ACTIONABLE_URGENCIES = [
+export const EXTRACT_URGENCIES = [
   'today',
   'this_week',
   'someday',
   'none',
 ] as const;
-export type ActionableUrgency = (typeof ACTIONABLE_URGENCIES)[number];
+export type ExtractUrgency = (typeof EXTRACT_URGENCIES)[number];
 
 export const BATCH_KEYS = ['shopping', 'calls', 'emails', 'errands'] as const;
 export type BatchKey = (typeof BATCH_KEYS)[number];
 
-export const actionablesTable = pgTable(
-  'actionables',
+export const extractsTable = pgTable(
+  'extracts',
   {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id')
@@ -47,7 +47,7 @@ export const actionablesTable = pgTable(
     dumpId: uuid('dump_id')
       .notNull()
       .references(() => dumpsTable.id, { onDelete: 'cascade' }),
-    actionableText: text('text').notNull(),
+    extractText: text('text').notNull(),
     originalText: text('original_text').notNull(),
     status: text('status').notNull(),
     tone: text('tone').notNull(),
@@ -71,6 +71,11 @@ export const actionablesTable = pgTable(
       mode: 'date',
     }),
     pemNote: text('pem_note'),
+    /** Soft LLM suggestion for when to revisit; optional. */
+    recommendedAt: timestamp('recommended_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     draftText: text('draft_text'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
@@ -80,15 +85,11 @@ export const actionablesTable = pgTable(
       .defaultNow(),
   },
   (t) => [
-    index('ix_actionables_user_id').on(t.userId),
-    index('ix_actionables_dump_id').on(t.dumpId),
-    index('ix_actionables_user_status_urgency').on(
-      t.userId,
-      t.status,
-      t.urgency,
-    ),
-    index('ix_actionables_batch').on(t.userId, t.batchKey),
+    index('ix_extracts_user_id').on(t.userId),
+    index('ix_extracts_dump_id').on(t.dumpId),
+    index('ix_extracts_user_status_urgency').on(t.userId, t.status, t.urgency),
+    index('ix_extracts_batch').on(t.userId, t.batchKey),
   ],
 );
 
-export type ActionableRow = typeof actionablesTable.$inferSelect;
+export type ExtractRow = typeof extractsTable.$inferSelect;

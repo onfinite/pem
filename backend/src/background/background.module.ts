@@ -2,17 +2,15 @@ import { BullModule } from '@nestjs/bullmq';
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
+import { ExtractsModule } from '../extracts/extracts.module';
 import { DatabaseModule } from '../database/database.module';
+import { ProfileModule } from '../profile/profile.module';
 import { PushModule } from '../push/push.module';
 import { ExtractionModule } from './agents/extraction/extraction.module';
 import { InboxEventsModule } from './inbox-events/inbox-events.module';
 import { DumpExtractService } from './queues/dump/dump-extract.service';
 import { DumpProcessor } from './queues/dump/dump.processor';
 
-/**
- * Single entry for async work: **queues** (BullMQ), **agents** (LLM steps under `agents/`), and
- * **inbox-events** (Redis pub/sub — bridge from workers to SSE on the HTTP process).
- */
 @Global()
 @Module({
   imports: [
@@ -31,6 +29,8 @@ import { DumpProcessor } from './queues/dump/dump.processor';
     }),
     BullModule.registerQueue({ name: 'dump' }),
     DatabaseModule,
+    ProfileModule,
+    ExtractsModule,
     ExtractionModule,
     InboxEventsModule,
     PushModule,

@@ -4,15 +4,28 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { and, asc, desc, eq, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  isNotNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
-  actionablesTable,
+  logsTable,
+  extractsTable,
   usersTable,
-  type ActionableRow,
+  type ExtractRow,
 } from '../database/schemas';
 
 export type SnoozeUntil =
@@ -22,24 +35,45 @@ export type SnoozeUntil =
   | 'next_week'
   | 'someday';
 
+export type ExtractQueryFilters = {
+  status?: 'open' | 'inbox' | 'snoozed' | 'dismissed' | 'done';
+  batch_key?: string;
+  tone?: string;
+  exclude_tone?: string;
+  urgency?: string;
+};
+
 @Injectable()
-export class ActionablesService {
+export class ExtractsService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+
+  private async logUserChange(args: {
+    userId: string;
+    extractId: string;
+    op: string;
+    payload?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.db.insert(logsTable).values({
+      userId: args.userId,
+      type: 'extract',
+      extractId: args.extractId,
+      dumpId: null,
+      pemNote: null,
+      isAgent: false,
+      payload: { op: args.op, ...(args.payload ?? {}) },
+    });
+  }
 
   async wakeSnoozed(userId: string): Promise<void> {
     const now = new Date();
     await this.db
-      .update(actionablesTable)
-      .set({
-        status: 'inbox',
-        snoozedUntil: null,
-        updatedAt: now,
-      })
+      .update(extractsTable)
+      .set({ status: 'inbox', snoozedUntil: null, updatedAt: now })
       .where(
         and(
-          eq(actionablesTable.userId, userId),
-          eq(actionablesTable.status, 'snoozed'),
-          lte(actionablesTable.snoozedUntil, now),
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.status, 'snoozed'),
+          lte(extractsTable.snoozedUntil, now),
         ),
       );
   }
@@ -47,22 +81,20 @@ export class ActionablesService {
   async findForUser(
     userId: string,
     id: string,
-  ): Promise<ActionableRow | undefined> {
+  ): Promise<ExtractRow | undefined> {
     const rows = await this.db
       .select()
-      .from(actionablesTable)
-      .where(
-        and(eq(actionablesTable.id, id), eq(actionablesTable.userId, userId)),
-      )
+      .from(extractsTable)
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .limit(1);
     return rows[0];
   }
 
-  serialize(a: ActionableRow) {
+  serialize(a: ExtractRow) {
     return {
       id: a.id,
       dump_id: a.dumpId,
-      text: a.actionableText,
+      text: a.extractText,
       original_text: a.originalText,
       status: a.status,
       tone: a.tone,
@@ -77,26 +109,22 @@ export class ActionablesService {
       done_at: a.doneAt?.toISOString() ?? null,
       dismissed_at: a.dismissedAt?.toISOString() ?? null,
       pem_note: a.pemNote,
+      recommended_at: a.recommendedAt?.toISOString() ?? null,
       draft_text: a.draftText,
       created_at: a.createdAt.toISOString(),
       updated_at: a.updatedAt.toISOString(),
     };
   }
 
-  /**
-   * Primary inbox feed (`GET /inbox`): all `inbox` actionables except idea-only rows.
-   * Urgency is used for ordering only — extraction often sets `this_week` or `none`,
-   * which previously hid items when we filtered to `urgency = 'today'` only.
-   */
-  async listToday(userId: string): Promise<ActionableRow[]> {
+  async listToday(userId: string): Promise<ExtractRow[]> {
     const rows = await this.db
       .select()
-      .from(actionablesTable)
+      .from(extractsTable)
       .where(
         and(
-          eq(actionablesTable.userId, userId),
-          eq(actionablesTable.status, 'inbox'),
-          sql`${actionablesTable.tone} <> 'idea'`,
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.status, 'inbox'),
+          sql`${extractsTable.tone} <> 'idea'`,
         ),
       );
 
@@ -118,76 +146,84 @@ export class ActionablesService {
   }
 
   async listAllForUser(userId: string): Promise<{
-    this_week: ActionableRow[];
-    someday: ActionableRow[];
-    ideas: ActionableRow[];
-    dismissed: ActionableRow[];
-    batch_groups: { batch_key: string; items: ActionableRow[] }[];
+    this_week: ExtractRow[];
+    someday: ExtractRow[];
+    ideas: ExtractRow[];
+    dismissed: ExtractRow[];
+    batch_groups: { batch_key: string; items: ExtractRow[] }[];
+    batch_slots: { batch_key: string; items: ExtractRow[]; count: number }[];
   }> {
     const base = and(
-      eq(actionablesTable.userId, userId),
-      eq(actionablesTable.status, 'inbox'),
+      eq(extractsTable.userId, userId),
+      eq(extractsTable.status, 'inbox'),
     );
 
     const thisWeek = await this.db
       .select()
-      .from(actionablesTable)
+      .from(extractsTable)
       .where(
         and(
           base,
-          eq(actionablesTable.urgency, 'this_week'),
-          sql`${actionablesTable.tone} <> 'idea'`,
+          eq(extractsTable.urgency, 'this_week'),
+          sql`${extractsTable.tone} <> 'idea'`,
         ),
       )
-      .orderBy(asc(actionablesTable.periodStart), asc(actionablesTable.dueAt));
+      .orderBy(asc(extractsTable.periodStart), asc(extractsTable.dueAt));
 
     const somedayRows = await this.db
       .select()
-      .from(actionablesTable)
+      .from(extractsTable)
       .where(
         and(
           base,
-          sql`${actionablesTable.tone} <> 'idea'`,
+          sql`${extractsTable.tone} <> 'idea'`,
           or(
-            eq(actionablesTable.urgency, 'someday'),
-            eq(actionablesTable.urgency, 'none'),
-            eq(actionablesTable.tone, 'someday'),
+            eq(extractsTable.urgency, 'someday'),
+            eq(extractsTable.urgency, 'none'),
+            eq(extractsTable.tone, 'someday'),
           ),
         ),
       )
-      .orderBy(desc(actionablesTable.createdAt));
+      .orderBy(desc(extractsTable.createdAt));
 
     const ideas = await this.db
       .select()
-      .from(actionablesTable)
-      .where(and(base, eq(actionablesTable.tone, 'idea')))
-      .orderBy(desc(actionablesTable.createdAt));
+      .from(extractsTable)
+      .where(and(base, eq(extractsTable.tone, 'idea')))
+      .orderBy(desc(extractsTable.createdAt));
 
     const dismissed = await this.db
       .select()
-      .from(actionablesTable)
+      .from(extractsTable)
       .where(
         and(
-          eq(actionablesTable.userId, userId),
-          eq(actionablesTable.status, 'dismissed'),
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.status, 'dismissed'),
         ),
       )
-      .orderBy(desc(actionablesTable.dismissedAt));
+      .orderBy(desc(extractsTable.dismissedAt));
 
     const batchKeys = ['shopping', 'calls', 'emails', 'errands'] as const;
-    const batch_groups: { batch_key: string; items: ActionableRow[] }[] = [];
+    const batch_groups: { batch_key: string; items: ExtractRow[] }[] = [];
+    const batch_slots: {
+      batch_key: string;
+      items: ExtractRow[];
+      count: number;
+    }[] = [];
+
     for (const bk of batchKeys) {
       const items = await this.db
         .select()
-        .from(actionablesTable)
+        .from(extractsTable)
         .where(
           and(
             base,
-            eq(actionablesTable.batchKey, bk),
-            sql`${actionablesTable.tone} <> 'idea'`,
+            eq(extractsTable.batchKey, bk),
+            sql`${extractsTable.tone} <> 'idea'`,
           ),
         )
-        .orderBy(desc(actionablesTable.createdAt));
+        .orderBy(desc(extractsTable.createdAt));
+      batch_slots.push({ batch_key: bk, items, count: items.length });
       if (items.length >= 2) {
         batch_groups.push({ batch_key: bk, items });
       }
@@ -199,16 +235,73 @@ export class ActionablesService {
       ideas,
       dismissed,
       batch_groups,
+      batch_slots,
     };
   }
 
-  async markDone(userId: string, id: string): Promise<ActionableRow> {
+  async listQuery(
+    userId: string,
+    filters: ExtractQueryFilters,
+    limit: number,
+    cursor: string | null,
+  ): Promise<{ rows: ExtractRow[]; next_cursor: string | null }> {
+    await this.wakeSnoozed(userId);
+    const lim = Math.min(Math.max(limit, 1), 50);
+    const parts: SQL[] = [eq(extractsTable.userId, userId)];
+
+    const st = filters.status ?? 'open';
+    if (st === 'open') {
+      parts.push(ne(extractsTable.status, 'done'));
+    } else {
+      parts.push(eq(extractsTable.status, st));
+    }
+
+    if (filters.batch_key)
+      parts.push(eq(extractsTable.batchKey, filters.batch_key));
+    if (filters.tone) parts.push(eq(extractsTable.tone, filters.tone));
+    if (filters.exclude_tone)
+      parts.push(ne(extractsTable.tone, filters.exclude_tone));
+    if (filters.urgency) parts.push(eq(extractsTable.urgency, filters.urgency));
+
+    const baseWhere = and(...parts)!;
+    const cur = cursor ? decodeOpenCursor(cursor) : null;
+    const where = cur
+      ? and(
+          baseWhere,
+          or(
+            lt(extractsTable.createdAt, cur.createdAt),
+            and(
+              eq(extractsTable.createdAt, cur.createdAt),
+              lt(extractsTable.id, cur.id),
+            ),
+          ),
+        )!
+      : baseWhere;
+
+    const rows = await this.db
+      .select()
+      .from(extractsTable)
+      .where(where)
+      .orderBy(desc(extractsTable.createdAt), desc(extractsTable.id))
+      .limit(lim + 1);
+
+    const hasMore = rows.length > lim;
+    const page = hasMore ? rows.slice(0, lim) : rows;
+    const last = page[page.length - 1];
+    return {
+      rows: page,
+      next_cursor:
+        hasMore && last ? encodeOpenCursor(last.createdAt, last.id) : null,
+    };
+  }
+
+  async markDone(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const row = await this.findForUser(userId, id);
-    if (!row) throw new NotFoundException('Actionable not found');
+    if (!row) throw new NotFoundException('Extract not found');
     const now = new Date();
     const [u] = await this.db
-      .update(actionablesTable)
+      .update(extractsTable)
       .set({
         status: 'done',
         doneAt: now,
@@ -216,66 +309,54 @@ export class ActionablesService {
         snoozedUntil: null,
         updatedAt: now,
       })
-      .where(
-        and(eq(actionablesTable.id, id), eq(actionablesTable.userId, userId)),
-      )
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
-    if (!u) throw new NotFoundException('Actionable not found');
+    if (!u) throw new NotFoundException('Extract not found');
+    await this.logUserChange({ userId, extractId: id, op: 'mark_done' });
     return u;
   }
 
-  async dismiss(userId: string, id: string): Promise<ActionableRow> {
+  async dismiss(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const now = new Date();
     const [u] = await this.db
-      .update(actionablesTable)
+      .update(extractsTable)
       .set({
         status: 'dismissed',
         dismissedAt: now,
         snoozedUntil: null,
         updatedAt: now,
       })
-      .where(
-        and(eq(actionablesTable.id, id), eq(actionablesTable.userId, userId)),
-      )
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
-    if (!u) throw new NotFoundException('Actionable not found');
+    if (!u) throw new NotFoundException('Extract not found');
+    await this.logUserChange({ userId, extractId: id, op: 'dismiss' });
     return u;
   }
 
-  async undone(userId: string, id: string): Promise<ActionableRow> {
+  async undone(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const now = new Date();
     const [u] = await this.db
-      .update(actionablesTable)
-      .set({
-        status: 'inbox',
-        doneAt: null,
-        updatedAt: now,
-      })
-      .where(
-        and(eq(actionablesTable.id, id), eq(actionablesTable.userId, userId)),
-      )
+      .update(extractsTable)
+      .set({ status: 'inbox', doneAt: null, updatedAt: now })
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
-    if (!u) throw new NotFoundException('Actionable not found');
+    if (!u) throw new NotFoundException('Extract not found');
+    await this.logUserChange({ userId, extractId: id, op: 'undone' });
     return u;
   }
 
-  async undismiss(userId: string, id: string): Promise<ActionableRow> {
+  async undismiss(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const now = new Date();
     const [u] = await this.db
-      .update(actionablesTable)
-      .set({
-        status: 'inbox',
-        dismissedAt: null,
-        updatedAt: now,
-      })
-      .where(
-        and(eq(actionablesTable.id, id), eq(actionablesTable.userId, userId)),
-      )
+      .update(extractsTable)
+      .set({ status: 'inbox', dismissedAt: null, updatedAt: now })
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
-    if (!u) throw new NotFoundException('Actionable not found');
+    if (!u) throw new NotFoundException('Extract not found');
+    await this.logUserChange({ userId, extractId: id, op: 'undismiss' });
     return u;
   }
 
@@ -284,10 +365,10 @@ export class ActionablesService {
     id: string,
     until: SnoozeUntil,
     isoOverride?: string,
-  ): Promise<ActionableRow> {
+  ): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const row = await this.findForUser(userId, id);
-    if (!row) throw new NotFoundException('Actionable not found');
+    if (!row) throw new NotFoundException('Extract not found');
 
     const [user] = await this.db
       .select({ timezone: usersTable.timezone })
@@ -307,9 +388,8 @@ export class ActionablesService {
       nextStatus = 'inbox';
     } else if (isoOverride) {
       const d = new Date(isoOverride);
-      if (Number.isNaN(d.getTime())) {
+      if (Number.isNaN(d.getTime()))
         throw new BadRequestException('Invalid ISO date');
-      }
       snoozedUntil = d;
       nextStatus = 'snoozed';
     } else if (until === 'later_today') {
@@ -320,56 +400,49 @@ export class ActionablesService {
       nextStatus = 'snoozed';
     } else if (until === 'weekend') {
       let sat = now.startOf('day');
-      while (sat.weekday !== 6) {
-        sat = sat.plus({ days: 1 });
-      }
-      const endSun = sat.plus({ days: 1 }).endOf('day');
-      snoozedUntil = endSun.toJSDate();
+      while (sat.weekday !== 6) sat = sat.plus({ days: 1 });
+      snoozedUntil = sat.plus({ days: 1 }).endOf('day').toJSDate();
       nextStatus = 'snoozed';
     } else if (until === 'next_week') {
       let m = now.startOf('day');
-      while (m.weekday !== 1) {
-        m = m.plus({ days: 1 });
-      }
-      if (m <= now.startOf('day')) {
-        m = m.plus({ weeks: 1 });
-      }
+      while (m.weekday !== 1) m = m.plus({ days: 1 });
+      if (m <= now.startOf('day')) m = m.plus({ weeks: 1 });
       snoozedUntil = m.toJSDate();
       nextStatus = 'snoozed';
     }
 
     const [u] = await this.db
-      .update(actionablesTable)
-      .set({
-        status: nextStatus,
-        snoozedUntil,
-        urgency,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(actionablesTable.id, id), eq(actionablesTable.userId, userId)),
-      )
+      .update(extractsTable)
+      .set({ status: nextStatus, snoozedUntil, urgency, updatedAt: new Date() })
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
-    if (!u) throw new NotFoundException('Actionable not found');
+    if (!u) throw new NotFoundException('Extract not found');
+    await this.logUserChange({
+      userId,
+      extractId: id,
+      op: 'snooze',
+      payload: {
+        until,
+        iso_override: isoOverride ?? null,
+        snoozed_until: u.snoozedUntil?.toISOString() ?? null,
+        status: u.status,
+      },
+    });
     return u;
   }
 
-  /**
-   * All active work: `inbox` and `snoozed` (not done, not dismissed).
-   * Newest first for pagination.
-   */
   async listOpen(
     userId: string,
     limit: number,
     cursor: string | null,
-  ): Promise<{ rows: ActionableRow[]; next_cursor: string | null }> {
+  ): Promise<{ rows: ExtractRow[]; next_cursor: string | null }> {
     await this.wakeSnoozed(userId);
     const lim = Math.min(Math.max(limit, 1), 50);
     const base = and(
-      eq(actionablesTable.userId, userId),
+      eq(extractsTable.userId, userId),
       or(
-        eq(actionablesTable.status, 'inbox'),
-        eq(actionablesTable.status, 'snoozed'),
+        eq(extractsTable.status, 'inbox'),
+        eq(extractsTable.status, 'snoozed'),
       ),
     );
     const cur = cursor ? decodeOpenCursor(cursor) : null;
@@ -377,10 +450,10 @@ export class ActionablesService {
       ? and(
           base,
           or(
-            lt(actionablesTable.createdAt, cur.createdAt),
+            lt(extractsTable.createdAt, cur.createdAt),
             and(
-              eq(actionablesTable.createdAt, cur.createdAt),
-              lt(actionablesTable.id, cur.id),
+              eq(extractsTable.createdAt, cur.createdAt),
+              lt(extractsTable.id, cur.id),
             ),
           ),
         )
@@ -388,9 +461,9 @@ export class ActionablesService {
 
     const rows = await this.db
       .select()
-      .from(actionablesTable)
+      .from(extractsTable)
       .where(where)
-      .orderBy(desc(actionablesTable.createdAt), desc(actionablesTable.id))
+      .orderBy(desc(extractsTable.createdAt), desc(extractsTable.id))
       .limit(lim + 1);
 
     const hasMore = rows.length > lim;
@@ -407,33 +480,30 @@ export class ActionablesService {
     userId: string,
     limit: number,
     cursor: string | null,
-  ): Promise<{ rows: ActionableRow[]; next_cursor: string | null }> {
+  ): Promise<{ rows: ExtractRow[]; next_cursor: string | null }> {
     await this.wakeSnoozed(userId);
     const lim = Math.min(Math.max(limit, 1), 50);
     const base = and(
-      eq(actionablesTable.userId, userId),
-      eq(actionablesTable.status, 'done'),
-      isNotNull(actionablesTable.doneAt),
+      eq(extractsTable.userId, userId),
+      eq(extractsTable.status, 'done'),
+      isNotNull(extractsTable.doneAt),
     );
     const cur = cursor ? decodeCursor(cursor) : null;
     const where = cur
       ? and(
           base,
           or(
-            lt(actionablesTable.doneAt, cur.d),
-            and(
-              eq(actionablesTable.doneAt, cur.d),
-              lt(actionablesTable.id, cur.id),
-            ),
+            lt(extractsTable.doneAt, cur.d),
+            and(eq(extractsTable.doneAt, cur.d), lt(extractsTable.id, cur.id)),
           ),
         )
       : base;
 
     const rows = await this.db
       .select()
-      .from(actionablesTable)
+      .from(extractsTable)
       .where(where)
-      .orderBy(desc(actionablesTable.doneAt), desc(actionablesTable.id))
+      .orderBy(desc(extractsTable.doneAt), desc(extractsTable.id))
       .limit(lim + 1);
 
     const hasMore = rows.length > lim;
@@ -462,8 +532,7 @@ function decodeCursor(raw: string): { d: Date; id: string } | null {
     };
     if (typeof j.d !== 'string' || typeof j.i !== 'string') return null;
     const dt = new Date(j.d);
-    if (Number.isNaN(dt.getTime())) return null;
-    return { d: dt, id: j.i };
+    return Number.isNaN(dt.getTime()) ? null : { d: dt, id: j.i };
   } catch {
     return null;
   }
@@ -484,8 +553,7 @@ function decodeOpenCursor(raw: string): { createdAt: Date; id: string } | null {
     };
     if (typeof j.ca !== 'string' || typeof j.i !== 'string') return null;
     const dt = new Date(j.ca);
-    if (Number.isNaN(dt.getTime())) return null;
-    return { createdAt: dt, id: j.i };
+    return Number.isNaN(dt.getTime()) ? null : { createdAt: dt, id: j.i };
   } catch {
     return null;
   }

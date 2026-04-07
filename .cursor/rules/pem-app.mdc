@@ -6,23 +6,34 @@ alwaysApply: false
 
 # Pem mobile app (`app/`)
 
-**Product:** **dump → organized actionables + thoughts journal**. Primary routes: **`/inbox`**, **`/thoughts`**, **`/done`**, **`/dump`**, **`/settings`**. Floating mic → dump. No prep hub, no location. See **`pem-thought-organizer.mdc`**.
+**Product:** **dump → organized extracts + thoughts journal**. Primary surface: **`/inbox`** (glance). Voice-first dump, text secondary. **Ask Pem** for Q&A about your data.
+
+## Screens & navigation
+
+- **Navigation:** **expo-router** **`Stack`** (`app/(app)/_layout.tsx`) + **`AppDrawerProvider`** / **`AppDrawerContent`** — full drawer with sections:
+  - **Main:** Inbox · Thoughts · Done · Everything
+  - **Categories:** Ideas · Someday
+  - **Batches:** Shopping · Calls · Emails · Errands
+  - **Bottom:** Ask Pem · Settings
+- **`thoughts/_layout.tsx`** inner **`Stack`** (list → detail). **`category/[slug].tsx`** dynamic category/batch page.
+- **`AppMenuButton`** opens drawer; scrim closes.
 
 ## TypeScript & components
 
 - **TypeScript strict** — functional components only.
-- **Navigation:** **expo-router** — file tree under **`app/app/`** (see repo layout).
-- **API:** **`lib/pemApi.ts`** — `createDump`, **`getDumpsPage`** / **`getDumpDetail`** (`GET /dumps`), inbox, actionables, profile, timezone.
-- **Real-time:** **`hooks/useDumpInboxStream.ts`** after dump → refresh inbox when extraction completes.
-- **Timezone:** **`components/auth/TimezoneRegistrar.tsx`** — PATCH **`/users/me/timezone`** from **`Intl`** after sign-in.
+- **API:** **`lib/pemApi.ts`** — types renamed: `ApiExtract`, `ExtractsQueryParams`, `getExtractsQuery`, `patchExtractDone`, `patchExtractDismiss`, `askPem`, `createVoiceDump`. Routes: `/extracts/...`, `/ask`, `/dumps/voice`.
+- **Inbox UI tokens:** **`constants/inboxChrome.ts`** (light/dark glance surfaces); compose with **`ThemeContext`**.
+- **Feature folders:** **`components/inbox/`** (glance, dump bar, detail modal), **`components/navigation/`** (drawer + menu button), **`components/ui/`** (`PemListRow`, `PemMindEmptyState`).
+- **Voice dump:** **`expo-av`** for recording → **`POST /dumps/voice`** → backend transcription via OpenAI Whisper. Record/pause/end UI. Voice-first, "or type it" toggle.
+- **Ask Pem:** **`/ask`** — simple Q&A screen, not chat. User asks about their data, Pem responds.
+- **Real-time:** **`hooks/useDumpInboxStream.ts`** after dump → refresh inbox.
+- **Timezone:** **`TimezoneRegistrar`** — PATCH **`/users/me/timezone`**.
 - **Push:** **`PushNotificationRegistrar`** — **`inbox_updated`** → **`/inbox`**.
-- **Haptics:** **`lib/pemHaptics.ts`** for primary taps.
+- **Thoughts:** Shows polished text only (no original dump shown to user).
 - **Brand:** **`constants/theme.ts`**, **`typography.ts`**, **`brand/pem-brand.html`**.
 
 ## JSX readability
 
-Prefer named booleans above the return, early returns for loading/error, small child components — same discipline as before.
+Prefer named booleans, early returns, small child components. Avoid nested ternary trees.
 
-**Maintenance:** When **routes, UI patterns, tokens, hooks, or API client shapes** change, update **this file** in the same effort. DB/API contract changes often imply **`pemApi.ts`** + **`pem-backend.mdc`** updates too. See **`pem-project.mdc`** — *Keeping `.cursor/rules` in sync*.
-
-**Collaboration:** See **`pem-project.mdc`**.
+**Maintenance:** When **routes, UI patterns, tokens, hooks, or API shapes** change, update **this file** in the same effort. See **`pem-project.mdc`**.

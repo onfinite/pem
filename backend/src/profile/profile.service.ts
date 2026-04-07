@@ -67,13 +67,13 @@ export class ProfileService {
   }
 
   /**
-   * Natural-language block for the prep agent (active facts only).
+   * Natural-language block for dump extraction (active memory_facts only).
    */
   async buildMemoryPromptSection(userId: string): Promise<string> {
     const rows = await this.repo.listActiveNotesForPrompt(userId);
     if (rows.length === 0) {
       return `What I know about this user:
-(nothing saved yet — infer only from this dump and transcript. When they share stable preferences, constraints, or facts worth recalling later, use save() so future preps can use them.)`;
+(nothing saved yet — infer only from this dump. When they share stable preferences, constraints, or facts worth recalling later, add them via memory_writes so future runs can use them.)`;
     }
     const seen = new Set<string>();
     const lines: string[] = [];
@@ -89,7 +89,7 @@ export class ProfileService {
     }
     return `What I know about this user:\n${lines.join('\n')}
 
-Use this actively: tailor search terms, options, and tone to these facts. Call remember(memory_key) if a topic might have more detail than shown. Call save() when the user (or tools) adds or updates something durable — don't skip "small" facts; they compound.`;
+Use this when interpreting the dump, matching open tasks, and choosing tone or timing. When the user adds or updates something durable, output it in memory_writes — don't skip small facts; they compound.`;
   }
 
   async remember(userId: string, key: string): Promise<string | null> {

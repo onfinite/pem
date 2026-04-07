@@ -3,7 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
-import { ActionablesModule } from './actionables/actionables.module';
+import { AskModule } from './ask/ask.module';
+import { ExtractsModule } from './extracts/extracts.module';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { BackgroundModule } from './background/background.module';
@@ -25,10 +26,11 @@ import { WebhooksModule } from './webhooks/webhooks.module';
         limit: 100,
       },
     ]),
+    AskModule,
     BackgroundModule,
     DatabaseModule,
     DumpsModule,
-    ActionablesModule,
+    ExtractsModule,
     InboxModule,
     UsersModule,
     WebhooksModule,

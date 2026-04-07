@@ -6,7 +6,7 @@ import { MessageEvent } from '@nestjs/common';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow } from '../database/schemas';
-import { ActionablesService } from '../actionables/actionables.service';
+import { ExtractsService } from '../extracts/extracts.service';
 import { InboxStreamService } from './inbox-stream.service';
 
 @ApiTags('inbox')
@@ -15,27 +15,24 @@ import { InboxStreamService } from './inbox-stream.service';
 @ApiBearerAuth('clerk')
 export class InboxController {
   constructor(
-    private readonly actionables: ActionablesService,
+    private readonly extracts: ExtractsService,
     private readonly stream: InboxStreamService,
   ) {}
 
   @Get()
   @ApiOperation({ summary: 'Today inbox' })
   async getToday(@CurrentUser() user: UserRow) {
-    await this.actionables.wakeSnoozed(user.id);
-    const today = await this.actionables.listToday(user.id);
-    return {
-      today: today.map((a) => this.actionables.serialize(a)),
-    };
+    await this.extracts.wakeSnoozed(user.id);
+    const today = await this.extracts.listToday(user.id);
+    return { today: today.map((a) => this.extracts.serialize(a)) };
   }
 
   @Get('all')
   @ApiOperation({ summary: 'Full inbox sections' })
   async getAll(@CurrentUser() user: UserRow) {
-    await this.actionables.wakeSnoozed(user.id);
-    const data = await this.actionables.listAllForUser(user.id);
-    const ser = (a: (typeof data.this_week)[0]) =>
-      this.actionables.serialize(a);
+    await this.extracts.wakeSnoozed(user.id);
+    const data = await this.extracts.listAllForUser(user.id);
+    const ser = (a: (typeof data.this_week)[0]) => this.extracts.serialize(a);
     return {
       this_week: data.this_week.map(ser),
       someday: data.someday.map(ser),
@@ -44,6 +41,11 @@ export class InboxController {
       batch_groups: data.batch_groups.map((g) => ({
         batch_key: g.batch_key,
         items: g.items.map(ser),
+      })),
+      batch_slots: data.batch_slots.map((s) => ({
+        batch_key: s.batch_key,
+        count: s.count,
+        items: s.items.map(ser),
       })),
     };
   }

@@ -8,9 +8,7 @@ export async function apiFetch<T>(
   const token = await getToken();
   const headers = new Headers(rest.headers);
   headers.set("Accept", "application/json");
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   if (rest.body && !headers.has("Content-Type") && !(rest.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
@@ -27,14 +25,10 @@ export async function apiFetch<T>(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    if (res.status === 429) {
-      throw new Error("Too many requests. Try again in a moment.");
-    }
+    if (res.status === 429) throw new Error("Too many requests. Try again in a moment.");
     throw new Error(text || `HTTP ${res.status}`);
   }
-  if (res.status === 204) {
-    return undefined as T;
-  }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -49,7 +43,7 @@ export async function createDump(
   });
 }
 
-export type ApiActionable = {
+export type ApiExtract = {
   id: string;
   dump_id: string;
   text: string;
@@ -67,26 +61,60 @@ export type ApiActionable = {
   done_at: string | null;
   dismissed_at: string | null;
   pem_note: string | null;
+  recommended_at: string | null;
   draft_text: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export async function getInboxToday(getToken: () => Promise<string | null>) {
-  return apiFetch<{ today: ApiActionable[] }>("/inbox", {
-    method: "GET",
-    getToken,
-  });
+  return apiFetch<{ today: ApiExtract[] }>("/inbox", { method: "GET", getToken });
 }
+
+export type BatchSlot = {
+  batch_key: string;
+  count: number;
+  items: ApiExtract[];
+};
 
 export async function getInboxAll(getToken: () => Promise<string | null>) {
   return apiFetch<{
-    this_week: ApiActionable[];
-    someday: ApiActionable[];
-    ideas: ApiActionable[];
-    dismissed: ApiActionable[];
-    batch_groups: { batch_key: string; items: ApiActionable[] }[];
+    this_week: ApiExtract[];
+    someday: ApiExtract[];
+    ideas: ApiExtract[];
+    dismissed: ApiExtract[];
+    batch_groups: { batch_key: string; items: ApiExtract[] }[];
+    batch_slots: BatchSlot[];
   }>("/inbox/all", { method: "GET", getToken });
+}
+
+export type ExtractsQueryParams = {
+  status?: "open" | "inbox" | "snoozed" | "dismissed" | "done";
+  batch_key?: "shopping" | "calls" | "emails" | "errands";
+  tone?: "confident" | "tentative" | "idea" | "someday";
+  exclude_tone?: "confident" | "tentative" | "idea" | "someday";
+  urgency?: "today" | "this_week" | "someday" | "none";
+  limit?: number;
+  cursor?: string | null;
+};
+
+export async function getExtractsQuery(
+  getToken: () => Promise<string | null>,
+  params: ExtractsQueryParams,
+) {
+  const q = new URLSearchParams();
+  if (params.status) q.set("status", params.status);
+  if (params.batch_key) q.set("batch_key", params.batch_key);
+  if (params.tone) q.set("tone", params.tone);
+  if (params.exclude_tone) q.set("exclude_tone", params.exclude_tone);
+  if (params.urgency) q.set("urgency", params.urgency);
+  if (params.limit) q.set("limit", String(params.limit));
+  if (params.cursor) q.set("cursor", params.cursor);
+  const qs = q.toString();
+  return apiFetch<{ items: ApiExtract[]; next_cursor: string | null }>(
+    `/extracts/query${qs ? `?${qs}` : ""}`,
+    { method: "GET", getToken },
+  );
 }
 
 export async function getDonePage(
@@ -97,14 +125,13 @@ export async function getDonePage(
   if (opts?.limit) q.set("limit", String(opts.limit));
   if (opts?.cursor) q.set("cursor", opts.cursor);
   const qs = q.toString();
-  return apiFetch<{ items: ApiActionable[]; next_cursor: string | null }>(
-    `/actionables/done${qs ? `?${qs}` : ""}`,
+  return apiFetch<{ items: ApiExtract[]; next_cursor: string | null }>(
+    `/extracts/done${qs ? `?${qs}` : ""}`,
     { method: "GET", getToken },
   );
 }
 
-/** Inbox + snoozed — everything not done or dismissed. */
-export async function getActionablesOpen(
+export async function getExtractsOpen(
   getToken: () => Promise<string | null>,
   opts?: { limit?: number; cursor?: string | null },
 ) {
@@ -112,8 +139,8 @@ export async function getActionablesOpen(
   if (opts?.limit) q.set("limit", String(opts.limit));
   if (opts?.cursor) q.set("cursor", opts.cursor);
   const qs = q.toString();
-  return apiFetch<{ items: ApiActionable[]; next_cursor: string | null }>(
-    `/actionables/open${qs ? `?${qs}` : ""}`,
+  return apiFetch<{ items: ApiExtract[]; next_cursor: string | null }>(
+    `/extracts/open${qs ? `?${qs}` : ""}`,
     { method: "GET", getToken },
   );
 }
@@ -131,8 +158,9 @@ export async function getDumpsPage(
       id: string;
       text: string;
       status: "processing" | "processed" | "failed";
+      last_error: string | null;
       created_at: string;
-      actionable_count: number;
+      extract_count: number;
     }[];
     next_cursor: string | null;
   }>(`/dumps${qs ? `?${qs}` : ""}`, { method: "GET", getToken });
@@ -147,19 +175,33 @@ export async function getDumpDetail(
       id: string;
       text: string;
       status: "processing" | "processed" | "failed";
+      last_error?: string | null;
       raw_text?: string;
       polished_text?: string | null;
+      additional_context?: unknown | null;
+      agent_assumptions?: unknown | null;
       created_at: string;
     };
-    actionables: ApiActionable[];
+    extracts: ApiExtract[];
   }>(`/dumps/${dumpId}`, { method: "GET", getToken });
 }
 
-export async function patchActionableDone(
+export async function patchExtractDone(
   getToken: () => Promise<string | null>,
   id: string,
 ) {
-  return apiFetch<{ item: ApiActionable }>(`/actionables/${id}/done`, {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/done`, {
+    method: "PATCH",
+    getToken,
+    body: "{}",
+  });
+}
+
+export async function patchExtractDismiss(
+  getToken: () => Promise<string | null>,
+  id: string,
+) {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/dismiss`, {
     method: "PATCH",
     getToken,
     body: "{}",
@@ -178,10 +220,10 @@ export async function patchTimezone(
 }
 
 export async function getMe(getToken: () => Promise<string | null>) {
-  return apiFetch<{
-    id: string;
-    timezone?: string | null;
-  }>("/users/me", { method: "GET", getToken });
+  return apiFetch<{ id: string; timezone?: string | null }>("/users/me", {
+    method: "GET",
+    getToken,
+  });
 }
 
 export async function setUserPushToken(
@@ -247,8 +289,44 @@ export async function deleteProfileFact(
   getToken: () => Promise<string | null>,
   id: string,
 ) {
-  await apiFetch<void>(`/users/me/profile/${id}`, {
-    method: "DELETE",
-    getToken,
+  await apiFetch<void>(`/users/me/profile/${id}`, { method: "DELETE", getToken });
+}
+
+/** Voice dump — upload audio for transcription and dump creation. */
+export async function createVoiceDump(
+  getToken: () => Promise<string | null>,
+  audioUri: string,
+  mimeType = "audio/m4a",
+): Promise<{ dumpId: string; text: string }> {
+  const token = await getToken();
+  const formData = new FormData();
+  formData.append("audio", {
+    uri: audioUri,
+    name: "recording.m4a",
+    type: mimeType,
+  } as any);
+  const res = await fetch(`${getApiBaseUrl()}/dumps/voice`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+    body: formData,
   });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return (await res.json()) as { dumpId: string; text: string };
+}
+
+/** Ask Pem — quick Q&A about your thoughts/extracts. */
+export async function askPem(
+  getToken: () => Promise<string | null>,
+  question: string,
+) {
+  return apiFetch<{ answer: string; sources: { id: string; text: string }[] }>(
+    "/ask",
+    { method: "POST", getToken, body: JSON.stringify({ question }) },
+  );
 }

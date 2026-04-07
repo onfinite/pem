@@ -198,7 +198,7 @@ function formatTimedForAgentFromStruct(v: TimedProfileValue): string {
   return `Now: ${v.current || '—'}.${prev}`;
 }
 
-/** One line for agent / prep context (any key). */
+/** One line for LLM context (any key). */
 export function formatTimedForAgent(raw: string): string {
   if (storedValueIsTimedJson(raw)) {
     try {

@@ -9,7 +9,7 @@ const UNTIL_VALUES = [
   'someday',
 ] as const;
 
-export class SnoozeActionableDto {
+export class SnoozeExtractDto {
   @ApiProperty({ enum: UNTIL_VALUES })
   @IsString()
   @IsIn([...UNTIL_VALUES])

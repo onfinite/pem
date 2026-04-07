@@ -1,8 +1,8 @@
-import PushNotificationRegistrar from "@/components/push/PushNotificationRegistrar";
 import TimezoneRegistrar from "@/components/auth/TimezoneRegistrar";
+import PushNotificationRegistrar from "@/components/push/PushNotificationRegistrar";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
+import { AppDrawerProvider } from "@/contexts/AppDrawerContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { replaceAnimationForRoute } from "@/lib/mainTabNav";
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 import { View } from "react-native";
@@ -27,16 +27,14 @@ export default function AppLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <TimezoneRegistrar />
-      <Stack
-        screenOptions={({ route }) => {
-          const replaceAnim = replaceAnimationForRoute(route.name);
-          return {
+      <AppDrawerProvider>
+        <Stack
+          screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.pageBackground },
-            ...(replaceAnim !== undefined ? { animationTypeForReplace: replaceAnim } : {}),
-          };
-        }}
-      />
+          }}
+        />
+      </AppDrawerProvider>
       <PushNotificationRegistrar />
     </GestureHandlerRootView>
   );
