@@ -211,8 +211,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <CalendarSection />
-
         <PemText variant="label" style={styles.sectionLabel}>
           Pem memory
         </PemText>
@@ -303,6 +301,8 @@ export default function SettingsScreen() {
             );
           })}
         </View>
+
+        <CalendarSection />
 
         <View style={styles.signOutWrap}>
           <PemButton variant="secondary" size="md" onPress={onSignOut}>

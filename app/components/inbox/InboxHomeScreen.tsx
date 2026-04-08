@@ -169,8 +169,8 @@ export default function InboxHomeScreen() {
 
   const refreshAfterAction = useCallback(() => {
     void load("silent");
-    if (isCategoryTab) void loadCategory("initial");
-  }, [load, isCategoryTab, loadCategory]);
+    if (isCategoryTab) void loadCategory(tab);
+  }, [load, isCategoryTab, loadCategory, tab]);
 
   const onDone = useCallback(async () => {
     if (!detail) return;
@@ -206,27 +206,26 @@ export default function InboxHomeScreen() {
 
   const isCategoryTab = tab !== "brief" && tab !== "dumps";
 
-  const loadCategory = useCallback(async (mode: "initial" | "pull" = "initial") => {
-    const meta = CATEGORY_META[tab];
+  const loadCategory = useCallback(async (slug: Tab, mode: "initial" | "pull" = "initial") => {
+    const meta = CATEGORY_META[slug];
     if (!meta) return;
-    if (mode === "initial") setCatLoading(true);
+    if (mode === "initial") { setCatItems([]); setCatLoading(true); }
     if (mode === "pull") setCatRefreshing(true);
     try {
-      const res = await getExtractsQuery(() => getTokenRef.current(), { ...meta.filter, limit: 60 } as any);
+      const res = await getExtractsQuery(() => getTokenRef.current(), { ...meta.filter, limit: 50 } as any);
       setCatItems(res.items);
-    } catch { /* quiet */ }
-    finally {
+    } catch (e) {
+      console.warn("loadCategory error:", e);
+    } finally {
       if (mode === "initial") setCatLoading(false);
       if (mode === "pull") setCatRefreshing(false);
     }
-  }, [tab]);
+  }, []);
 
   useEffect(() => {
-    if (isCategoryTab) {
-      setCatItems([]);
-      void loadCategory("initial");
-    }
-  }, [isCategoryTab, loadCategory]);
+    if (!isCategoryTab) return;
+    void loadCategory(tab);
+  }, [tab, isCategoryTab, loadCategory]);
 
   const hasOverdue = (brief?.overdue.length ?? 0) > 0;
   const hasToday = (brief?.today.length ?? 0) > 0;
@@ -421,9 +420,10 @@ export default function InboxHomeScreen() {
         if (catLoading) return <PemLoadingIndicator placement="pageCenter" />;
         return (
           <FlatList
+            style={{ flex: 1 }}
             data={catItems}
             keyExtractor={(item) => item.id}
-            refreshControl={<PemRefreshControl refreshing={catRefreshing} onRefresh={() => void loadCategory("pull")} />}
+            refreshControl={<PemRefreshControl refreshing={catRefreshing} onRefresh={() => void loadCategory(tab, "pull")} />}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => (
               <PemListRow
@@ -497,8 +497,8 @@ function Chip({ label, Icon, count, active, chrome, onPress }: { label: string; 
       style={[
         styles.chip,
         {
-          backgroundColor: active ? chrome.text : chrome.surfaceMuted,
-          borderColor: active ? chrome.text : chrome.border,
+          backgroundColor: active ? chrome.text : chrome.surface,
+          borderColor: active ? chrome.text : chrome.borderStrong,
         },
       ]}
     >
@@ -506,9 +506,9 @@ function Chip({ label, Icon, count, active, chrome, onPress }: { label: string; 
       <PemText variant="caption" style={{ color: active ? chrome.page : chrome.text, fontWeight: active ? "600" : "400" }}>
         {label}
       </PemText>
-      {count != null && count > 0 && !active && (
-        <View style={[styles.chipBadge, { backgroundColor: chrome.textDim }]}>
-          <PemText variant="caption" style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>
+      {count != null && count > 0 && (
+        <View style={[styles.chipBadge, { backgroundColor: active ? chrome.page : chrome.textMuted }]}>
+          <PemText variant="caption" style={{ color: active ? chrome.text : "#fff", fontSize: 10, fontWeight: "700" }}>
             {count > 99 ? "99+" : count}
           </PemText>
         </View>

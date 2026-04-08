@@ -20,17 +20,17 @@ export function inboxChrome(resolved: "light" | "dark"): InboxChrome {
   if (resolved === "dark") {
     return {
       page: "#141410",
-      surface: "#1c1c18",
+      surface: "#1c1c1e",
       surfaceMuted: "#232320",
       border: "#2a2a26",
-      borderStrong: "#333330",
-      text: "#fafaf8",
-      textMuted: "#888880",
-      textDim: "#555550",
-      amberSoft: "rgba(232,118,58,0.07)",
-      amberBorder: "rgba(232,118,58,0.16)",
-      urgentBg: "rgba(255,69,58,0.05)",
-      urgentBorder: "rgba(255,69,58,0.12)",
+      borderStrong: "#3a3a36",
+      text: "#ffffff",
+      textMuted: "#a8a8a4",
+      textDim: "#787870",
+      amberSoft: "rgba(232,118,58,0.10)",
+      amberBorder: "rgba(232,118,58,0.22)",
+      urgentBg: "rgba(255,69,58,0.08)",
+      urgentBorder: "rgba(255,69,58,0.18)",
     };
   }
   return {

@@ -97,6 +97,7 @@ export default function DumpsList({ chrome, getToken }: Props) {
 
   return (
     <FlatList
+      style={{ flex: 1 }}
       data={rows}
       keyExtractor={(item) => item.id}
       refreshControl={
