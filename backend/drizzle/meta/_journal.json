@@ -36,6 +36,13 @@
       "when": 1775626373418,
       "tag": "0004_sour_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775630380000,
+      "tag": "0005_loud_emma_frost",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,6 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 import { View } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 export default function AppLayout() {
   const { colors } = useTheme();
@@ -24,7 +23,7 @@ export default function AppLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <TimezoneRegistrar />
       <Stack
         screenOptions={{
@@ -33,6 +32,6 @@ export default function AppLayout() {
         }}
       />
       <PushNotificationRegistrar />
-    </GestureHandlerRootView>
+    </View>
   );
 }

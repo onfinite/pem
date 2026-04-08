@@ -64,7 +64,13 @@ const SYSTEM = `You are Pem's reconciliation agent (Phase 2 of 2). A prior agent
 - Use the Memory section to understand the user's life context — it helps you decide whether items relate to existing tasks.
 - Datetimes: The hour in the ISO string must be what the user's clock shows. Never do UTC math yourself.
 - Only reference IDs that appear in the open_tasks list. Never reference done tasks.
-- Be conservative: when unsure, use medium or low confidence, or omit entirely.`;
+- Be conservative: when unsure, use medium or low confidence, or omit entirely.
+
+## Output shape (required)
+- You MUST include every top-level key: merge_operations, lifecycle_commands, follow_up_writes, calendar_writes, deduplications.
+- Use empty arrays [] when a section has no entries — never omit a key or use null instead of an array.
+- confidence must be exactly one of: high, medium, low (lowercase).
+- For nullable fields use JSON null, not empty string, when absent (except where the schema allows empty string).`;
 
 export type OpenTaskForReconcile = {
   id: string;
@@ -178,6 +184,7 @@ ${followUpsJson}
           output: Output.object({ schema: fallback }),
           system: SYSTEM,
           prompt,
+          temperature: 0,
           providerOptions: { openai: { strictJsonSchema: false } },
         });
 
@@ -189,10 +196,10 @@ ${followUpsJson}
       } catch (retryErr) {
         const retryMsg =
           retryErr instanceof Error ? retryErr.message : 'unknown';
-        this.log.error(`Reconcile retry also failed: ${retryMsg}`);
-        throw new Error(
-          `Reconcile failed: primary: ${msg} | fallback: ${retryMsg}`,
+        this.log.error(
+          `Reconcile retry also failed (${retryMsg}) — continuing with no merge/calendar/follow-up from Phase 2`,
         );
+        return emptyResult();
       }
     }
   }

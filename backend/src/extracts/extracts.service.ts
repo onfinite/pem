@@ -9,6 +9,7 @@ import {
   asc,
   desc,
   eq,
+  inArray,
   isNotNull,
   lt,
   lte,
@@ -22,14 +23,14 @@ import { DateTime } from 'luxon';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
-  logsTable,
+  dumpsTable,
   extractsTable,
+  logsTable,
+  reportedIssuesTable,
   usersTable,
   type ExtractRow,
   type LogRow,
 } from '../database/schemas';
-import { CalendarSyncService } from '../calendar/calendar-sync.service';
-
 export type SnoozeUntil =
   | 'later_today'
   | 'tomorrow'
@@ -45,12 +46,19 @@ export type ExtractQueryFilters = {
   urgency?: string;
 };
 
+export type BriefBuckets = {
+  overdue: ExtractRow[];
+  today: ExtractRow[];
+  tomorrow: ExtractRow[];
+  this_week: ExtractRow[];
+  next_week: ExtractRow[];
+  later: ExtractRow[];
+  batch_counts: { batch_key: string; count: number }[];
+};
+
 @Injectable()
 export class ExtractsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleDb,
-    private readonly calendarSync: CalendarSyncService,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
   private async logUserChange(args: {
     userId: string;
@@ -323,19 +331,6 @@ export class ExtractsService {
     return u;
   }
 
-  /** Best-effort push to Google Calendar when an extract has a linked event. */
-  private async syncExtractToCalendar(row: ExtractRow): Promise<void> {
-    if (!row.calendarConnectionId || !row.externalEventId) return;
-    try {
-      await this.calendarSync.deleteFromGoogleCalendar(
-        row.calendarConnectionId,
-        row.externalEventId,
-      );
-    } catch {
-      // best-effort — calendar sync failures should never block the user
-    }
-  }
-
   async dismiss(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const row = await this.findForUser(userId, id);
@@ -354,7 +349,6 @@ export class ExtractsService {
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
 
-    await this.syncExtractToCalendar(row);
     await this.logUserChange({ userId, extractId: id, op: 'dismiss' });
     return u;
   }
@@ -459,16 +453,37 @@ export class ExtractsService {
   async reschedule(
     userId: string,
     id: string,
-    target: 'today' | 'this_week' | 'next_week' | 'someday',
+    target: 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'someday',
   ): Promise<ExtractRow> {
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
+
+    const zone = await this.getUserTimezone(userId);
+    const nowLux = DateTime.now().setZone(zone);
+
+    let urgency: ExtractRow['urgency'];
+    let dueAt: Date | null = row.dueAt;
+
+    if (target === 'tomorrow') {
+      urgency = 'this_week';
+      dueAt = nowLux
+        .plus({ days: 1 })
+        .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+        .toJSDate();
+    } else if (target === 'next_week') {
+      urgency = 'this_week';
+      dueAt = row.dueAt;
+    } else {
+      urgency = target;
+      dueAt = row.dueAt;
+    }
 
     const [u] = await this.db
       .update(extractsTable)
       .set({
         status: 'inbox',
-        urgency: target === 'next_week' ? 'this_week' : target,
+        urgency,
+        dueAt,
         snoozedUntil: null,
         updatedAt: new Date(),
       })
@@ -480,7 +495,12 @@ export class ExtractsService {
       userId,
       extractId: id,
       op: 'reschedule',
-      payload: { target, new_urgency: u.urgency, new_status: u.status },
+      payload: {
+        target,
+        new_urgency: u.urgency,
+        new_status: u.status,
+        new_due_at: u.dueAt?.toISOString() ?? null,
+      },
     });
     return u;
   }
@@ -489,11 +509,63 @@ export class ExtractsService {
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
 
+    const extractSnapshot: Record<string, unknown> = {
+      ...this.serialize(row),
+      calendar_connection_id: row.calendarConnectionId,
+    };
+
+    let dumpSnapshot: Record<string, unknown> | null = null;
+    if (row.dumpId) {
+      const [d] = await this.db
+        .select({
+          id: dumpsTable.id,
+          text: dumpsTable.dumpText,
+          polishedText: dumpsTable.polishedText,
+          status: dumpsTable.status,
+          createdAt: dumpsTable.createdAt,
+          additionalContext: dumpsTable.additionalContext,
+          agentAssumptions: dumpsTable.agentAssumptions,
+          audioKey: dumpsTable.audioKey,
+        })
+        .from(dumpsTable)
+        .where(
+          and(eq(dumpsTable.id, row.dumpId), eq(dumpsTable.userId, userId)),
+        )
+        .limit(1);
+      if (d) {
+        dumpSnapshot = {
+          id: d.id,
+          text: d.text,
+          polished_text: d.polishedText,
+          status: d.status,
+          created_at: d.createdAt.toISOString(),
+          additional_context: d.additionalContext,
+          agent_assumptions: d.agentAssumptions,
+          has_audio: d.audioKey != null && d.audioKey.length > 0,
+        };
+      }
+    }
+
+    const [created] = await this.db
+      .insert(reportedIssuesTable)
+      .values({
+        userId,
+        extractId: id,
+        dumpId: row.dumpId,
+        reason,
+        extractSnapshot,
+        dumpSnapshot,
+      })
+      .returning({ id: reportedIssuesTable.id });
+
     await this.logUserChange({
       userId,
       extractId: id,
       op: 'report',
-      payload: { reason },
+      payload: {
+        reason,
+        reported_issue_id: created?.id ?? null,
+      },
     });
   }
 
@@ -542,24 +614,88 @@ export class ExtractsService {
     };
   }
 
-  async getBrief(userId: string): Promise<{
-    overdue: ExtractRow[];
-    today: ExtractRow[];
-    tomorrow: ExtractRow[];
-    this_week: ExtractRow[];
-    next_week: ExtractRow[];
-    later: ExtractRow[];
-    batch_counts: { batch_key: string; count: number }[];
-  }> {
+  async getBrief(userId: string): Promise<BriefBuckets> {
     await this.wakeSnoozed(userId);
+    const zone = await this.getUserTimezone(userId);
+    const rows = await this.fetchExtractsForTimeline(userId, [
+      'inbox',
+      'snoozed',
+    ]);
+    return this.buildBriefBuckets(rows, zone);
+  }
 
+  /** Open actionable timeline for Ask Pem (inbox + snoozed), same bucketing as the daily brief. */
+  async getAskOpenTimelineBuckets(userId: string): Promise<BriefBuckets> {
+    await this.wakeSnoozed(userId);
+    const zone = await this.getUserTimezone(userId);
+    const rows = await this.fetchExtractsForTimeline(userId, [
+      'inbox',
+      'snoozed',
+    ]);
+    return this.buildBriefBuckets(rows, zone);
+  }
+
+  /** Every open shopping-tagged extract (any urgency), for shopping-list questions. */
+  async getAskOpenShoppingExtracts(userId: string): Promise<ExtractRow[]> {
+    await this.wakeSnoozed(userId);
+    return this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.batchKey, 'shopping'),
+          inArray(extractsTable.status, ['inbox', 'snoozed']),
+        ),
+      )
+      .orderBy(asc(extractsTable.dueAt), desc(extractsTable.createdAt));
+  }
+
+  /** Done or dismissed rows when the user explicitly asks about completed or dismissed items. */
+  async getAskClosedExtracts(
+    userId: string,
+    limit: number,
+  ): Promise<ExtractRow[]> {
+    const cap = Math.min(Math.max(limit, 1), 120);
+    return this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          inArray(extractsTable.status, ['done', 'dismissed']),
+        ),
+      )
+      .orderBy(desc(extractsTable.updatedAt))
+      .limit(cap);
+  }
+
+  private async getUserTimezone(userId: string): Promise<string> {
     const [user] = await this.db
       .select({ timezone: usersTable.timezone })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
-    const zone = user?.timezone ?? 'UTC';
+    return user?.timezone ?? 'UTC';
+  }
 
+  private async fetchExtractsForTimeline(
+    userId: string,
+    statuses: ('inbox' | 'snoozed')[],
+  ): Promise<ExtractRow[]> {
+    return this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          inArray(extractsTable.status, statuses),
+        ),
+      )
+      .orderBy(asc(extractsTable.dueAt), desc(extractsTable.createdAt));
+  }
+
+  private buildBriefBuckets(rows: ExtractRow[], zone: string): BriefBuckets {
     const nowLux = DateTime.now().setZone(zone);
     const now = nowLux.toJSDate();
     const todayEnd = nowLux.endOf('day').toJSDate();
@@ -576,28 +712,19 @@ export class ExtractsService {
       .endOf('day')
       .toJSDate();
 
-    const allInbox = await this.db
-      .select()
-      .from(extractsTable)
-      .where(
-        and(
-          eq(extractsTable.userId, userId),
-          eq(extractsTable.status, 'inbox'),
-        ),
-      )
-      .orderBy(asc(extractsTable.dueAt), desc(extractsTable.createdAt));
-
     const overdue: ExtractRow[] = [];
     const today: ExtractRow[] = [];
     const tomorrow: ExtractRow[] = [];
     const thisWeek: ExtractRow[] = [];
     const nextWeek: ExtractRow[] = [];
-    const later: ExtractRow[] = [];
 
-    for (const row of allInbox) {
+    for (const row of rows) {
       if (row.tone === 'idea') continue;
 
-      const anchor = row.eventStartAt ?? row.dueAt ?? row.periodStart ?? null;
+      const anchor =
+        row.status === 'snoozed' && row.snoozedUntil
+          ? row.snoozedUntil
+          : (row.eventStartAt ?? row.dueAt ?? row.periodStart ?? null);
 
       const isDueOverdue = row.dueAt && row.dueAt < now;
       const isEventOverdue =
@@ -620,28 +747,32 @@ export class ExtractsService {
       } else if (anchor && anchor <= nextWeekEnd) {
         nextWeek.push(row);
       } else if (anchor) {
-        later.push(row);
+        nextWeek.push(row);
       } else if (row.urgency !== 'someday' && row.urgency !== 'none') {
         thisWeek.push(row);
       }
     }
 
     const sortByAnchor = (a: ExtractRow, b: ExtractRow) => {
-      const aT = a.eventStartAt?.getTime() ?? a.dueAt?.getTime() ?? Infinity;
-      const bT = b.eventStartAt?.getTime() ?? b.dueAt?.getTime() ?? Infinity;
+      const aT =
+        a.status === 'snoozed' && a.snoozedUntil
+          ? a.snoozedUntil.getTime()
+          : (a.eventStartAt?.getTime() ?? a.dueAt?.getTime() ?? Infinity);
+      const bT =
+        b.status === 'snoozed' && b.snoozedUntil
+          ? b.snoozedUntil.getTime()
+          : (b.eventStartAt?.getTime() ?? b.dueAt?.getTime() ?? Infinity);
       return aT - bT;
     };
     today.sort(sortByAnchor);
     tomorrow.sort(sortByAnchor);
     thisWeek.sort(sortByAnchor);
     nextWeek.sort(sortByAnchor);
-    later.sort(sortByAnchor);
 
     const batchKeys = ['shopping', 'errands', 'follow_ups'] as const;
     const batch_counts = batchKeys.map((bk) => ({
       batch_key: bk,
-      count: allInbox.filter((r) => r.batchKey === bk && r.tone !== 'idea')
-        .length,
+      count: rows.filter((r) => r.batchKey === bk && r.tone !== 'idea').length,
     }));
 
     return {
@@ -650,7 +781,7 @@ export class ExtractsService {
       tomorrow,
       this_week: thisWeek,
       next_week: nextWeek,
-      later,
+      later: [],
       batch_counts,
     };
   }

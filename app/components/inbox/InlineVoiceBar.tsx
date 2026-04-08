@@ -7,7 +7,7 @@ import {
   createVoiceAsk,
   createVoiceDump,
 } from "@/lib/pemApi";
-import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
+import { pemImpactLight, pemImpactMedium, pemNotificationSuccess } from "@/lib/pemHaptics";
 import { useAuth } from "@clerk/expo";
 import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,14 +17,11 @@ import {
   Alert,
   Animated,
   Keyboard,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
+  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,6 +35,8 @@ type Props = {
   onPemResponse?: (answer: string, sources: { id: string; text: string }[]) => void;
   onThinking?: () => void;
   onThinkingDone?: () => void;
+  /** When true, Ask mode cannot send another question until the current one finishes. */
+  askLocked?: boolean;
 };
 
 type BarMode = "idle" | "recording" | "paused" | "text";
@@ -49,16 +48,14 @@ export default function InlineVoiceBar({
   onPemResponse,
   onThinking,
   onThinkingDone,
+  askLocked = false,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
   const chrome = inboxChrome(resolved);
   const { getToken } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
 
-  const modePagerW = windowWidth - space[4] * 2;
-  const modeScrollRef = useRef<ScrollView>(null);
   const [intakeMode, setIntakeMode] = useState<IntakeMode>("dump");
 
   const [barMode, setBarMode] = useState<BarMode>("idle");
@@ -69,25 +66,32 @@ export default function InlineVoiceBar({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRef = useRef<TextInput>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  const scrollToMode = useCallback(
-    (m: IntakeMode) => {
-      modeScrollRef.current?.scrollTo({
-        x: m === "dump" ? 0 : modePagerW,
-        animated: true,
-      });
-    },
-    [modePagerW],
-  );
+  useEffect(() => {
+    const showEvt =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = (e: { endCoordinates: { height: number } }) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    };
+    const onHide = () => setKeyboardHeight(0);
+    const subShow = Keyboard.addListener(showEvt, onShow);
+    const subHide = Keyboard.addListener(hideEvt, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
 
-  const onModeScrollEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const x = e.nativeEvent.contentOffset.x;
-      const page = Math.round(x / modePagerW);
-      setIntakeMode(page <= 0 ? "dump" : "ask");
-    },
-    [modePagerW],
-  );
+  const toggleIntakeMode = useCallback(() => {
+    if (askLocked && intakeMode === "dump") return;
+    pemImpactLight();
+    Keyboard.dismiss();
+    setText("");
+    setIntakeMode((m) => (m === "dump" ? "ask" : "dump"));
+  }, [askLocked, intakeMode]);
 
   useEffect(() => {
     if (barMode !== "recording") return;
@@ -111,6 +115,7 @@ export default function InlineVoiceBar({
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
   const startRecording = useCallback(async () => {
+    if (askLocked && intakeMode === "ask") return;
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
@@ -129,7 +134,7 @@ export default function InlineVoiceBar({
     } catch {
       Alert.alert("Recording failed", "Please check microphone permissions.");
     }
-  }, []);
+  }, [askLocked, intakeMode]);
 
   const cancelRecording = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -163,6 +168,15 @@ export default function InlineVoiceBar({
   const stopAndSend = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current);
     const modeAtSend = intakeMode;
+    if (modeAtSend === "ask" && askLocked) {
+      setBarMode("idle");
+      setDuration(0);
+      try {
+        await recordingRef.current?.stopAndUnloadAsync();
+      } catch {}
+      recordingRef.current = null;
+      return;
+    }
     setSending(true);
     try {
       await recordingRef.current?.stopAndUnloadAsync();
@@ -173,7 +187,7 @@ export default function InlineVoiceBar({
         setSending(false);
         return;
       }
-      pemImpactLight();
+      pemImpactMedium();
       setBarMode("idle");
       setDuration(0);
 
@@ -217,11 +231,12 @@ export default function InlineVoiceBar({
     onPemResponse,
     onThinking,
     onThinkingDone,
+    askLocked,
   ]);
 
   const sendText = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || (askLocked && intakeMode === "ask")) return;
     const modeAtSend = intakeMode;
     Keyboard.dismiss();
     setSending(true);
@@ -258,69 +273,86 @@ export default function InlineVoiceBar({
     onPemResponse,
     onThinking,
     onThinkingDone,
+    askLocked,
   ]);
 
   const hasText = text.trim().length > 0;
+  const askInputLocked = askLocked && intakeMode === "ask";
   const placeholder =
     intakeMode === "ask"
-      ? "Ask Pem…"
+      ? askInputLocked
+        ? "Pem is answering…"
+        : "Ask Pem…"
       : "Brain dump, command, or thought…";
+
+  const bottomPad =
+    keyboardHeight > 0 ? space[2] : Math.max(insets.bottom, space[4]);
 
   return (
     <LinearGradient
       colors={[`${chrome.page}00`, chrome.page]}
       locations={[0, 0.45]}
-      style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, space[4]) }]}
+      style={[
+        styles.wrap,
+        {
+          bottom: keyboardHeight,
+          paddingBottom: bottomPad,
+        },
+      ]}
       pointerEvents="box-none"
     >
-      <ScrollView
-        ref={modeScrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        keyboardShouldPersistTaps="handled"
-        onMomentumScrollEnd={onModeScrollEnd}
-        style={{ width: modePagerW, alignSelf: "center", marginBottom: space[2] }}
-        contentContainerStyle={{ width: modePagerW * 2 }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Dump mode — swipe right for Ask"
-          onPress={() => {
-            pemImpactLight();
-            setIntakeMode("dump");
-            scrollToMode("dump");
-          }}
-          style={[styles.modePage, { width: modePagerW }]}
+      {(barMode === "recording" || barMode === "paused") && (
+        <Text
+          style={[styles.recordingModeLabel, { color: chrome.textDim }]}
+          accessibilityLiveRegion="polite"
         >
-          <PemTextChrome chrome={chrome} active={intakeMode === "dump"} bold>
-            Dump
-          </PemTextChrome>
-          <PemTextChrome chrome={chrome} active={false} caption>
-            Save & organize — fire and forget
-          </PemTextChrome>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Ask mode — swipe left for Dump"
-          onPress={() => {
-            pemImpactLight();
-            setIntakeMode("ask");
-            scrollToMode("ask");
-          }}
-          style={[styles.modePage, { width: modePagerW }]}
-        >
-          <PemTextChrome chrome={chrome} active={intakeMode === "ask"} bold>
-            Ask
-          </PemTextChrome>
-          <PemTextChrome chrome={chrome} active={false} caption>
-            Answer only — nothing saved as a dump
-          </PemTextChrome>
-        </Pressable>
-      </ScrollView>
+          {intakeMode === "ask" ? "Voice question" : "Voice dump"}
+        </Text>
+      )}
 
-      <View style={[styles.bar, { borderColor: chrome.border, backgroundColor: chrome.surface }]}>
+      <View style={styles.barRow}>
+        {barMode !== "recording" && barMode !== "paused" ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              intakeMode === "dump"
+                ? "Switch to ask — question only, not saved as a dump"
+                : "Switch to dump — save and organize"
+            }
+            accessibilityState={{ disabled: askLocked && intakeMode === "dump" }}
+            disabled={askLocked && intakeMode === "dump"}
+            onPress={toggleIntakeMode}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            style={[
+              styles.modeToggle,
+              askLocked && intakeMode === "dump" ? { opacity: 0.38 } : null,
+            ]}
+          >
+            {intakeMode === "dump" ? (
+              <>
+                <Text style={[styles.modeToggleGlyph, { color: chrome.text }]}>?</Text>
+                <Text style={[styles.modeToggleCaption, { color: chrome.textMuted }]}>ask</Text>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.modeToggleGlyph, { color: chrome.text }]}>×</Text>
+                <Text style={[styles.modeToggleCaption, { color: chrome.textMuted }]}>dump</Text>
+              </>
+            )}
+          </Pressable>
+        ) : null}
+
+        <View
+          style={[
+            styles.bar,
+            {
+              flex: 1,
+              borderColor: chrome.border,
+              backgroundColor: chrome.surface,
+              opacity: askInputLocked ? 0.55 : 1,
+            },
+          ]}
+        >
         {barMode === "recording" || barMode === "paused" ? (
           <>
             <Pressable
@@ -360,8 +392,8 @@ export default function InlineVoiceBar({
               accessibilityRole="button"
               accessibilityLabel="Send recording"
               onPress={() => void stopAndSend()}
-              disabled={sending}
-              style={[styles.actionBtn, { backgroundColor: pemAmber, opacity: sending ? 0.5 : 1 }]}
+              disabled={sending || askInputLocked}
+              style={[styles.actionBtn, { backgroundColor: pemAmber, opacity: sending || askInputLocked ? 0.5 : 1 }]}
             >
               <ArrowUp size={20} color="#fff" strokeWidth={2.5} />
             </Pressable>
@@ -380,6 +412,7 @@ export default function InlineVoiceBar({
               placeholderTextColor={chrome.textDim}
               maxLength={4000}
               multiline
+              editable={!askInputLocked}
               style={[styles.input, { color: chrome.text, fontFamily: fontFamily.sans.regular }]}
             />
             {hasText ? (
@@ -387,8 +420,8 @@ export default function InlineVoiceBar({
                 accessibilityRole="button"
                 accessibilityLabel="Send"
                 onPress={() => void sendText()}
-                disabled={sending}
-                style={[styles.actionBtn, { backgroundColor: pemAmber, opacity: sending ? 0.5 : 1 }]}
+                disabled={sending || askInputLocked}
+                style={[styles.actionBtn, { backgroundColor: pemAmber, opacity: sending || askInputLocked ? 0.5 : 1 }]}
               >
                 <ArrowUp size={20} color="#fff" strokeWidth={2.5} />
               </Pressable>
@@ -397,44 +430,17 @@ export default function InlineVoiceBar({
                 accessibilityRole="button"
                 accessibilityLabel="Record voice"
                 onPress={() => void startRecording()}
-                style={[styles.actionBtn, { backgroundColor: pemAmber }]}
+                disabled={askInputLocked}
+                style={[styles.actionBtn, { backgroundColor: pemAmber, opacity: askInputLocked ? 0.45 : 1 }]}
               >
                 <Mic size={20} color="#fff" strokeWidth={2} />
               </Pressable>
             )}
           </>
         )}
+        </View>
       </View>
     </LinearGradient>
-  );
-}
-
-function PemTextChrome({
-  children,
-  chrome,
-  active,
-  bold,
-  caption,
-}: {
-  children: string;
-  chrome: ReturnType<typeof inboxChrome>;
-  active: boolean;
-  bold?: boolean;
-  caption?: boolean;
-}) {
-  return (
-    <Text
-      style={{
-        color: active ? chrome.text : chrome.textMuted,
-        fontFamily: bold ? fontFamily.sans.semibold : fontFamily.sans.regular,
-        fontSize: caption ? fontSize.xs : fontSize.md,
-        fontWeight: bold ? "600" : "400",
-        textAlign: "center",
-        marginTop: caption ? 2 : 0,
-      }}
-    >
-      {children}
-    </Text>
   );
 }
 
@@ -447,10 +453,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[4],
     paddingTop: space[6],
   },
-  modePage: {
+  recordingModeLabel: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.xs,
+    textAlign: "center",
+    marginBottom: space[2],
+  },
+  barRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+  },
+  modeToggle: {
+    width: 44,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: space[1],
+  },
+  modeToggleGlyph: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: 22,
+    fontWeight: "600",
+    lineHeight: 26,
+    textAlign: "center",
+  },
+  modeToggleCaption: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: 10,
+    fontWeight: "500",
+    letterSpacing: 0.2,
+    marginTop: 1,
+    textTransform: "lowercase",
+    textAlign: "center",
   },
   bar: {
     flexDirection: "row",

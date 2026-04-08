@@ -242,7 +242,7 @@ export class ValidationService {
         return false;
       }
       if (m.patch.due_at && !parseIso(m.patch.due_at)) {
-        m.patch.due_at = undefined;
+        m.patch.due_at = null;
         issues.push({
           phase: 'reconcile',
           field: 'merge_operations.patch.due_at',

@@ -8,10 +8,18 @@ import {
   toneChipLabel,
   urgencyChipLabel,
 } from "@/lib/extractLabels";
-import { getDumpAudioUrl, getDumpDetail, type ApiExtract, type LogEntry } from "@/lib/pemApi";
+import VoiceNotePlayer from "@/components/ui/VoiceNotePlayer";
+import { pemAmber } from "@/constants/theme";
+import {
+  getDumpAudioUrl,
+  getDumpDetail,
+  retryDumpExtraction,
+  type ApiExtract,
+  type LogEntry,
+} from "@/lib/pemApi";
+import { useDumpInboxStream } from "@/hooks/useDumpInboxStream";
 import { firstParam } from "@/lib/routeParams";
 import { useAuth } from "@clerk/expo";
-import { Audio } from "expo-av";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   Calendar,
@@ -20,15 +28,20 @@ import {
   Clock,
   FileText,
   Merge,
-  Pause,
-  Play,
   Plus,
   Settings2,
   XCircle,
   Zap,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -79,31 +92,33 @@ export default function ThoughtDetailScreen() {
   const [dumpStatus, setDumpStatus] = useState<
     "processing" | "processed" | "failed" | null
   >(null);
-  const [dumpLastError, setDumpLastError] = useState<string | null>(null);
   const [extracts, setExtracts] = useState<ApiExtract[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [hasAudio, setHasAudio] = useState(false);
-  const [audioPlaying, setAudioPlaying] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const [retryingDump, setRetryingDump] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!id) return;
-    setLoading(true);
-    setErr(null);
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+      setErr(null);
+    }
     try {
       const res = await getDumpDetail(() => getTokenRef.current(), id);
       setRawText(res.dump.raw_text ?? res.dump.text);
       setPolished(res.dump.polished_text ?? null);
       setDumpStatus(res.dump.status);
-      setDumpLastError(res.dump.last_error ?? null);
       setHasAudio(!!res.dump.has_audio);
       setExtracts(res.extracts);
       setLogs(res.logs);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't load");
-      setDumpStatus(null);
+      if (!silent) {
+        setErr(e instanceof Error ? e.message : "Couldn't load");
+        setDumpStatus(null);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [id]);
 
@@ -116,42 +131,41 @@ export default function ThoughtDetailScreen() {
     void load();
   }, [load, id]);
 
-  useEffect(() => {
-    return () => {
-      soundRef.current?.unloadAsync().catch(() => {});
-    };
-  }, []);
+  const loadSilentRef = useRef(() => {});
+  loadSilentRef.current = () => void load({ silent: true });
 
-  const toggleAudio = useCallback(async () => {
+  const streamDumpId =
+    dumpStatus === "processing" && id ? id : null;
+  const { streamDone } = useDumpInboxStream(streamDumpId, {
+    onInboxProgress: () => loadSilentRef.current(),
+  });
+
+  useEffect(() => {
+    if (!streamDone) return;
+    void load({ silent: true });
+  }, [streamDone, load]);
+
+  const fetchDumpAudio = useCallback(async () => {
+    if (!id) throw new Error("Missing dump");
+    const res = await getDumpAudioUrl(() => getTokenRef.current(), id);
+    return res.url;
+  }, [id]);
+
+  const onRetryDump = useCallback(async () => {
     if (!id) return;
-    if (audioPlaying && soundRef.current) {
-      await soundRef.current.pauseAsync();
-      setAudioPlaying(false);
-      return;
-    }
-    if (soundRef.current) {
-      await soundRef.current.playAsync();
-      setAudioPlaying(true);
-      return;
-    }
+    setRetryingDump(true);
     try {
-      const res = await getDumpAudioUrl(() => getTokenRef.current(), id);
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: res.url },
-        { shouldPlay: true },
-        (status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            setAudioPlaying(false);
-          }
-        },
-      );
-      soundRef.current = sound;
-      setAudioPlaying(true);
+      await retryDumpExtraction(() => getTokenRef.current(), id);
+      await load({ silent: true });
     } catch {
-      /* ignore — audio unavailable */
+      Alert.alert(
+        "Couldn't retry",
+        "Something went wrong. Try again in a moment.",
+      );
+    } finally {
+      setRetryingDump(false);
     }
-  }, [id, audioPlaying]);
+  }, [id, load]);
 
   const badgeColor =
     dumpStatus === "failed"
@@ -218,6 +232,7 @@ export default function ThoughtDetailScreen() {
           </PemText>
         </View>
       ) : (
+        <View style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ padding: space[5], paddingBottom: space[10] }}
           keyboardShouldPersistTaps="handled"
@@ -240,7 +255,7 @@ export default function ThoughtDetailScreen() {
                   marginBottom: space[1],
                 }}
               >
-                Error
+                Couldn’t process
               </PemText>
               <PemText
                 style={{
@@ -250,9 +265,36 @@ export default function ThoughtDetailScreen() {
                   lineHeight: lh(fontSize.sm, 1.55),
                 }}
               >
-                {dumpLastError?.trim() ||
-                  "Something went wrong. Try dumping again."}
+                The pipeline didn’t finish. You can try again below.
               </PemText>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Retry processing this dump"
+                disabled={retryingDump}
+                onPress={() => void onRetryDump()}
+                style={[
+                  styles.retryBtn,
+                  {
+                    backgroundColor: pemAmber,
+                    opacity: retryingDump ? 0.55 : 1,
+                  },
+                ]}
+              >
+                {retryingDump ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <PemText
+                    style={{
+                      fontFamily: fontFamily.sans.semibold,
+                      fontSize: fontSize.sm,
+                      fontWeight: "600",
+                      color: "#fff",
+                    }}
+                  >
+                    Try again
+                  </PemText>
+                )}
+              </Pressable>
             </View>
           )}
 
@@ -273,22 +315,12 @@ export default function ThoughtDetailScreen() {
             >
               {rawText}
             </PemText>
-            {hasAudio && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={audioPlaying ? "Pause audio" : "Play audio"}
-                onPress={() => void toggleAudio()}
-                style={[styles.audioBtn, { borderColor: chrome.border }]}
-              >
-                {audioPlaying ? (
-                  <Pause size={14} color={chrome.text} strokeWidth={2} />
-                ) : (
-                  <Play size={14} color={chrome.text} strokeWidth={2} />
-                )}
-                <PemText style={{ fontSize: fontSize.xs, color: chrome.text, marginLeft: 6 }}>
-                  {audioPlaying ? "Pause" : "Listen"}
-                </PemText>
-              </Pressable>
+            {hasAudio && id && (
+              <VoiceNotePlayer
+                key={id}
+                chrome={chrome}
+                fetchUrl={fetchDumpAudio}
+              />
             )}
           </View>
 
@@ -432,7 +464,7 @@ export default function ThoughtDetailScreen() {
                               marginTop: 2,
                             }}
                           >
-                            {log.error.message}
+                            Step failed — details aren’t shown here.
                           </PemText>
                         )}
                         <PemText style={{ fontSize: 10, color: chrome.textDim, marginTop: 2 }}>
@@ -447,6 +479,24 @@ export default function ThoughtDetailScreen() {
             </>
           )}
         </ScrollView>
+        {dumpStatus === "processing" ? (
+          <View
+            style={[styles.processingBanner, { backgroundColor: chrome.surface, borderColor: chrome.border }]}
+            pointerEvents="none"
+          >
+            <ActivityIndicator color={chrome.textMuted} />
+            <PemText
+              style={{
+                marginLeft: space[2],
+                fontSize: fontSize.sm,
+                color: chrome.textMuted,
+              }}
+            >
+              Still organizing…
+            </PemText>
+          </View>
+        ) : null}
+        </View>
       )}
     </View>
   );
@@ -574,14 +624,26 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: space[2],
   },
-  audioBtn: {
+  processingBanner: {
+    position: "absolute",
+    left: space[5],
+    right: space[5],
+    bottom: space[4],
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: space[3],
+    paddingHorizontal: space[3],
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  retryBtn: {
+    marginTop: space[3],
     alignSelf: "flex-start",
-    marginTop: space[2],
-    paddingVertical: space[1],
-    paddingHorizontal: space[2],
-    borderRadius: 6,
-    borderWidth: 1,
+    paddingVertical: space[2],
+    paddingHorizontal: space[4],
+    borderRadius: 10,
+    minHeight: 40,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

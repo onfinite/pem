@@ -4,11 +4,18 @@ import PemMindEmptyState from "@/components/ui/PemMindEmptyState";
 import PemRefreshControl from "@/components/ui/PemRefreshControl";
 import PemText from "@/components/ui/PemText";
 import type { InboxChrome } from "@/constants/inboxChrome";
-import { space } from "@/constants/typography";
-import { getDumpsPage } from "@/lib/pemApi";
+import { pemAmber } from "@/constants/theme";
+import { fontFamily, space } from "@/constants/typography";
+import { getDumpsPage, retryDumpExtraction } from "@/lib/pemApi";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Pressable, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  View,
+} from "react-native";
 
 function formatJournalTime(iso: string): { date: string; time: string } {
   const d = new Date(iso);
@@ -43,6 +50,7 @@ export default function DumpsList({ chrome, getToken }: Props) {
   const nextCursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
   const initialLoadDoneRef = useRef(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const load = useCallback(async (mode: "initial" | "pull" | "more" = "initial") => {
     if (mode === "initial") setLoading(true);
@@ -71,6 +79,27 @@ export default function DumpsList({ chrome, getToken }: Props) {
       if (mode === "initial") { setLoading(false); initialLoadDoneRef.current = true; }
       if (mode === "pull") setRefreshing(false);
       if (mode === "more") loadingMoreRef.current = false;
+    }
+  }, []);
+
+  const retryDump = useCallback(async (dumpId: string) => {
+    setRetryingId(dumpId);
+    try {
+      await retryDumpExtraction(() => getTokenRef.current(), dumpId);
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === dumpId
+            ? { ...r, status: "processing" as const, last_error: null }
+            : r,
+        ),
+      );
+    } catch (e) {
+      Alert.alert(
+        "Couldn't retry",
+        e instanceof Error ? e.message : "Unknown error",
+      );
+    } finally {
+      setRetryingId(null);
     }
   }, []);
 
@@ -121,6 +150,32 @@ export default function DumpsList({ chrome, getToken }: Props) {
             title={item.text}
             subtitle={sub}
             showChevron
+            right={
+              item.status === "failed" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry processing this dump"
+                  hitSlop={10}
+                  disabled={retryingId === item.id}
+                  onPress={() => void retryDump(item.id)}
+                >
+                  {retryingId === item.id ? (
+                    <ActivityIndicator size="small" color={pemAmber} />
+                  ) : (
+                    <PemText
+                      style={{
+                        fontFamily: fontFamily.sans.semibold,
+                        fontSize: 12,
+                        fontWeight: "600",
+                        color: pemAmber,
+                      }}
+                    >
+                      Retry
+                    </PemText>
+                  )}
+                </Pressable>
+              ) : undefined
+            }
             onPress={() => router.push({ pathname: "/thoughts/[id]", params: { id: item.id } })}
           />
         );

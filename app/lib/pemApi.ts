@@ -149,6 +149,7 @@ export async function getDumpsPage(
       id: string;
       text: string;
       status: "processing" | "processed" | "failed";
+      /** Always null from API — internal errors are not exposed. */
       last_error: string | null;
       created_at: string;
       extract_count: number;
@@ -166,6 +167,7 @@ export async function getDumpDetail(
       id: string;
       text: string;
       status: "processing" | "processed" | "failed";
+      /** Always null from API — internal errors are not exposed. */
       last_error?: string | null;
       raw_text?: string;
       polished_text?: string | null;
@@ -186,6 +188,17 @@ export async function getDumpAudioUrl(
   return apiFetch<{ url: string }>(`/dumps/${dumpId}/audio`, {
     method: "GET",
     getToken,
+  });
+}
+
+export async function retryDumpExtraction(
+  getToken: () => Promise<string | null>,
+  dumpId: string,
+) {
+  return apiFetch<{ ok: true }>(`/dumps/${dumpId}/retry`, {
+    method: "POST",
+    getToken,
+    body: "{}",
   });
 }
 
@@ -300,7 +313,12 @@ export async function patchExtractSnooze(
   });
 }
 
-export type RescheduleTarget = "today" | "this_week" | "next_week" | "someday";
+export type RescheduleTarget =
+  | "today"
+  | "tomorrow"
+  | "this_week"
+  | "next_week"
+  | "someday";
 
 export async function patchExtractReschedule(
   getToken: () => Promise<string | null>,

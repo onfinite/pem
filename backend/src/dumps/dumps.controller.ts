@@ -88,6 +88,18 @@ export class DumpsController {
     return { url };
   }
 
+  @Post(':id/retry')
+  @Throttle({ default: { ttl: 60000, limit: 15 } })
+  @ApiOperation({
+    summary: 'Retry extraction for a failed dump — re-queues the pipeline',
+  })
+  async retryExtraction(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<{ ok: true }> {
+    return this.dumps.retryExtraction(user.id, id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Single dump + extracts for that dump' })
   async getOne(

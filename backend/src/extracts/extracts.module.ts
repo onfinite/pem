@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
-import { CalendarModule } from '../calendar/calendar.module';
 import { DatabaseModule } from '../database/database.module';
 import { ProfileModule } from '../profile/profile.module';
 import { UsersModule } from '../users/users.module';
@@ -10,13 +9,7 @@ import { ExtractsController } from './extracts.controller';
 import { ExtractsService } from './extracts.service';
 
 @Module({
-  imports: [
-    DatabaseModule,
-    UsersModule,
-    ProfileModule,
-    ConfigModule,
-    CalendarModule,
-  ],
+  imports: [DatabaseModule, UsersModule, ProfileModule, ConfigModule],
   controllers: [ExtractsController],
   providers: [ExtractsService, DraftService],
   exports: [ExtractsService, UsersModule],

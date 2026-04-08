@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Pem mobile app (`app/`)
 
-**Product:** **dump → organized extracts + thoughts journal**. Primary surface: **`/inbox`** (Daily Brief). Voice-first dump via inline bar, text secondary. **Intake bar** — user picks **Dump** or **Ask** (swipe/tap); same text/voice UI, different endpoints (`/dumps` vs `/ask`, including voice variants).
+**Product:** **dump → organized extracts + thoughts journal**. Primary surface: **`/inbox`** (Daily Brief). Voice-first dump via inline bar, text secondary. **Intake bar** — user picks **Dump** or **Ask** via **? ask** / **× dump** toggle beside the field (no swipe); same text/voice UI, different endpoints (`/dumps` vs `/ask`, including voice variants).
 
 ## Screens & navigation
 
@@ -21,7 +21,7 @@ alwaysApply: false
 ## TypeScript & components
 
 - **TypeScript strict** — functional components only.
-- **API:** **`lib/pemApi.ts`** — types: `ApiExtract`, `BriefResponse`, `LogEntry`, `AskPemResponse`, `ExtractsQueryParams`. Key functions: `getBrief`, `getExtractHistory`, `generateExtractDraft`, `patchExtractDone`/`Dismiss`/`Undone`/`Undismiss`/`Snooze`, `createDump`, `createVoiceDump`, `askPem`, `createVoiceAsk`, `getAskHistory`. Routes: `/inbox/brief`, `/dumps`, `/dumps/voice`, `/ask`, `/ask/voice`, `/ask/history`, `/extracts/...`.
+- **API:** **`lib/pemApi.ts`** — types: `ApiExtract`, `BriefResponse`, `LogEntry`, `AskPemResponse`, `ExtractsQueryParams`. Key functions: `getBrief`, `getExtractHistory`, `generateExtractDraft`, `patchExtractDone`/`Dismiss`/`Undone`/`Undismiss`/`Snooze`, `createDump`, `createVoiceDump`, `retryDumpExtraction`, `askPem`, `createVoiceAsk`, `getAskHistory`. Routes: `/inbox/brief`, `/dumps`, `/dumps/voice`, `POST /dumps/:id/retry`, `/ask`, `/ask/voice`, `/ask/history`, `/extracts/...`.
 - **Inbox UI tokens:** **`constants/inboxChrome.ts`** (light/dark glance surfaces); compose with **`ThemeContext`**.
 - **Feature folders:** **`components/inbox/`** (InlineVoiceBar, PemResponseSheet, GlanceRow, ExtractDetailModal, InboxHeader, DumpSuccessOverlay), **`components/navigation/`** (drawer + menu button), **`components/ui/`** (`PemListRow`, `PemMindEmptyState`).
 - **InlineVoiceBar:** Dump mode → **`POST /dumps`** / **`POST /dumps/voice`**. Ask mode → **`POST /ask`** / **`POST /ask/voice`** (never creates a dump). Callbacks: `onDumpSuccess`, `onDumpCreated`, `onPemResponse`. Bar modes: idle, recording (pause/resume), paused, text.

@@ -91,19 +91,46 @@ ${input.memoryPromptSection}
 ## Raw dump
 """${input.dumpText.trim()}"""`;
 
-    const result = await generateText({
-      model: openai(model),
-      output: Output.object({ schema: extractPhaseSchema }),
-      system: SYSTEM,
-      prompt,
-      providerOptions: { openai: { strictJsonSchema: false } },
-    });
+    try {
+      const result = await generateText({
+        model: openai(model),
+        output: Output.object({ schema: extractPhaseSchema }),
+        system: SYSTEM,
+        prompt,
+        providerOptions: { openai: { strictJsonSchema: false } },
+      });
 
-    if (!result.output) {
-      throw new Error('Extract agent returned null output');
+      if (!result.output) {
+        throw new Error('Extract agent returned null output');
+      }
+
+      return result.output;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      this.log.warn(
+        `Extract agent failed, retrying with stricter JSON reminder: ${msg}`,
+      );
+
+      const retryPrompt = `${prompt}
+
+## Output discipline (retry)
+Return JSON that matches the schema exactly. Use null for every unused date, period, note, draft, and batch_key field — never use empty strings there. Every new_items entry must include all keys. memory_writes and agent_assumptions must be arrays (use [] if empty).`;
+
+      const retry = await generateText({
+        model: openai(model),
+        output: Output.object({ schema: extractPhaseSchema }),
+        system: SYSTEM,
+        prompt: retryPrompt,
+        temperature: 0,
+        providerOptions: { openai: { strictJsonSchema: false } },
+      });
+
+      if (!retry.output) {
+        throw new Error(`Extract agent retry returned null (primary: ${msg})`);
+      }
+
+      return retry.output;
     }
-
-    return result.output;
   }
 
   private buildTimezoneContext(tz: string | null): string {

@@ -1,5 +1,10 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
@@ -52,6 +57,42 @@ export class DumpsService {
 
     this.log.log(`dump ${dump.id} queued for extraction for user ${user.id}`);
     return { dumpId: dump.id };
+  }
+
+  /** Re-queue extraction after a final pipeline failure. */
+  async retryExtraction(userId: string, dumpId: string): Promise<{ ok: true }> {
+    const rows = await this.db
+      .select({
+        id: dumpsTable.id,
+        status: dumpsTable.status,
+      })
+      .from(dumpsTable)
+      .where(and(eq(dumpsTable.id, dumpId), eq(dumpsTable.userId, userId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new NotFoundException('Dump not found');
+    if (row.status !== 'failed') {
+      throw new BadRequestException('Only failed dumps can be retried');
+    }
+
+    await this.db
+      .update(dumpsTable)
+      .set({ status: 'processing', lastError: null })
+      .where(eq(dumpsTable.id, dumpId));
+
+    await this.dumpQueue.add(
+      'extract',
+      { dumpId },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 200 },
+      },
+    );
+
+    this.log.log(`dump ${dumpId} retry queued for user ${userId}`);
+    return { ok: true };
   }
 
   async transcribeAudio(audio: Express.Multer.File): Promise<string> {
@@ -146,7 +187,6 @@ export class DumpsService {
         dumpText: dumpsTable.dumpText,
         polishedText: dumpsTable.polishedText,
         status: dumpsTable.status,
-        lastError: dumpsTable.lastError,
         createdAt: dumpsTable.createdAt,
       })
       .from(dumpsTable)
@@ -178,7 +218,8 @@ export class DumpsService {
       id: r.id,
       text: r.polishedText?.trim() || r.dumpText,
       status: r.status,
-      last_error: r.lastError ?? null,
+      /** Never expose server/LLM errors to clients (stored in DB for ops only). */
+      last_error: null,
       created_at: r.createdAt.toISOString(),
       extract_count: countMap.get(r.id) ?? 0,
     }));
@@ -217,7 +258,8 @@ export class DumpsService {
         id: dump.id,
         text: display,
         status: dump.status,
-        last_error: dump.lastError ?? null,
+        /** Never expose pipeline/LLM errors to the app (see `last_error` column server-side). */
+        last_error: null,
         raw_text: dump.dumpText,
         polished_text: dump.polishedText,
         additional_context: dump.additionalContext ?? null,
@@ -232,7 +274,9 @@ export class DumpsService {
         is_agent: l.isAgent,
         pem_note: l.pemNote,
         payload: l.payload,
-        error: l.error,
+        error: l.error
+          ? { message: 'Something went wrong during this step.' }
+          : null,
         created_at: l.createdAt.toISOString(),
       })),
     };

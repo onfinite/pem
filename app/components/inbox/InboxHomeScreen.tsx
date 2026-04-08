@@ -25,7 +25,7 @@ import { useAuth, useUser } from "@clerk/expo";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import type { LucideIcon } from "lucide-react-native";
-import { BookOpen, Inbox, Settings } from "lucide-react-native";
+import { Inbox, Settings } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -103,7 +103,6 @@ export default function InboxHomeScreen() {
   /** Start expanded so counts match visible rows (shopping / this week aren't hidden). */
   const [weekExpanded, setWeekExpanded] = useState(true);
   const [nextWeekExpanded, setNextWeekExpanded] = useState(false);
-  const [laterExpanded, setLaterExpanded] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [detail, setDetail] = useState<ApiExtract | null>(null);
   const [dumpSuccess, setDumpSuccess] = useState(false);
@@ -203,10 +202,9 @@ export default function InboxHomeScreen() {
   const hasTomorrow = (brief?.tomorrow.length ?? 0) > 0;
   const hasWeek = (brief?.this_week.length ?? 0) > 0;
   const hasNextWeek = (brief?.next_week.length ?? 0) > 0;
-  const hasLater = (brief?.later.length ?? 0) > 0;
   const batchGroups = allData?.batch_groups.filter((g) => g.items.length > 0) ?? [];
   const somedayItems = allData?.someday ?? [];
-  const hasAnything = hasOverdue || hasToday || hasTomorrow || hasWeek || hasNextWeek || hasLater;
+  const hasAnything = hasOverdue || hasToday || hasTomorrow || hasWeek || hasNextWeek;
 
   return (
     <View style={[styles.root, { backgroundColor: chrome.page, paddingTop: insets.top }]}>
@@ -243,7 +241,7 @@ export default function InboxHomeScreen() {
       {/* ── Tabs: Brief + Dumps only ───────────── */}
       <View style={styles.tabRow}>
         <Chip label="Brief" Icon={Inbox} active={tab === "brief"} chrome={chrome} onPress={() => setTab("brief")} />
-        <Chip label="Dumps" Icon={BookOpen} active={tab === "dumps"} chrome={chrome} onPress={() => setTab("dumps")} />
+        <Chip label="Dumps" active={tab === "dumps"} chrome={chrome} onPress={() => setTab("dumps")} />
       </View>
 
       {/* ── Brief ──────────────────────────────── */}
@@ -357,14 +355,8 @@ export default function InboxHomeScreen() {
               )}
 
               {hasNextWeek && (
-                <CollapsibleSection label="NEXT WEEK" count={brief!.next_week.length} expanded={nextWeekExpanded} onToggle={() => setNextWeekExpanded((v) => !v)} chrome={chrome}>
+                <CollapsibleSection label="NEXT WEEK & LATER" count={brief!.next_week.length} expanded={nextWeekExpanded} onToggle={() => setNextWeekExpanded((v) => !v)} chrome={chrome}>
                   <ItemList items={brief!.next_week} chrome={chrome} onPress={setDetail} />
-                </CollapsibleSection>
-              )}
-
-              {hasLater && (
-                <CollapsibleSection label="LATER" count={brief!.later.length} expanded={laterExpanded} onToggle={() => setLaterExpanded((v) => !v)} chrome={chrome}>
-                  <ItemList items={brief!.later} chrome={chrome} onPress={setDetail} />
                 </CollapsibleSection>
               )}
 
@@ -413,6 +405,7 @@ export default function InboxHomeScreen() {
         onPemResponse={(answer, sources) => { setPemAnswer(answer); setPemSources(sources); }}
         onThinking={() => setThinking(true)}
         onThinkingDone={() => setThinking(false)}
+        askLocked={thinking}
       />
 
       <DumpSuccessOverlay visible={dumpSuccess} pageColor={chrome.page} onDone={() => setDumpSuccess(false)} />
@@ -445,7 +438,19 @@ export default function InboxHomeScreen() {
 
 /* ── Sub-components ──────────────────────────── */
 
-function Chip({ label, Icon, active, chrome, onPress }: { label: string; Icon: LucideIcon; active?: boolean; chrome: ReturnType<typeof inboxChrome>; onPress: () => void }) {
+function Chip({
+  label,
+  Icon,
+  active,
+  chrome,
+  onPress,
+}: {
+  label: string;
+  Icon?: LucideIcon;
+  active?: boolean;
+  chrome: ReturnType<typeof inboxChrome>;
+  onPress: () => void;
+}) {
   return (
     <Pressable
       accessibilityRole="tab"
@@ -459,7 +464,7 @@ function Chip({ label, Icon, active, chrome, onPress }: { label: string; Icon: L
         },
       ]}
     >
-      <Icon size={14} color={active ? chrome.page : chrome.text} strokeWidth={2} />
+      {Icon ? <Icon size={14} color={active ? chrome.page : chrome.text} strokeWidth={2} /> : null}
       <PemText variant="caption" style={{ color: active ? chrome.page : chrome.text, fontWeight: active ? "600" : "400" }}>
         {label}
       </PemText>

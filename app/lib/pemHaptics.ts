@@ -16,6 +16,11 @@ export function pemImpactLight(): void {
   safe(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft));
 }
 
+/** Stronger tap — stop/send recording, primary actions. */
+export function pemImpactMedium(): void {
+  safe(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
+}
+
 /** Tab / segment changes — very light tick. */
 export function pemSelection(): void {
   safe(() => Haptics.selectionAsync());

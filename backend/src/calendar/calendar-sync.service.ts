@@ -151,7 +151,15 @@ export class CalendarSyncService {
         externalEventId,
       );
       return true;
-    } catch (err) {
+    } catch (err: unknown) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? (err as { code: number }).code
+          : 0;
+      if (code === 404) {
+        this.log.debug(`Calendar event already removed (${externalEventId})`);
+        return true;
+      }
       const msg = err instanceof Error ? err.message : 'Calendar delete failed';
       this.log.warn(`Failed to delete event ${externalEventId}: ${msg}`);
       return false;

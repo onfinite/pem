@@ -10,21 +10,23 @@ import {
 import {
   generateExtractDraft,
   getExtractHistory,
-  patchExtractReschedule,
   patchExtractSnooze,
   reportExtract,
   type ApiExtract,
   type LogEntry,
-  type RescheduleTarget,
 } from "@/lib/pemApi";
 import * as Clipboard from "expo-clipboard";
 import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -67,13 +69,6 @@ const SNOOZE_OPTIONS = [
   { label: "Someday", until: "someday" },
 ] as const;
 
-const MOVE_OPTIONS: { label: string; target: RescheduleTarget }[] = [
-  { label: "Today", target: "today" },
-  { label: "This week", target: "this_week" },
-  { label: "Next week", target: "next_week" },
-  { label: "Someday", target: "someday" },
-];
-
 export default function ExtractDetailModal({
   visible,
   item,
@@ -93,7 +88,6 @@ export default function ExtractDetailModal({
   const [draft, setDraft] = useState<string | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportText, setReportText] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
@@ -101,12 +95,63 @@ export default function ExtractDetailModal({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
 
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  const dragOrigin = useRef(0);
+  const sheetHeightRef = useRef(sheetHeight);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  sheetHeightRef.current = sheetHeight;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx) * 1.2,
+      onPanResponderGrant: () => {
+        sheetTranslateY.stopAnimation((v) => {
+          dragOrigin.current = v;
+        });
+      },
+      onPanResponderMove: (_, g) => {
+        const y = dragOrigin.current + g.dy;
+        sheetTranslateY.setValue(y > 0 ? y : y * 0.2);
+      },
+      onPanResponderRelease: (_, g) => {
+        const h = sheetHeightRef.current;
+        const threshold = Math.max(100, h * 0.14);
+        sheetTranslateY.stopAnimation((currentY) => {
+          const fastDown = typeof g.vy === "number" && g.vy > 650;
+          if (currentY > threshold || fastDown) {
+            Animated.timing(sheetTranslateY, {
+              toValue: h + 80,
+              duration: 260,
+              useNativeDriver: true,
+            }).start(({ finished }) => {
+              if (finished) onCloseRef.current();
+            });
+          } else {
+            Animated.spring(sheetTranslateY, {
+              toValue: 0,
+              useNativeDriver: true,
+              friction: 7,
+              tension: 72,
+            }).start();
+          }
+        });
+      },
+    }),
+  ).current;
+
+  useEffect(() => {
+    if (visible) {
+      sheetTranslateY.setValue(0);
+    }
+  }, [visible, sheetTranslateY]);
+
   useEffect(() => {
     if (!visible || !item) {
       setLogs([]);
       setDraft(null);
       setSnoozeOpen(false);
-      setMoveOpen(false);
       setReportOpen(false);
       setReportText("");
       setMoreOpen(false);
@@ -174,23 +219,6 @@ export default function ExtractDetailModal({
     [item, getToken, onClose],
   );
 
-  const handleMove = useCallback(
-    async (target: RescheduleTarget) => {
-      if (!item) return;
-      pemImpactLight();
-      try {
-        const r = await patchExtractReschedule(getToken, item.id, target);
-        pemNotificationSuccess();
-        onItemUpdated?.(r.item);
-        setMoveOpen(false);
-        onClose();
-      } catch {
-        /* ignore */
-      }
-    },
-    [item, getToken, onClose, onItemUpdated],
-  );
-
   const handleReport = useCallback(async () => {
     if (!item || !reportText.trim()) return;
     pemImpactLight();
@@ -221,18 +249,31 @@ export default function ExtractDetailModal({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalRoot}>
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityRole="button" />
-        <View
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.kav}
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
+        >
+        <Animated.View
           style={[
             styles.sheet,
             {
               height: sheetHeight,
               backgroundColor: chrome.surface,
+              transform: [{ translateY: sheetTranslateY }],
             },
           ]}
         >
-          <View style={styles.sheetBody}>
+          <View
+            style={styles.dragHandleZone}
+            accessibilityRole="button"
+            accessibilityLabel="Drag down to close"
+            {...panResponder.panHandlers}
+          >
             <View style={[styles.handle, { backgroundColor: chrome.borderStrong }]} />
+          </View>
 
+          <View style={styles.sheetBody}>
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
@@ -400,6 +441,9 @@ export default function ExtractDetailModal({
                 <PemText variant="caption" style={{ color: chrome.textDim }}>
                   {"What's wrong with this item?"}
                 </PemText>
+                <PemText variant="caption" style={{ color: chrome.textDim, opacity: 0.85 }}>
+                  We save a snapshot of this item and your source dump for review, and show it in activity.
+                </PemText>
                 <TextInput
                   value={reportText}
                   onChangeText={setReportText}
@@ -441,28 +485,6 @@ export default function ExtractDetailModal({
                   <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Cancel</PemText>
                 </Pressable>
               </View>
-            ) : moveOpen ? (
-              <View style={{ gap: space[1], marginBottom: space[2] }}>
-                {MOVE_OPTIONS.map((o) => (
-                  <Pressable
-                    key={o.target}
-                    accessibilityRole="button"
-                    onPress={() => handleMove(o.target)}
-                    style={[styles.snoozeRow, { backgroundColor: chrome.page }]}
-                  >
-                    <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>
-                      {o.label}
-                    </PemText>
-                  </Pressable>
-                ))}
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setMoveOpen(false)}
-                  style={{ paddingVertical: space[2] }}
-                >
-                  <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Cancel</PemText>
-                </Pressable>
-              </View>
             ) : isDone ? (
               <>
                 {onUndone && (
@@ -482,9 +504,6 @@ export default function ExtractDetailModal({
                   <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>Dismiss</PemText>
                 </Pressable>
                 <Pressable accessibilityRole="button" onPress={() => { setMoreOpen(false); setSnoozeOpen(true); }} style={[styles.snoozeRow, { backgroundColor: chrome.page }]}>
-                  <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>Later</PemText>
-                </Pressable>
-                <Pressable accessibilityRole="button" onPress={() => { setMoreOpen(false); setMoveOpen(true); }} style={[styles.snoozeRow, { backgroundColor: chrome.page }]}>
                   <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>Move to</PemText>
                 </Pressable>
                 <Pressable accessibilityRole="button" onPress={() => { setMoreOpen(false); setReportOpen(true); }} style={[styles.snoozeRow, { backgroundColor: chrome.page }]}>
@@ -505,7 +524,8 @@ export default function ExtractDetailModal({
               </>
             )}
           </View>
-        </View>
+        </Animated.View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -530,19 +550,27 @@ function fmtRange(start: string, end: string | null): string {
 
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: "flex-end" },
+  kav: { width: "100%", maxHeight: "100%" },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
   sheet: {
     flexDirection: "column",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingTop: space[2],
     overflow: "hidden",
+  },
+  dragHandleZone: {
+    width: "100%",
+    paddingTop: space[2],
+    paddingBottom: space[3],
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
   },
   sheetBody: {
     flex: 1,
     minHeight: 0,
   },
-  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: space[3] },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center" },
   scroll: {
     flex: 1,
     paddingHorizontal: space[5],
