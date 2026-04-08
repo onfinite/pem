@@ -34,9 +34,9 @@ export default function WelcomeScreen() {
           Pem organizes them.
         </PemText>
         <PemText variant="bodyMuted" style={styles.heroBody}>
-          Say or type whatever is on your mind — tasks, errands, meetings, ideas.
-          Pem extracts what matters, puts events on your calendar, and keeps
-          everything organized. Your mind stays clear.
+          Say or type whatever is on your mind. Pem pulls out what matters, sorts
+          it into your inbox, and you come back when you are ready. Not another
+          todo list — relief, with you always taking the final step.
         </PemText>
         <View style={styles.authBlock}>
           <SocialSignInButtons />
