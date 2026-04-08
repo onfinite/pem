@@ -28,14 +28,15 @@ export default function WelcomeScreen() {
       <View style={styles.column}>
         <PemLogoRow size="large" />
         <PemText variant="display" style={styles.heroLine1}>
-          Whatever&apos;s on your mind
+          Dump your thoughts.
         </PemText>
         <PemText variant="brandItalic" style={styles.heroLine2}>
-          Pem&apos;s got it.
+          Pem organizes them.
         </PemText>
         <PemText variant="bodyMuted" style={styles.heroBody}>
-          Dump what’s on your mind in text. Pem researches, drafts, and finds your options while you live your
-          life. Come back when your preps are ready — you act in seconds.
+          Say or type whatever is on your mind — tasks, errands, meetings, ideas.
+          Pem extracts what matters, puts events on your calendar, and keeps
+          everything organized. Your mind stays clear.
         </PemText>
         <View style={styles.authBlock}>
           <SocialSignInButtons />

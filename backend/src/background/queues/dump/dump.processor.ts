@@ -18,6 +18,7 @@ export class DumpProcessor extends WorkerHost {
       this.log.warn('dump job missing dumpId');
       return;
     }
-    await this.extract.processDump(dumpId);
+    const isFinalAttempt = job.attemptsMade >= (job.opts?.attempts ?? 3) - 1;
+    await this.extract.processDump(dumpId, { isFinalAttempt });
   }
 }

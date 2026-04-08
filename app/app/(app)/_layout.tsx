@@ -1,7 +1,6 @@
 import TimezoneRegistrar from "@/components/auth/TimezoneRegistrar";
 import PushNotificationRegistrar from "@/components/push/PushNotificationRegistrar";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
-import { AppDrawerProvider } from "@/contexts/AppDrawerContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
@@ -27,14 +26,12 @@ export default function AppLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <TimezoneRegistrar />
-      <AppDrawerProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.pageBackground },
-          }}
-        />
-      </AppDrawerProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.pageBackground },
+        }}
+      />
       <PushNotificationRegistrar />
     </GestureHandlerRootView>
   );

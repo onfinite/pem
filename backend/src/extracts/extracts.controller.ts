@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -16,7 +17,10 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow } from '../database/schemas';
 import { ExtractsService } from './extracts.service';
+import { DraftService } from './draft.service';
 import { ExtractsQueryDto } from './dto/extracts-query.dto';
+import { RescheduleExtractDto } from './dto/reschedule-extract.dto';
+import { ReportExtractDto } from './dto/report-extract.dto';
 import { SnoozeExtractDto } from './dto/snooze-extract.dto';
 
 @ApiTags('extracts')
@@ -24,7 +28,10 @@ import { SnoozeExtractDto } from './dto/snooze-extract.dto';
 @UseGuards(ClerkAuthGuard)
 @ApiBearerAuth('clerk')
 export class ExtractsController {
-  constructor(private readonly extracts: ExtractsService) {}
+  constructor(
+    private readonly extracts: ExtractsService,
+    private readonly draft: DraftService,
+  ) {}
 
   @Get('done')
   @ApiOperation({ summary: 'Done list — newest first' })
@@ -79,6 +86,41 @@ export class ExtractsController {
       q.cursor ?? null,
     );
     return { items: rows.map((r) => this.extracts.serialize(r)), next_cursor };
+  }
+
+  @Get(':id/history')
+  @ApiOperation({ summary: 'Change history for an extract' })
+  async getHistory(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const row = await this.extracts.findForUser(user.id, id);
+    if (!row) throw new NotFoundException('Extract not found');
+    const logs = await this.extracts.getHistory(user.id, id);
+    return {
+      logs: logs.map((l) => ({
+        id: l.id,
+        type: l.type,
+        is_agent: l.isAgent,
+        pem_note: l.pemNote,
+        payload: l.payload,
+        error: l.error,
+        created_at: l.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  @Post(':id/draft')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Generate a draft message for a follow-up item' })
+  async generateDraft(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const row = await this.extracts.findForUser(user.id, id);
+    if (!row) throw new NotFoundException('Extract not found');
+    const draftText = await this.draft.generateDraft(user.id, row);
+    return { draft: draftText, item: this.extracts.serialize(row) };
   }
 
   @Get(':id')
@@ -147,5 +189,31 @@ export class ExtractsController {
   ) {
     const row = await this.extracts.snooze(user.id, id, body.until, body.iso);
     return { item: this.extracts.serialize(row) };
+  }
+
+  @Patch(':id/reschedule')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Reschedule extract — move to a different urgency' })
+  async reschedule(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: RescheduleExtractDto,
+  ) {
+    const row = await this.extracts.reschedule(user.id, id, body.target);
+    return { item: this.extracts.serialize(row) };
+  }
+
+  @Post(':id/report')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Report incorrect extract — user flags a bad generation',
+  })
+  async report(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: ReportExtractDto,
+  ) {
+    await this.extracts.report(user.id, id, body.reason);
+    return { ok: true };
   }
 }

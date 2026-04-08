@@ -14,6 +14,11 @@ export type AppConfig = {
     agentModel: string;
   };
   redisUrl: string | undefined;
+  googleCalendar: {
+    clientId: string | undefined;
+    clientSecret: string | undefined;
+    redirectUri: string | undefined;
+  };
 };
 
 export default (): AppConfig => {
@@ -44,5 +49,10 @@ export default (): AppConfig => {
       agentModel: process.env.OPENAI_AGENT_MODEL ?? 'gpt-4o',
     },
     redisUrl: process.env.REDIS_URL,
+    googleCalendar: {
+      clientId: process.env.GOOGLE_CALENDAR_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
+      redirectUri: process.env.GOOGLE_CALENDAR_REDIRECT_URI,
+    },
   };
 };

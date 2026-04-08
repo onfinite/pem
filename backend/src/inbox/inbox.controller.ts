@@ -5,7 +5,7 @@ import { MessageEvent } from '@nestjs/common';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import type { UserRow } from '../database/schemas';
+import type { UserRow, ExtractRow } from '../database/schemas';
 import { ExtractsService } from '../extracts/extracts.service';
 import { InboxStreamService } from './inbox-stream.service';
 
@@ -25,6 +25,24 @@ export class InboxController {
     await this.extracts.wakeSnoozed(user.id);
     const today = await this.extracts.listToday(user.id);
     return { today: today.map((a) => this.extracts.serialize(a)) };
+  }
+
+  @Get('brief')
+  @ApiOperation({
+    summary: 'Daily brief — today timeline, batch counts, week glance',
+  })
+  async getBrief(@CurrentUser() user: UserRow) {
+    const data = await this.extracts.getBrief(user.id);
+    const ser = (a: ExtractRow) => this.extracts.serialize(a);
+    return {
+      overdue: data.overdue.map(ser),
+      today: data.today.map(ser),
+      tomorrow: data.tomorrow.map(ser),
+      this_week: data.this_week.map(ser),
+      next_week: data.next_week.map(ser),
+      later: data.later.map(ser),
+      batch_counts: data.batch_counts,
+    };
   }
 
   @Get('all')

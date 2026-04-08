@@ -46,6 +46,7 @@ export async function createDump(
 export type ApiExtract = {
   id: string;
   dump_id: string;
+  source: "dump" | "calendar";
   text: string;
   original_text: string;
   status: string;
@@ -63,6 +64,10 @@ export type ApiExtract = {
   pem_note: string | null;
   recommended_at: string | null;
   draft_text: string | null;
+  event_start_at: string | null;
+  event_end_at: string | null;
+  event_location: string | null;
+  external_event_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -90,7 +95,7 @@ export async function getInboxAll(getToken: () => Promise<string | null>) {
 
 export type ExtractsQueryParams = {
   status?: "open" | "inbox" | "snoozed" | "dismissed" | "done";
-  batch_key?: "shopping" | "calls" | "emails" | "errands";
+  batch_key?: "shopping" | "errands" | "follow_ups";
   tone?: "confident" | "tentative" | "idea" | "someday";
   exclude_tone?: "confident" | "tentative" | "idea" | "someday";
   urgency?: "today" | "this_week" | "someday" | "none";
@@ -180,10 +185,22 @@ export async function getDumpDetail(
       polished_text?: string | null;
       additional_context?: unknown | null;
       agent_assumptions?: unknown | null;
+      has_audio?: boolean;
       created_at: string;
     };
     extracts: ApiExtract[];
+    logs: LogEntry[];
   }>(`/dumps/${dumpId}`, { method: "GET", getToken });
+}
+
+export async function getDumpAudioUrl(
+  getToken: () => Promise<string | null>,
+  dumpId: string,
+) {
+  return apiFetch<{ url: string }>(`/dumps/${dumpId}/audio`, {
+    method: "GET",
+    getToken,
+  });
 }
 
 export async function patchExtractDone(
@@ -205,6 +222,119 @@ export async function patchExtractDismiss(
     method: "PATCH",
     getToken,
     body: "{}",
+  });
+}
+
+// ── Brief ────────────────────────────────────────────────
+
+export type BriefResponse = {
+  overdue: ApiExtract[];
+  today: ApiExtract[];
+  tomorrow: ApiExtract[];
+  this_week: ApiExtract[];
+  next_week: ApiExtract[];
+  later: ApiExtract[];
+  batch_counts: { batch_key: string; count: number }[];
+};
+
+export async function getBrief(getToken: () => Promise<string | null>) {
+  return apiFetch<BriefResponse>("/inbox/brief", { method: "GET", getToken });
+}
+
+// ── Draft ────────────────────────────────────────────────
+
+export async function generateExtractDraft(
+  getToken: () => Promise<string | null>,
+  extractId: string,
+) {
+  return apiFetch<{ draft: string; item: ApiExtract }>(
+    `/extracts/${extractId}/draft`,
+    { method: "POST", getToken },
+  );
+}
+
+// ── History ──────────────────────────────────────────────
+
+export type LogEntry = {
+  id: string;
+  type: string;
+  is_agent: boolean;
+  pem_note: string | null;
+  payload: Record<string, unknown> | null;
+  error: { message: string } | null;
+  created_at: string;
+};
+
+export async function getExtractHistory(
+  getToken: () => Promise<string | null>,
+  extractId: string,
+) {
+  return apiFetch<{ logs: LogEntry[] }>(
+    `/extracts/${extractId}/history`,
+    { method: "GET", getToken },
+  );
+}
+
+// ── Undo / Snooze ────────────────────────────────────────
+
+export async function patchExtractUndone(
+  getToken: () => Promise<string | null>,
+  id: string,
+) {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/undone`, {
+    method: "PATCH",
+    getToken,
+    body: "{}",
+  });
+}
+
+export async function patchExtractUndismiss(
+  getToken: () => Promise<string | null>,
+  id: string,
+) {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/undismiss`, {
+    method: "PATCH",
+    getToken,
+    body: "{}",
+  });
+}
+
+export async function patchExtractSnooze(
+  getToken: () => Promise<string | null>,
+  id: string,
+  until: string,
+  iso?: string,
+) {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/snooze`, {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ until, ...(iso ? { iso } : {}) }),
+  });
+}
+
+export type RescheduleTarget = "today" | "this_week" | "next_week" | "someday";
+
+export async function patchExtractReschedule(
+  getToken: () => Promise<string | null>,
+  id: string,
+  target: RescheduleTarget,
+) {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/reschedule`, {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ target }),
+  });
+}
+
+export async function reportExtract(
+  getToken: () => Promise<string | null>,
+  id: string,
+  reason: string,
+) {
+  return apiFetch<{ ok: boolean }>(`/extracts/${id}/report`, {
+    method: "POST",
+    getToken,
+    body: JSON.stringify({ reason }),
   });
 }
 
@@ -320,13 +450,140 @@ export async function createVoiceDump(
   return (await res.json()) as { dumpId: string; text: string };
 }
 
-/** Ask Pem — quick Q&A about your thoughts/extracts. */
-export async function askPem(
+// ── Unified Intake ──────────────────────────────────────
+
+export type IntakeResponse = {
+  intent: "dump" | "question" | "both";
+  dump_id: string | null;
+  text: string;
+  answer: string | null;
+  sources: { id: string; text: string }[];
+};
+
+export async function createIntake(
   getToken: () => Promise<string | null>,
-  question: string,
+  text: string,
+): Promise<IntakeResponse> {
+  return apiFetch<IntakeResponse>("/intake", {
+    method: "POST",
+    getToken,
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function createVoiceIntake(
+  getToken: () => Promise<string | null>,
+  audioUri: string,
+  mimeType = "audio/m4a",
+): Promise<IntakeResponse> {
+  const token = await getToken();
+  const formData = new FormData();
+  formData.append("audio", {
+    uri: audioUri,
+    name: "recording.m4a",
+    type: mimeType,
+  } as any);
+  const res = await fetch(`${getApiBaseUrl()}/intake/voice`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return (await res.json()) as IntakeResponse;
+}
+
+// ── Calendar ──────────────────────────────────────────────
+
+export type CalendarConnection = {
+  id: string;
+  provider: "google" | "apple";
+  is_primary: boolean;
+  google_email: string | null;
+  apple_calendar_ids: string[] | null;
+  last_synced_at: string | null;
+};
+
+export async function getCalendarConnections(
+  getToken: () => Promise<string | null>,
 ) {
-  return apiFetch<{ answer: string; sources: { id: string; text: string }[] }>(
-    "/ask",
-    { method: "POST", getToken, body: JSON.stringify({ question }) },
+  return apiFetch<{ connections: CalendarConnection[] }>(
+    "/calendar/connections",
+    { getToken },
   );
+}
+
+export async function getGoogleAuthUrl(
+  getToken: () => Promise<string | null>,
+  appRedirect?: string,
+) {
+  const qs = appRedirect
+    ? `?appRedirect=${encodeURIComponent(appRedirect)}`
+    : "";
+  return apiFetch<{ url: string }>(`/calendar/google/auth-url${qs}`, {
+    getToken,
+  });
+}
+
+export async function connectAppleCalendar(
+  getToken: () => Promise<string | null>,
+  calendarIds: string[],
+) {
+  return apiFetch<{ id: string; provider: string; is_primary: boolean }>(
+    "/calendar/apple/connect",
+    { method: "POST", getToken, body: JSON.stringify({ calendarIds }) },
+  );
+}
+
+export async function syncAppleCalendar(
+  getToken: () => Promise<string | null>,
+  connectionId: string,
+  events: {
+    id: string;
+    title: string;
+    startDate: string;
+    endDate: string;
+    location?: string;
+  }[],
+) {
+  return apiFetch<{ synced: number }>("/calendar/apple/sync", {
+    method: "POST",
+    getToken,
+    body: JSON.stringify({ connectionId, events }),
+  });
+}
+
+export async function setCalendarPrimary(
+  getToken: () => Promise<string | null>,
+  connectionId: string,
+) {
+  return apiFetch<{ ok: boolean }>(
+    `/calendar/connections/${connectionId}/primary`,
+    { method: "PATCH", getToken },
+  );
+}
+
+export async function disconnectCalendar(
+  getToken: () => Promise<string | null>,
+  provider: "google" | "apple",
+) {
+  return apiFetch<{ ok: boolean }>(`/calendar/connections/${provider}`, {
+    method: "DELETE",
+    getToken,
+  });
+}
+
+export async function disconnectCalendarById(
+  getToken: () => Promise<string | null>,
+  connectionId: string,
+) {
+  return apiFetch<{ ok: boolean }>(`/calendar/connections/${connectionId}`, {
+    method: "DELETE",
+    getToken,
+  });
 }

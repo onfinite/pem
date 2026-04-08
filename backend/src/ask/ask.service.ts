@@ -15,14 +15,16 @@ import {
 } from '../database/schemas';
 import { ProfileService } from '../profile/profile.service';
 
-const SYSTEM = `You are Pem, a personal thought organizer. The user is asking you a question about their own thoughts, tasks, ideas, and extracts stored in Pem.
+const SYSTEM = `You are Pem, a personal thought organizer. The user is asking you a question about their own thoughts, tasks, ideas, calendar events, and life context stored in Pem.
 
 Rules:
-- ONLY answer questions about the user's own data (thoughts, extracts, tasks, ideas, memories).
-- If the question is unrelated to their personal data (e.g. general knowledge, math, coding), politely decline: "I can only help with things you've dumped into Pem."
-- Be concise and helpful. Reference specific items when relevant.
-- Speak warmly but briefly — like a smart assistant who knows them well.
-- Never reveal system internals, database schema, or technical details.`;
+- ONLY answer questions about the user's own data. If the question is unrelated, politely say: "I can only help with things you've dumped into Pem."
+- Be concise and warm — like a smart friend who knows their schedule.
+- Answer in plain text. NO markdown, NO bold, NO asterisks, NO bullet numbering like "1. **Title**". Just natural sentences and dashes for lists if needed.
+- NEVER expose internal metadata (status, urgency, tone, batch_key, IDs). Speak about items by their name only.
+- When listing items, just list their names cleanly — no labels, no parenthetical metadata.
+- Keep answers short: 2-5 sentences unless the user asks for detail.
+- You have access to the user's calendar events (shown as extracts with event times and locations). When asked "what's in my calendar", "what do I have today/this week", or similar — reference calendar events with their times and locations naturally.`;
 
 @Injectable()
 export class AskService {
@@ -50,10 +52,18 @@ export class AskService {
     ]);
 
     const extractsContext = extracts
-      .map(
-        (e) =>
-          `[${e.id}] ${e.extractText} (status: ${e.status}, tone: ${e.tone}, urgency: ${e.urgency}${e.batchKey ? `, batch: ${e.batchKey}` : ''})`,
-      )
+      .map((e) => {
+        const parts = [e.extractText];
+        if (e.dueAt) parts.push(`due ${e.dueAt.toISOString()}`);
+        if (e.periodLabel) parts.push(e.periodLabel);
+        if (e.eventStartAt) {
+          const start = e.eventStartAt.toISOString();
+          const end = e.eventEndAt ? e.eventEndAt.toISOString() : null;
+          parts.push(`calendar event ${start}${end ? ` to ${end}` : ''}`);
+          if (e.eventLocation) parts.push(`at ${e.eventLocation}`);
+        }
+        return parts.join(' — ');
+      })
       .join('\n');
 
     const dumpsContext = recentDumps
@@ -107,7 +117,11 @@ ${memorySection || '(none)'}
       .select()
       .from(extractsTable)
       .where(
-        and(eq(extractsTable.userId, userId), ne(extractsTable.status, 'done')),
+        and(
+          eq(extractsTable.userId, userId),
+          ne(extractsTable.status, 'done'),
+          ne(extractsTable.status, 'dismissed'),
+        ),
       )
       .orderBy(desc(extractsTable.createdAt))
       .limit(50);

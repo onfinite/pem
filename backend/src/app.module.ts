@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AskModule } from './ask/ask.module';
+import { CalendarModule } from './calendar/calendar.module';
 import { ExtractsModule } from './extracts/extracts.module';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
@@ -11,6 +12,8 @@ import { BackgroundModule } from './background/background.module';
 import { DumpsModule } from './dumps/dumps.module';
 import { HealthController } from './health/health.controller';
 import { InboxModule } from './inbox/inbox.module';
+import { IntakeModule } from './intake/intake.module';
+import { StorageModule } from './storage/storage.module';
 import { UsersModule } from './users/users.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 
@@ -28,10 +31,13 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     ]),
     AskModule,
     BackgroundModule,
+    CalendarModule,
     DatabaseModule,
     DumpsModule,
     ExtractsModule,
     InboxModule,
+    IntakeModule,
+    StorageModule,
     UsersModule,
     WebhooksModule,
   ],

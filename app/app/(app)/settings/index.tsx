@@ -3,6 +3,7 @@ import {
   TOP_BAR_ROW_PAD,
   TOP_ICON_CHIP,
 } from "@/constants/layout";
+import CalendarSection from "@/components/settings/CalendarSection";
 import PemButton from "@/components/ui/PemButton";
 import PemText from "@/components/ui/PemText";
 import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
@@ -33,8 +34,8 @@ const THEME_OPTIONS: { value: ThemePreference; label: string; Icon: typeof Sun }
 ];
 
 /**
- * Same idea as `prep/[id].tsx` and dump: manual top inset on the root (no `ScreenScroll` /
- * `SafeAreaView`). During a native-stack push, `useSafeAreaInsets()` can report `top: 0` for a frame;
+ * Manual top inset on the root (no `ScreenScroll` / `SafeAreaView`).
+ * During a native-stack push, `useSafeAreaInsets()` can report `top: 0` for a frame;
  * fall back to `initialWindowMetrics` so the first paint matches later frames.
  */
 export default function SettingsScreen() {
@@ -210,11 +211,13 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <CalendarSection />
+
         <PemText variant="label" style={styles.sectionLabel}>
           Pem memory
         </PemText>
         <PemText variant="caption" style={styles.sectionHint}>
-          Facts Pem saves when prepping so answers fit you—not shared with others.
+          Facts Pem learns from your dumps so it organizes better—not shared with others.
         </PemText>
         <Pressable
           accessibilityRole="button"

@@ -4,11 +4,16 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { calendarConnectionsTable } from './calendar-connections.schema';
 import { dumpsTable } from './dumps.schema';
 import { usersTable } from './users.schema';
+
+export const EXTRACT_SOURCES = ['dump', 'calendar'] as const;
+export type ExtractSource = (typeof EXTRACT_SOURCES)[number];
 
 export const EXTRACT_STATUSES = [
   'inbox',
@@ -34,7 +39,7 @@ export const EXTRACT_URGENCIES = [
 ] as const;
 export type ExtractUrgency = (typeof EXTRACT_URGENCIES)[number];
 
-export const BATCH_KEYS = ['shopping', 'calls', 'emails', 'errands'] as const;
+export const BATCH_KEYS = ['shopping', 'errands', 'follow_ups'] as const;
 export type BatchKey = (typeof BATCH_KEYS)[number];
 
 export const extractsTable = pgTable(
@@ -44,9 +49,11 @@ export const extractsTable = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => usersTable.id, { onDelete: 'cascade' }),
-    dumpId: uuid('dump_id')
-      .notNull()
-      .references(() => dumpsTable.id, { onDelete: 'cascade' }),
+    dumpId: uuid('dump_id').references(() => dumpsTable.id, {
+      onDelete: 'cascade',
+    }),
+    /** 'dump' (default) or 'calendar'. */
+    source: text('source').notNull().default('dump'),
     extractText: text('text').notNull(),
     originalText: text('original_text').notNull(),
     status: text('status').notNull(),
@@ -77,6 +84,23 @@ export const extractsTable = pgTable(
       mode: 'date',
     }),
     draftText: text('draft_text'),
+
+    /** External calendar event ID (Google eventId or Apple eventIdentifier). */
+    externalEventId: text('external_event_id'),
+    calendarConnectionId: uuid('calendar_connection_id').references(
+      () => calendarConnectionsTable.id,
+      { onDelete: 'set null' },
+    ),
+    eventStartAt: timestamp('event_start_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    eventEndAt: timestamp('event_end_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    eventLocation: text('event_location'),
+
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -89,6 +113,10 @@ export const extractsTable = pgTable(
     index('ix_extracts_dump_id').on(t.dumpId),
     index('ix_extracts_user_status_urgency').on(t.userId, t.status, t.urgency),
     index('ix_extracts_batch').on(t.userId, t.batchKey),
+    uniqueIndex('uq_extracts_calendar').on(
+      t.calendarConnectionId,
+      t.externalEventId,
+    ),
   ],
 );
 

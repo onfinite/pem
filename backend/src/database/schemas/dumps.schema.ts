@@ -44,6 +44,8 @@ export const dumpsTable = pgTable(
     agentAssumptions: jsonb('agent_assumptions').$type<
       unknown[] | Record<string, unknown> | null
     >(),
+    /** Object key in R2 for the original audio recording; null for text-only dumps. */
+    audioKey: text('audio_key'),
   },
   (t) => [index('ix_dumps_user_id').on(t.userId)],
 );

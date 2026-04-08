@@ -1,0 +1,1 @@
+ALTER TABLE "dumps" ADD COLUMN "audio_key" text;

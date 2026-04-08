@@ -26,7 +26,9 @@ import {
   extractsTable,
   usersTable,
   type ExtractRow,
+  type LogRow,
 } from '../database/schemas';
+import { CalendarSyncService } from '../calendar/calendar-sync.service';
 
 export type SnoozeUntil =
   | 'later_today'
@@ -45,7 +47,10 @@ export type ExtractQueryFilters = {
 
 @Injectable()
 export class ExtractsService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly calendarSync: CalendarSyncService,
+  ) {}
 
   private async logUserChange(args: {
     userId: string;
@@ -94,6 +99,7 @@ export class ExtractsService {
     return {
       id: a.id,
       dump_id: a.dumpId,
+      source: a.source ?? 'dump',
       text: a.extractText,
       original_text: a.originalText,
       status: a.status,
@@ -111,6 +117,10 @@ export class ExtractsService {
       pem_note: a.pemNote,
       recommended_at: a.recommendedAt?.toISOString() ?? null,
       draft_text: a.draftText,
+      event_start_at: a.eventStartAt?.toISOString() ?? null,
+      event_end_at: a.eventEndAt?.toISOString() ?? null,
+      event_location: a.eventLocation,
+      external_event_id: a.externalEventId ?? null,
       created_at: a.createdAt.toISOString(),
       updated_at: a.updatedAt.toISOString(),
     };
@@ -177,11 +187,7 @@ export class ExtractsService {
         and(
           base,
           sql`${extractsTable.tone} <> 'idea'`,
-          or(
-            eq(extractsTable.urgency, 'someday'),
-            eq(extractsTable.urgency, 'none'),
-            eq(extractsTable.tone, 'someday'),
-          ),
+          eq(extractsTable.urgency, 'someday'),
         ),
       )
       .orderBy(desc(extractsTable.createdAt));
@@ -203,7 +209,7 @@ export class ExtractsService {
       )
       .orderBy(desc(extractsTable.dismissedAt));
 
-    const batchKeys = ['shopping', 'calls', 'emails', 'errands'] as const;
+    const batchKeys = ['shopping', 'errands', 'follow_ups'] as const;
     const batch_groups: { batch_key: string; items: ExtractRow[] }[] = [];
     const batch_slots: {
       batch_key: string;
@@ -252,6 +258,7 @@ export class ExtractsService {
     const st = filters.status ?? 'open';
     if (st === 'open') {
       parts.push(ne(extractsTable.status, 'done'));
+      parts.push(ne(extractsTable.status, 'dismissed'));
     } else {
       parts.push(eq(extractsTable.status, st));
     }
@@ -316,8 +323,24 @@ export class ExtractsService {
     return u;
   }
 
+  /** Best-effort push to Google Calendar when an extract has a linked event. */
+  private async syncExtractToCalendar(row: ExtractRow): Promise<void> {
+    if (!row.calendarConnectionId || !row.externalEventId) return;
+    try {
+      await this.calendarSync.deleteFromGoogleCalendar(
+        row.calendarConnectionId,
+        row.externalEventId,
+      );
+    } catch {
+      // best-effort — calendar sync failures should never block the user
+    }
+  }
+
   async dismiss(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
+    const row = await this.findForUser(userId, id);
+    if (!row) throw new NotFoundException('Extract not found');
+
     const now = new Date();
     const [u] = await this.db
       .update(extractsTable)
@@ -330,6 +353,8 @@ export class ExtractsService {
       .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
+
+    await this.syncExtractToCalendar(row);
     await this.logUserChange({ userId, extractId: id, op: 'dismiss' });
     return u;
   }
@@ -431,6 +456,47 @@ export class ExtractsService {
     return u;
   }
 
+  async reschedule(
+    userId: string,
+    id: string,
+    target: 'today' | 'this_week' | 'next_week' | 'someday',
+  ): Promise<ExtractRow> {
+    const row = await this.findForUser(userId, id);
+    if (!row) throw new NotFoundException('Extract not found');
+
+    const [u] = await this.db
+      .update(extractsTable)
+      .set({
+        status: 'inbox',
+        urgency: target === 'next_week' ? 'this_week' : target,
+        snoozedUntil: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
+      .returning();
+    if (!u) throw new NotFoundException('Extract not found');
+
+    await this.logUserChange({
+      userId,
+      extractId: id,
+      op: 'reschedule',
+      payload: { target, new_urgency: u.urgency, new_status: u.status },
+    });
+    return u;
+  }
+
+  async report(userId: string, id: string, reason: string): Promise<void> {
+    const row = await this.findForUser(userId, id);
+    if (!row) throw new NotFoundException('Extract not found');
+
+    await this.logUserChange({
+      userId,
+      extractId: id,
+      op: 'report',
+      payload: { reason },
+    });
+  }
+
   async listOpen(
     userId: string,
     limit: number,
@@ -474,6 +540,129 @@ export class ExtractsService {
       next_cursor:
         hasMore && last ? encodeOpenCursor(last.createdAt, last.id) : null,
     };
+  }
+
+  async getBrief(userId: string): Promise<{
+    overdue: ExtractRow[];
+    today: ExtractRow[];
+    tomorrow: ExtractRow[];
+    this_week: ExtractRow[];
+    next_week: ExtractRow[];
+    later: ExtractRow[];
+    batch_counts: { batch_key: string; count: number }[];
+  }> {
+    await this.wakeSnoozed(userId);
+
+    const [user] = await this.db
+      .select({ timezone: usersTable.timezone })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    const zone = user?.timezone ?? 'UTC';
+
+    const nowLux = DateTime.now().setZone(zone);
+    const now = nowLux.toJSDate();
+    const todayEnd = nowLux.endOf('day').toJSDate();
+    const tomorrowEnd = nowLux.plus({ days: 1 }).endOf('day').toJSDate();
+
+    const weekday = nowLux.weekday;
+    const daysToSunday = 7 - weekday;
+    const thisWeekEnd = nowLux
+      .plus({ days: daysToSunday })
+      .endOf('day')
+      .toJSDate();
+    const nextWeekEnd = nowLux
+      .plus({ days: daysToSunday + 7 })
+      .endOf('day')
+      .toJSDate();
+
+    const allInbox = await this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.status, 'inbox'),
+        ),
+      )
+      .orderBy(asc(extractsTable.dueAt), desc(extractsTable.createdAt));
+
+    const overdue: ExtractRow[] = [];
+    const today: ExtractRow[] = [];
+    const tomorrow: ExtractRow[] = [];
+    const thisWeek: ExtractRow[] = [];
+    const nextWeek: ExtractRow[] = [];
+    const later: ExtractRow[] = [];
+
+    for (const row of allInbox) {
+      if (row.tone === 'idea') continue;
+
+      const anchor = row.eventStartAt ?? row.dueAt ?? row.periodStart ?? null;
+
+      const isDueOverdue = row.dueAt && row.dueAt < now;
+      const isEventOverdue =
+        row.eventEndAt && row.eventEndAt < now && row.source === 'calendar';
+
+      if (isDueOverdue || isEventOverdue) {
+        overdue.push(row);
+      } else if (
+        row.urgency === 'today' ||
+        (anchor && anchor <= todayEnd && anchor >= now)
+      ) {
+        today.push(row);
+      } else if (anchor && anchor <= tomorrowEnd) {
+        tomorrow.push(row);
+      } else if (
+        row.urgency === 'this_week' ||
+        (anchor && anchor <= thisWeekEnd)
+      ) {
+        thisWeek.push(row);
+      } else if (anchor && anchor <= nextWeekEnd) {
+        nextWeek.push(row);
+      } else if (anchor) {
+        later.push(row);
+      } else if (row.urgency !== 'someday' && row.urgency !== 'none') {
+        thisWeek.push(row);
+      }
+    }
+
+    const sortByAnchor = (a: ExtractRow, b: ExtractRow) => {
+      const aT = a.eventStartAt?.getTime() ?? a.dueAt?.getTime() ?? Infinity;
+      const bT = b.eventStartAt?.getTime() ?? b.dueAt?.getTime() ?? Infinity;
+      return aT - bT;
+    };
+    today.sort(sortByAnchor);
+    tomorrow.sort(sortByAnchor);
+    thisWeek.sort(sortByAnchor);
+    nextWeek.sort(sortByAnchor);
+    later.sort(sortByAnchor);
+
+    const batchKeys = ['shopping', 'errands', 'follow_ups'] as const;
+    const batch_counts = batchKeys.map((bk) => ({
+      batch_key: bk,
+      count: allInbox.filter((r) => r.batchKey === bk && r.tone !== 'idea')
+        .length,
+    }));
+
+    return {
+      overdue,
+      today,
+      tomorrow,
+      this_week: thisWeek,
+      next_week: nextWeek,
+      later,
+      batch_counts,
+    };
+  }
+
+  async getHistory(userId: string, extractId: string): Promise<LogRow[]> {
+    return this.db
+      .select()
+      .from(logsTable)
+      .where(
+        and(eq(logsTable.userId, userId), eq(logsTable.extractId, extractId)),
+      )
+      .orderBy(desc(logsTable.createdAt));
   }
 
   async listDone(

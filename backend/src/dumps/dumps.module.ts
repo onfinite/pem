@@ -11,5 +11,6 @@ import { DumpsService } from './dumps.service';
   imports: [DatabaseModule, UsersModule, BackgroundModule, ExtractsModule],
   controllers: [DumpsController],
   providers: [DumpsService],
+  exports: [DumpsService],
 })
 export class DumpsModule {}

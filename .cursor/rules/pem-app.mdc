@@ -6,30 +6,33 @@ alwaysApply: false
 
 # Pem mobile app (`app/`)
 
-**Product:** **dump → organized extracts + thoughts journal**. Primary surface: **`/inbox`** (glance). Voice-first dump, text secondary. **Ask Pem** for Q&A about your data.
+**Product:** **dump → organized extracts + thoughts journal**. Primary surface: **`/inbox`** (Daily Brief). Voice-first dump via inline bar, text secondary. **Unified intake** — one bar handles dumps AND questions; Pem classifies intent automatically.
 
 ## Screens & navigation
 
-- **Navigation:** **expo-router** **`Stack`** (`app/(app)/_layout.tsx`) + **`AppDrawerProvider`** / **`AppDrawerContent`** — full drawer with sections:
-  - **Main:** Inbox · Thoughts · Done · Everything
-  - **Categories:** Ideas · Someday
-  - **Batches:** Shopping · Calls · Emails · Errands
-  - **Bottom:** Ask Pem · Settings
+- **Navigation:** **expo-router** **`Stack`** (`app/(app)/_layout.tsx`) + **`AppDrawerProvider`** / **`AppDrawerContent`** — simplified drawer:
+  - **Main:** Brief · Dumps · Done
+  - **Bottom:** Settings
+- Batch/category pages accessible via batch chips on Brief or `/category/[slug]` route.
 - **`thoughts/_layout.tsx`** inner **`Stack`** (list → detail). **`category/[slug].tsx`** dynamic category/batch page.
 - **`AppMenuButton`** opens drawer; scrim closes.
+- **Deleted screens:** `/dump`, `/dump-confirmed`, `/everything`, `/ask` — replaced by unified InlineVoiceBar + PemResponseSheet.
 
 ## TypeScript & components
 
 - **TypeScript strict** — functional components only.
-- **API:** **`lib/pemApi.ts`** — types renamed: `ApiExtract`, `ExtractsQueryParams`, `getExtractsQuery`, `patchExtractDone`, `patchExtractDismiss`, `askPem`, `createVoiceDump`. Routes: `/extracts/...`, `/ask`, `/dumps/voice`.
+- **API:** **`lib/pemApi.ts`** — types: `ApiExtract`, `BriefResponse`, `LogEntry`, `IntakeResponse`, `ExtractsQueryParams`. Key functions: `getBrief`, `getExtractHistory`, `generateExtractDraft`, `patchExtractDone`/`Dismiss`/`Undone`/`Undismiss`/`Snooze`, `createIntake`, `createVoiceIntake`. Routes: `/inbox/brief`, `/intake`, `/intake/voice`, `/extracts/:id/history`, `/extracts/:id/draft`, `/extracts/...`.
 - **Inbox UI tokens:** **`constants/inboxChrome.ts`** (light/dark glance surfaces); compose with **`ThemeContext`**.
-- **Feature folders:** **`components/inbox/`** (glance, dump bar, detail modal), **`components/navigation/`** (drawer + menu button), **`components/ui/`** (`PemListRow`, `PemMindEmptyState`).
-- **Voice dump:** **`expo-av`** for recording → **`POST /dumps/voice`** → backend transcription via OpenAI Whisper. Record/pause/end UI. Voice-first, "or type it" toggle.
-- **Ask Pem:** **`/ask`** — simple Q&A screen, not chat. User asks about their data, Pem responds.
+- **Feature folders:** **`components/inbox/`** (InlineVoiceBar, PemResponseSheet, GlanceRow, ExtractDetailModal, InboxHeader, DumpSuccessOverlay), **`components/navigation/`** (drawer + menu button), **`components/ui/`** (`PemListRow`, `PemMindEmptyState`).
+- **InlineVoiceBar:** WhatsApp-style inline voice/text bar at bottom of every screen. Uses **unified intake** (`POST /intake` for text, `POST /intake/voice` for audio). Pem auto-classifies intent (dump/question/both). Callbacks: `onDumpSuccess`, `onDumpCreated`, `onPemResponse`. Modes: idle, recording (pause/resume), paused, text.
+- **PemResponseSheet:** Slide-up sheet showing Pem's answer when user asks a question via the voice bar. Dismissible. Appears automatically from `onPemResponse` callback.
+- **Daily Brief (InboxHomeScreen):** Time-based sections — overdue (red), today (amber timeline), tomorrow (expanded), this_week (collapsed), next_week (collapsed), later (collapsed), batch chips, someday tease. "All clear" empty state. Powered by `GET /inbox/brief`.
+- **ExtractDetailModal:** Shows item detail + change history (from `GET /extracts/:id/history`), draft generation (for `follow_ups` items), copy + share buttons, snooze sheet (later today, tomorrow, weekend, next week, someday), calendar event info.
+- **Calendar:** Settings → Calendar section. Google via `expo-web-browser` OAuth flow; Apple via `expo-calendar` on-device. Multiple Google accounts supported. `CalendarSection` component in `components/settings/`.
 - **Real-time:** **`hooks/useDumpInboxStream.ts`** after dump → refresh inbox.
 - **Timezone:** **`TimezoneRegistrar`** — PATCH **`/users/me/timezone`**.
 - **Push:** **`PushNotificationRegistrar`** — **`inbox_updated`** → **`/inbox`**.
-- **Thoughts:** Shows polished text only (no original dump shown to user).
+- **Dumps (Thoughts route):** Shows polished text only (no original dump shown to user). Label "Dumps" in nav — covers thoughts, journal entries, dictations, anything the user dumps.
 - **Brand:** **`constants/theme.ts`**, **`typography.ts`**, **`brand/pem-brand.html`**.
 
 ## JSX readability

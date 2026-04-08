@@ -1,17 +1,24 @@
-import AppMenuButton from "@/components/navigation/AppMenuButton";
+import ExtractDetailModal from "@/components/inbox/ExtractDetailModal";
 import PemListRow from "@/components/ui/PemListRow";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemMindEmptyState from "@/components/ui/PemMindEmptyState";
 import PemRefreshControl from "@/components/ui/PemRefreshControl";
 import PemText from "@/components/ui/PemText";
 import { inboxChrome } from "@/constants/inboxChrome";
-import { pemAmber } from "@/constants/theme";
 import { fontSize, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getExtractsQuery, type ApiExtract } from "@/lib/pemApi";
+import {
+  getExtractsQuery,
+  patchExtractDone,
+  patchExtractDismiss,
+  patchExtractUndone,
+  type ApiExtract,
+} from "@/lib/pemApi";
+import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
 import { firstParam } from "@/lib/routeParams";
 import { useAuth } from "@clerk/expo";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { ChevronLeft } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -42,19 +49,12 @@ const SLUG_CONFIG: Record<
     emptySubtitle: "Mention shopping items in your dumps.",
     filter: { batch_key: "shopping" },
   },
-  calls: {
-    title: "Calls",
-    icon: "📞",
-    emptyTitle: "No calls to make.",
-    emptySubtitle: "Mention calls in your dumps and they'll appear here.",
-    filter: { batch_key: "calls" },
-  },
-  emails: {
-    title: "Emails",
-    icon: "📧",
-    emptyTitle: "No emails to send.",
-    emptySubtitle: "Mention emails in your dumps and they'll appear here.",
-    filter: { batch_key: "emails" },
+  follow_ups: {
+    title: "Follow-ups",
+    icon: "💬",
+    emptyTitle: "No follow-ups right now.",
+    emptySubtitle: "Mention calls, emails, or texts in your dumps and they'll appear here.",
+    filter: { batch_key: "follow_ups" },
   },
   errands: {
     title: "Errands",
@@ -62,6 +62,13 @@ const SLUG_CONFIG: Record<
     emptyTitle: "No errands.",
     emptySubtitle: "Mention errands in your dumps and they'll appear here.",
     filter: { batch_key: "errands" },
+  },
+  done: {
+    title: "Done",
+    icon: "✓",
+    emptyTitle: "Nothing done yet.",
+    emptySubtitle: "When you handle something, it shows up here.",
+    filter: { status: "done" },
   },
 };
 
@@ -80,6 +87,7 @@ export default function CategoryScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [items, setItems] = useState<ApiExtract[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [detail, setDetail] = useState<ApiExtract | null>(null);
   const nextCursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
 
@@ -122,11 +130,45 @@ export default function CategoryScreen() {
     void load("initial");
   }, [load]);
 
+  const onDone = useCallback(async () => {
+    if (!detail) return;
+    pemImpactLight();
+    try {
+      await patchExtractDone(() => getTokenRef.current(), detail.id);
+      pemNotificationSuccess();
+      setDetail(null);
+      void load("initial");
+    } catch { /* optional */ }
+  }, [detail, load]);
+
+  const onDismiss = useCallback(async () => {
+    if (!detail) return;
+    pemImpactLight();
+    try {
+      await patchExtractDismiss(() => getTokenRef.current(), detail.id);
+      setDetail(null);
+      void load("initial");
+    } catch { /* optional */ }
+  }, [detail, load]);
+
+  const onUndone = useCallback(async () => {
+    if (!detail) return;
+    pemImpactLight();
+    try {
+      await patchExtractUndone(() => getTokenRef.current(), detail.id);
+      pemNotificationSuccess();
+      setDetail(null);
+      void load("initial");
+    } catch { /* optional */ }
+  }, [detail, load]);
+
   return (
     <View style={[styles.root, { backgroundColor: chrome.page, paddingTop: insets.top }]}>
       <StatusBar style={resolved === "dark" ? "light" : "dark"} />
       <View style={styles.top}>
-        <AppMenuButton tintColor={chrome.text} />
+        <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
+          <ChevronLeft size={24} color={chrome.text} strokeWidth={2} />
+        </Pressable>
         <PemText
           style={{
             flex: 1,
@@ -152,7 +194,7 @@ export default function CategoryScreen() {
             onPress={() => void load("initial")}
             style={{ marginTop: space[4] }}
           >
-            <PemText variant="body" style={{ color: pemAmber }}>
+            <PemText variant="body" style={{ color: chrome.textMuted, textDecorationLine: "underline" }}>
               Try again
             </PemText>
           </Pressable>
@@ -170,10 +212,11 @@ export default function CategoryScreen() {
           renderItem={({ item }) => (
             <PemListRow
               chrome={chrome}
-              icon={config.icon}
+              icon={item.source === "calendar" ? "📅" : config.icon}
               title={item.text}
               subtitle={item.pem_note ?? item.tone}
               showChevron
+              onPress={() => setDetail(item)}
             />
           )}
           ListEmptyComponent={
@@ -186,6 +229,18 @@ export default function CategoryScreen() {
           }
         />
       )}
+
+      <ExtractDetailModal
+        visible={detail != null}
+        item={detail}
+        chrome={chrome}
+        onClose={() => setDetail(null)}
+        onDone={onDone}
+        onDismiss={onDismiss}
+        onUndone={onUndone}
+        onItemUpdated={(updated) => setDetail(updated)}
+        getToken={() => getTokenRef.current()}
+      />
     </View>
   );
 }

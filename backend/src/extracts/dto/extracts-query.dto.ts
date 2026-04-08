@@ -10,7 +10,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-const BATCH = ['shopping', 'calls', 'emails', 'errands'] as const;
+const BATCH = ['shopping', 'follow_ups', 'errands'] as const;
 const STATUS = ['open', 'inbox', 'snoozed', 'dismissed', 'done'] as const;
 const TONE = ['confident', 'tentative', 'idea', 'someday'] as const;
 const URGENCY = ['today', 'this_week', 'someday', 'none'] as const;

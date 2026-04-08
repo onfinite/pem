@@ -1,11 +1,11 @@
-import { neutral, pemAmber } from "@/constants/theme";
+import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, lineHeight, space } from "@/constants/typography";
 import { useEffect, useRef } from "react";
-import { Animated, Dimensions, StyleSheet, Text, View } from "react-native";
+import { Animated, Dimensions, Image, StyleSheet, View } from "react-native";
 
 const { height } = Dimensions.get("window");
+const logo = require("@/assets/images/pem-icon-1024-transparent.png");
 
-/** Entrance-only animation; exit / handoff is handled by the root layout crossfade. */
 export default function SplashScreenView() {
   const iconAnim = useRef(new Animated.Value(0)).current;
   const line1Anim = useRef(new Animated.Value(0)).current;
@@ -63,9 +63,7 @@ export default function SplashScreenView() {
           { opacity: iconAnim, transform: [{ scale: iconScale }] },
         ]}
       >
-        <View style={styles.iconCircle}>
-          <Text style={styles.iconLetter}>P</Text>
-        </View>
+        <Image source={logo} style={styles.logoImage} resizeMode="contain" />
       </Animated.View>
 
       <View style={styles.tagline}>
@@ -90,10 +88,6 @@ export default function SplashScreenView() {
   );
 }
 
-const ICON_SIZE = 118;
-/** Room for Fraunces overshoots (serif P, italic descenders) — avoids Android/iOS glyph clipping. */
-const ICON_INSET = 6;
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -108,28 +102,9 @@ const styles = StyleSheet.create({
     marginBottom: space[10],
     overflow: "visible",
   },
-  iconCircle: {
-    width: ICON_SIZE,
-    height: ICON_SIZE,
-    borderRadius: ICON_SIZE / 2,
-    backgroundColor: neutral.white,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: ICON_INSET,
-    overflow: "visible",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.28,
-    shadowRadius: 32,
-    elevation: 20,
-  },
-  iconLetter: {
-    fontSize: fontSize.display,
-    lineHeight: lh(fontSize.display, lineHeight.snug),
-    color: pemAmber,
-    fontFamily: fontFamily.display.bold,
-    includeFontPadding: false,
-    textAlign: "center",
+  logoImage: {
+    width: 160,
+    height: 160,
   },
   tagline: {
     alignItems: "center",

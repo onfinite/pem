@@ -7,13 +7,19 @@ import {
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import { ExtractsService } from '../extracts/extracts.service';
-import { extractsTable, dumpsTable, type UserRow } from '../database/schemas';
+import { StorageService } from '../storage/storage.service';
+import {
+  extractsTable,
+  dumpsTable,
+  logsTable,
+  type UserRow,
+} from '../database/schemas';
 
 export const DUMP_TEXT_MAX_CHARS = 16_000;
 
@@ -26,6 +32,7 @@ export class DumpsService {
     @InjectQueue('dump') private readonly dumpQueue: Queue,
     private readonly extracts: ExtractsService,
     private readonly config: ConfigService,
+    private readonly storage: StorageService,
   ) {}
 
   async createDump(user: UserRow, text: string): Promise<{ dumpId: string }> {
@@ -41,7 +48,8 @@ export class DumpsService {
       {
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
-        removeOnComplete: true,
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 200 },
       },
     );
 
@@ -49,10 +57,7 @@ export class DumpsService {
     return { dumpId: dump.id };
   }
 
-  async createFromVoice(
-    user: UserRow,
-    audio: Express.Multer.File,
-  ): Promise<{ dumpId: string; text: string }> {
+  async transcribeAudio(audio: Express.Multer.File): Promise<string> {
     if (!audio?.buffer) {
       throw new BadRequestException('No audio file provided');
     }
@@ -87,9 +92,58 @@ export class DumpsService {
     if (!text) {
       throw new BadRequestException('Could not transcribe audio');
     }
+    return text;
+  }
 
+  async createFromVoice(
+    user: UserRow,
+    audio: Express.Multer.File,
+  ): Promise<{ dumpId: string; text: string }> {
+    const text = await this.transcribeAudio(audio);
     const result = await this.createDump(user, text);
+
+    if (this.storage.enabled && audio.buffer) {
+      const key = `dumps/${result.dumpId}/audio.m4a`;
+      this.storage
+        .upload(key, audio.buffer, audio.mimetype || 'audio/m4a')
+        .then(() =>
+          this.db
+            .update(dumpsTable)
+            .set({ audioKey: key })
+            .where(eq(dumpsTable.id, result.dumpId)),
+        )
+        .catch((err) =>
+          this.log.warn(
+            `Audio upload failed for dump ${result.dumpId}: ${err instanceof Error ? err.message : 'unknown'}`,
+          ),
+        );
+    }
+
     return { dumpId: result.dumpId, text };
+  }
+
+  async uploadAudioForDump(
+    dumpId: string,
+    audio: Express.Multer.File,
+  ): Promise<void> {
+    if (!this.storage.enabled || !audio.buffer) return;
+    const key = `dumps/${dumpId}/audio.m4a`;
+    await this.storage.upload(key, audio.buffer, audio.mimetype || 'audio/m4a');
+    await this.db
+      .update(dumpsTable)
+      .set({ audioKey: key })
+      .where(eq(dumpsTable.id, dumpId));
+  }
+
+  async getAudioUrl(userId: string, dumpId: string): Promise<string | null> {
+    const rows = await this.db
+      .select({ audioKey: dumpsTable.audioKey })
+      .from(dumpsTable)
+      .where(and(eq(dumpsTable.id, dumpId), eq(dumpsTable.userId, userId)))
+      .limit(1);
+    const key = rows[0]?.audioKey;
+    if (!key) return null;
+    return this.storage.getSignedUrl(key);
   }
 
   async listPaginated(
@@ -141,30 +195,30 @@ export class DumpsService {
     const page = hasMore ? rows.slice(0, lim) : rows;
     const last = page[page.length - 1];
 
-    const dumps: {
-      id: string;
-      text: string;
-      status: string;
-      last_error: string | null;
-      created_at: string;
-      extract_count: number;
-    }[] = [];
-
-    for (const r of page) {
-      const [cnt] = await this.db
-        .select({ c: sql<number>`count(*)::int` })
+    const dumpIds = page.map((r) => r.id);
+    const countMap = new Map<string, number>();
+    if (dumpIds.length > 0) {
+      const counts = await this.db
+        .select({
+          dumpId: extractsTable.dumpId,
+          c: sql<number>`count(*)::int`,
+        })
         .from(extractsTable)
-        .where(eq(extractsTable.dumpId, r.id));
-      const display = r.polishedText?.trim() || r.dumpText;
-      dumps.push({
-        id: r.id,
-        text: display,
-        status: r.status,
-        last_error: r.lastError ?? null,
-        created_at: r.createdAt.toISOString(),
-        extract_count: cnt?.c ?? 0,
-      });
+        .where(inArray(extractsTable.dumpId, dumpIds))
+        .groupBy(extractsTable.dumpId);
+      for (const row of counts) {
+        if (row.dumpId) countMap.set(row.dumpId, row.c);
+      }
     }
+
+    const dumps = page.map((r) => ({
+      id: r.id,
+      text: r.polishedText?.trim() || r.dumpText,
+      status: r.status,
+      last_error: r.lastError ?? null,
+      created_at: r.createdAt.toISOString(),
+      extract_count: countMap.get(r.id) ?? 0,
+    }));
 
     return {
       dumps,
@@ -187,6 +241,12 @@ export class DumpsService {
       .from(extractsTable)
       .where(eq(extractsTable.dumpId, dump.id));
 
+    const dumpLogs = await this.db
+      .select()
+      .from(logsTable)
+      .where(eq(logsTable.dumpId, dump.id))
+      .orderBy(logsTable.createdAt);
+
     const display = dump.polishedText?.trim() || dump.dumpText;
 
     return {
@@ -199,9 +259,19 @@ export class DumpsService {
         polished_text: dump.polishedText,
         additional_context: dump.additionalContext ?? null,
         agent_assumptions: dump.agentAssumptions ?? null,
+        has_audio: !!dump.audioKey,
         created_at: dump.createdAt.toISOString(),
       },
       extracts: items.map((a) => this.extracts.serialize(a)),
+      logs: dumpLogs.map((l) => ({
+        id: l.id,
+        type: l.type,
+        is_agent: l.isAgent,
+        pem_note: l.pemNote,
+        payload: l.payload,
+        error: l.error,
+        created_at: l.createdAt.toISOString(),
+      })),
     };
   }
 }

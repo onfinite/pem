@@ -1,5 +1,6 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -15,6 +16,7 @@ export class AskController {
   constructor(private readonly ask: AskService) {}
 
   @Post()
+  @Throttle({ default: { ttl: 60000, limit: 15 } })
   @ApiOperation({ summary: 'Ask Pem about your thoughts and extracts' })
   async askPem(@CurrentUser() user: UserRow, @Body() body: AskPemDto) {
     return this.ask.answer(user.id, body.question);

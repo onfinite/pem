@@ -4,7 +4,7 @@
     "slug": "pem",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/pem-icon-1024-transparent.png",
     "scheme": "pem",
     "platforms": ["ios", "web"],
     "userInterfaceStyle": "light",
@@ -29,10 +29,16 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
+          "image": "./assets/images/pem-icon-1024-transparent.png",
           "imageWidth": 160,
           "resizeMode": "contain",
           "backgroundColor": "#e8763a"
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Pem reads your calendar to show upcoming events and let you manage them."
         }
       ],
       "expo-web-browser",

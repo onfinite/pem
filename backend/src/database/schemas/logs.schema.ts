@@ -12,7 +12,7 @@ import { dumpsTable } from './dumps.schema';
 import { extractsTable } from './extracts.schema';
 import { usersTable } from './users.schema';
 
-export const LOG_TYPES = ['dump', 'extract', 'ask'] as const;
+export const LOG_TYPES = ['dump', 'extract', 'ask', 'calendar'] as const;
 export type LogType = (typeof LOG_TYPES)[number];
 
 /**

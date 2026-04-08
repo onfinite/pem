@@ -2,13 +2,19 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 
-import { ExtractionService } from '../../agents/extraction/extraction.service';
+import { ExtractAgentService } from '../../agents/extraction/extract-agent.service';
+import { ReconcileAgentService } from '../../agents/extraction/reconcile-agent.service';
+import { ValidationService } from '../../agents/extraction/validation.service';
 import type {
+  CalendarWrite,
   Confidence,
-  ExtractedActionable,
+  ExtractedItem,
+  ExtractPhaseResult,
+  ReconcilePhaseResult,
 } from '../../agents/extraction/extraction.schema';
 import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
+import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
 import { ProfileService } from '../../../profile/profile.service';
 import { ExtractsService } from '../../../extracts/extracts.service';
 import {
@@ -29,20 +35,11 @@ function parseIsoDate(s: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function allowLifecycleDestructive(c: Confidence): boolean {
-  return c === 'high';
-}
-function allowSnooze(c: Confidence): boolean {
-  return c === 'high' || c === 'medium';
-}
 function allowMergeFull(c: Confidence): boolean {
   return c === 'high';
 }
 function allowMergeSoft(c: Confidence): boolean {
   return c === 'high' || c === 'medium';
-}
-function allowFollowUp(c: Confidence): boolean {
-  return c === 'high';
 }
 
 @Injectable()
@@ -51,390 +48,93 @@ export class DumpExtractService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
-    private readonly extraction: ExtractionService,
+    private readonly extractAgent: ExtractAgentService,
+    private readonly reconcileAgent: ReconcileAgentService,
+    private readonly validation: ValidationService,
     private readonly inboxEvents: InboxEventsService,
     private readonly push: PushService,
     private readonly profile: ProfileService,
     private readonly extracts: ExtractsService,
+    private readonly calendarSync: CalendarSyncService,
   ) {}
 
-  async processDump(dumpId: string): Promise<void> {
-    const rows = await this.db
-      .select()
-      .from(dumpsTable)
-      .where(eq(dumpsTable.id, dumpId))
-      .limit(1);
-    const dump = rows[0];
-    if (!dump) throw new NotFoundException(`dump ${dumpId} not found`);
+  /* ── Public entry point ──────────────────────────────── */
 
+  async processDump(
+    dumpId: string,
+    opts?: { isFinalAttempt?: boolean },
+  ): Promise<void> {
+    const dump = await this.loadDump(dumpId);
     await this.setDumpStatus(dumpId, 'processing', null);
 
     try {
-      const [userRow] = await this.db
-        .select()
-        .from(usersTable)
-        .where(eq(usersTable.id, dump.userId))
-        .limit(1);
-      const tz = userRow?.timezone ?? null;
-
-      const openRows = await this.db
-        .select()
-        .from(extractsTable)
+      await this.db
+        .delete(extractsTable)
         .where(
           and(
-            eq(extractsTable.userId, dump.userId),
-            ne(extractsTable.status, 'done'),
+            eq(extractsTable.dumpId, dumpId),
+            eq(extractsTable.source, 'dump'),
           ),
         );
 
-      const openIds = new Set(openRows.map((r) => r.id));
-      const allowedIds = new Set(openIds);
+      const ctx = await this.gatherContext(dump);
 
-      const openExtracts = openRows.map((r) => ({
-        id: r.id,
-        text: r.extractText,
-        status: r.status,
-        tone: r.tone,
-        urgency: r.urgency,
-        batch_key: r.batchKey,
-        due_at: r.dueAt?.toISOString() ?? null,
-        period_label: r.periodLabel,
-      }));
+      // ── Phase 1: Extract ──
+      const extracted = await this.extractAgent.run({
+        dumpText: dump.dumpText,
+        userTimezone: ctx.tz,
+        memoryPromptSection: ctx.memoryPromptSection,
+      });
 
-      let existingFollowUps: {
-        actionable_id: string;
-        note: string | null;
-        recommended_at: string | null;
-      }[] = [];
-      if (openIds.size > 0) {
-        const idList = [...openIds];
-        const fuRows = await this.db
-          .select()
-          .from(followUpsTable)
-          .where(
-            and(
-              eq(followUpsTable.userId, dump.userId),
-              inArray(followUpsTable.extractId, idList),
-            ),
-          );
-        existingFollowUps = fuRows.map((f) => ({
-          actionable_id: f.extractId,
-          note: f.note,
-          recommended_at: f.recommendedAt?.toISOString() ?? null,
-        }));
-      }
+      // ── Phase 2: Reconcile ──
+      const reconciled = await this.reconcileAgent.run({
+        dumpText: dump.dumpText,
+        userTimezone: ctx.tz,
+        memoryPromptSection: ctx.memoryPromptSection,
+        newItems: extracted.new_items,
+        openTasks: ctx.openExtracts,
+        existingFollowUps: ctx.existingFollowUps,
+      });
 
-      const memoryMap = await this.profile.getProfileMap(dump.userId);
-      const memoryFactKeys = Object.keys(memoryMap);
-      const memoryPromptSection = await this.profile.buildMemoryPromptSection(
-        dump.userId,
+      // ── Phase 3: Validate (deterministic) ──
+      const { extract, reconcile, issues } = this.validation.validate(
+        extracted,
+        reconciled,
+        ctx.openIds,
       );
 
-      const parsed = await this.extraction.extractFromDump({
-        dumpText: dump.dumpText,
-        userTimezone: tz,
-        memoryPromptSection,
-        memoryFactKeys,
-        openActionables: openExtracts,
-        existingFollowUps,
-      });
-
-      const polished = parsed.polished_text.trim() || null;
-      await this.db
-        .update(dumpsTable)
-        .set({
-          polishedText: polished,
-          additionalContext: parsed.additional_context ?? null,
-          agentAssumptions:
-            parsed.agent_assumptions.length > 0
-              ? parsed.agent_assumptions
-              : null,
-        })
-        .where(eq(dumpsTable.id, dumpId));
-
-      // Log dump processing start
-      await this.logEntry({
-        userId: dump.userId,
-        type: 'dump',
+      // ── Apply results ──
+      await this.saveDumpMetadata(dumpId, extract, ctx);
+      await this.applyMemoryWrites(dump, extract);
+      await this.applyLifecycleCommands(dump, reconcile, ctx.openIds);
+      await this.applyMerges(dump, reconcile, ctx);
+      const { count: createdCount, extractsByIndex: createdExtractMap } =
+        await this.createNewItems(dump, extract, reconcile, ctx.tz);
+      await this.applyFollowUps(dump, reconcile);
+      await this.applyCalendarWrites(
+        dump.userId,
         dumpId,
-        isAgent: true,
-        pemNote: 'Extraction started',
-        payload: { op: 'extract_start', polished: !!polished },
-      });
+        reconcile,
+        createdExtractMap,
+      );
 
-      for (const mw of parsed.memory_writes) {
-        await this.profile.saveFromAgent(
-          dump.userId,
-          mw.memory_key,
-          mw.note,
-          dumpId,
-        );
-      }
+      // ── Finalize ──
+      const totalMutations =
+        createdCount +
+        reconcile.merge_operations.length +
+        reconcile.lifecycle_commands.length +
+        reconcile.calendar_writes.length;
 
-      for (const cmd of parsed.lifecycle_commands) {
-        if (!allowedIds.has(cmd.actionable_id)) {
-          this.log.warn(
-            `skip lifecycle ${cmd.command}: extract ${cmd.actionable_id} not in open set`,
-          );
-          continue;
-        }
-        if (cmd.command === 'mark_done') {
-          if (!allowLifecycleDestructive(cmd.confidence)) continue;
-          const row = await this.extracts.findForUser(
-            dump.userId,
-            cmd.actionable_id,
-          );
-          if (!row || row.status === 'done') continue;
-          const updated = await this.extracts.markDone(
-            dump.userId,
-            cmd.actionable_id,
-          );
-          allowedIds.delete(cmd.actionable_id);
-          await this.logEntry({
-            userId: dump.userId,
-            type: 'extract',
-            extractId: cmd.actionable_id,
-            dumpId,
-            isAgent: true,
-            pemNote: cmd.agent_log_note,
-            payload: { op: 'mark_done', command: cmd },
-          });
-          await this.inboxEvents.publish(dumpId, {
-            type: 'item.updated',
-            dumpId,
-            item: this.serializeExtract(updated),
-          });
-        } else if (cmd.command === 'dismiss') {
-          if (!allowLifecycleDestructive(cmd.confidence)) continue;
-          const row = await this.extracts.findForUser(
-            dump.userId,
-            cmd.actionable_id,
-          );
-          if (!row || row.status === 'done') continue;
-          const updated = await this.extracts.dismiss(
-            dump.userId,
-            cmd.actionable_id,
-          );
-          allowedIds.delete(cmd.actionable_id);
-          await this.logEntry({
-            userId: dump.userId,
-            type: 'extract',
-            extractId: cmd.actionable_id,
-            dumpId,
-            isAgent: true,
-            pemNote: cmd.agent_log_note,
-            payload: { op: 'dismiss', command: cmd },
-          });
-          await this.inboxEvents.publish(dumpId, {
-            type: 'item.updated',
-            dumpId,
-            item: this.serializeExtract(updated),
-          });
-        } else if (cmd.command === 'snooze') {
-          if (!allowSnooze(cmd.confidence)) continue;
-          const iso = cmd.snooze_until_iso?.trim();
-          if (!iso) {
-            this.log.warn('snooze command missing snooze_until_iso');
-            continue;
-          }
-          const row = await this.extracts.findForUser(
-            dump.userId,
-            cmd.actionable_id,
-          );
-          if (!row || row.status === 'done') continue;
-          const updated = await this.extracts.snooze(
-            dump.userId,
-            cmd.actionable_id,
-            'tomorrow',
-            iso,
-          );
-          await this.logEntry({
-            userId: dump.userId,
-            type: 'extract',
-            extractId: cmd.actionable_id,
-            dumpId,
-            isAgent: true,
-            pemNote: cmd.agent_log_note,
-            payload: { op: 'snooze', command: cmd },
-          });
-          await this.inboxEvents.publish(dumpId, {
-            type: 'item.updated',
-            dumpId,
-            item: this.serializeExtract(updated),
-          });
-        }
-      }
-
-      for (const merge of parsed.merge_operations) {
-        if (!allowedIds.has(merge.actionable_id)) {
-          this.log.warn(`skip merge: extract ${merge.actionable_id} not open`);
-          continue;
-        }
-        const full = allowMergeFull(merge.confidence);
-        const soft = allowMergeSoft(merge.confidence);
-        if (!soft) continue;
-
-        const row = await this.extracts.findForUser(
-          dump.userId,
-          merge.actionable_id,
-        );
-        if (!row || row.status === 'done') continue;
-
-        const patch = merge.patch;
-        const now = new Date();
-        const update: Partial<typeof extractsTable.$inferInsert> = {};
-
-        if (patch.text !== undefined) update.extractText = patch.text;
-        if (patch.original_text !== undefined)
-          update.originalText = patch.original_text;
-        if (patch.tone !== undefined) update.tone = patch.tone;
-        if (patch.urgency !== undefined) update.urgency = patch.urgency;
-        if (patch.pem_note !== undefined) update.pemNote = patch.pem_note;
-        if (patch.draft_text !== undefined) update.draftText = patch.draft_text;
-
-        if (full) {
-          if (patch.batch_key !== undefined) update.batchKey = patch.batch_key;
-          const dueAt = parseIsoDate(patch.due_at ?? null);
-          const pStart = parseIsoDate(patch.period_start ?? null);
-          const pEnd = parseIsoDate(patch.period_end ?? null);
-          if (patch.due_at !== undefined) update.dueAt = dueAt;
-          if (patch.period_start !== undefined) update.periodStart = pStart;
-          if (patch.period_end !== undefined) update.periodEnd = pEnd;
-          if (patch.period_label !== undefined)
-            update.periodLabel = patch.period_label;
-          const rec = parseIsoDate(patch.recommended_at ?? null);
-          if (patch.recommended_at !== undefined) update.recommendedAt = rec;
-          const tzPending =
-            !tz &&
-            (!!patch.due_at?.trim() ||
-              !!patch.period_start?.trim() ||
-              !!patch.period_end?.trim());
-          if (
-            patch.due_at !== undefined ||
-            patch.period_start !== undefined ||
-            patch.period_end !== undefined
-          ) {
-            update.timezonePending = tzPending;
-          }
-        }
-
-        if (Object.keys(update).length === 0) continue;
-        update.updatedAt = now;
-
-        const [updated] = await this.db
-          .update(extractsTable)
-          .set(update)
-          .where(
-            and(
-              eq(extractsTable.id, merge.actionable_id),
-              eq(extractsTable.userId, dump.userId),
-            ),
-          )
-          .returning();
-
-        if (updated) {
-          await this.logEntry({
-            userId: dump.userId,
-            type: 'extract',
-            extractId: merge.actionable_id,
-            dumpId,
-            isAgent: true,
-            pemNote: merge.agent_log_note,
-            payload: {
-              op: 'merge',
-              confidence: merge.confidence,
-              patch: merge.patch,
-              applied_full: full,
-            },
-          });
-          await this.inboxEvents.publish(dumpId, {
-            type: 'item.updated',
-            dumpId,
-            item: this.serializeExtract(updated),
-          });
-        }
-      }
-
-      let createdCount = 0;
-      for (const item of parsed.new_items) {
-        const row = await this.insertNewExtract(dump, item, tz);
-        if (row) {
-          createdCount += 1;
-          await this.logEntry({
-            userId: dump.userId,
-            type: 'extract',
-            extractId: row.id,
-            dumpId,
-            isAgent: true,
-            pemNote: 'Created from dump extraction',
-            payload: { op: 'create', source: item },
-          });
-          await this.inboxEvents.publish(dumpId, {
-            type: 'item.created',
-            dumpId,
-            item: this.serializeExtract(row),
-          });
-        }
-      }
-
-      for (const fu of parsed.follow_up_writes) {
-        if (!allowFollowUp(fu.confidence)) continue;
-        const target = await this.extracts.findForUser(
-          dump.userId,
-          fu.actionable_id,
-        );
-        if (!target || target.status === 'done') continue;
-
-        const recAt = parseIsoDate(fu.recommended_at);
-        await this.db
-          .insert(followUpsTable)
-          .values({
-            userId: dump.userId,
-            extractId: fu.actionable_id,
-            note: fu.note?.trim() || null,
-            recommendedAt: recAt,
-            sourceDumpId: dumpId,
-            updatedAt: new Date(),
-          })
-          .onConflictDoUpdate({
-            target: followUpsTable.extractId,
-            set: {
-              note: sql`excluded.note`,
-              recommendedAt: sql`excluded.recommended_at`,
-              sourceDumpId: sql`excluded.source_dump_id`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-          });
-
-        await this.logEntry({
-          userId: dump.userId,
-          type: 'extract',
-          extractId: fu.actionable_id,
-          dumpId,
-          isAgent: true,
-          pemNote: fu.agent_log_note,
-          payload: { op: 'follow_up_upsert', follow_up: fu },
-        });
-      }
-
-      if (
-        createdCount === 0 &&
-        parsed.merge_operations.length === 0 &&
-        parsed.lifecycle_commands.length === 0
-      ) {
-        this.log.log(
-          `dump ${dumpId} → 0 pipeline mutations (polished saved: ${!!polished})`,
-        );
-      } else {
-        this.log.log(
-          `dump ${dumpId} → new:${createdCount} merge:${parsed.merge_operations.length} lifecycle:${parsed.lifecycle_commands.length} follow_up:${parsed.follow_up_writes.length}`,
-        );
-      }
+      this.log.log(
+        `dump ${dumpId} → new:${createdCount} merge:${reconcile.merge_operations.length} ` +
+          `lifecycle:${reconcile.lifecycle_commands.length} follow_up:${reconcile.follow_up_writes.length} ` +
+          `calendar:${reconcile.calendar_writes.length} validation_issues:${issues.length}` +
+          (totalMutations === 0 ? ' (no mutations)' : ''),
+      );
 
       await this.inboxEvents.publish(dumpId, { type: 'inbox.updated', dumpId });
       await this.inboxEvents.publish(dumpId, { type: 'stream.done', dumpId });
       await this.push.notifyInboxUpdated(dump.userId);
-
       await this.setDumpStatus(dumpId, 'processed', null);
 
       await this.logEntry({
@@ -442,46 +142,346 @@ export class DumpExtractService {
         type: 'dump',
         dumpId,
         isAgent: true,
-        pemNote: 'Extraction complete',
+        pemNote: 'Pipeline complete',
         payload: {
-          op: 'extract_done',
+          op: 'pipeline_done',
           created: createdCount,
-          merged: parsed.merge_operations.length,
+          merged: reconcile.merge_operations.length,
+          lifecycle: reconcile.lifecycle_commands.length,
+          calendar: reconcile.calendar_writes.length,
+          validation_issues: issues.length,
         },
       });
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'string'
-            ? err
-            : 'Unknown error';
-      const lastError = message.slice(0, 2000);
-      this.log.error(
-        `dump ${dumpId} extraction failed: ${lastError}`,
-        err instanceof Error ? err.stack : undefined,
-      );
-      await this.setDumpStatus(dumpId, 'failed', lastError);
-
-      await this.logEntry({
-        userId: dump.userId,
-        type: 'dump',
-        dumpId,
-        isAgent: true,
-        pemNote: 'Extraction failed',
-        payload: { op: 'extract_failed' },
-        error: {
-          message: lastError,
-          stack: err instanceof Error ? err.stack?.slice(0, 4000) : undefined,
-        },
-      });
+      await this.handlePipelineError(dump, dumpId, err, opts);
       throw err;
     }
   }
 
-  private async insertNewExtract(
+  /* ── Context gathering ───────────────────────────────── */
+
+  private async loadDump(dumpId: string) {
+    const [dump] = await this.db
+      .select()
+      .from(dumpsTable)
+      .where(eq(dumpsTable.id, dumpId))
+      .limit(1);
+    if (!dump) throw new NotFoundException(`dump ${dumpId} not found`);
+    return dump;
+  }
+
+  private async gatherContext(dump: { id: string; userId: string }) {
+    const [userRow] = await this.db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, dump.userId))
+      .limit(1);
+    const tz = userRow?.timezone ?? null;
+
+    const openRows = await this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, dump.userId),
+          ne(extractsTable.status, 'done'),
+          ne(extractsTable.status, 'dismissed'),
+        ),
+      );
+
+    const openIds = new Set(openRows.map((r) => r.id));
+
+    const openExtracts = openRows.map((r) => ({
+      id: r.id,
+      text: r.extractText,
+      status: r.status,
+      tone: r.tone,
+      urgency: r.urgency,
+      batch_key: r.batchKey,
+      due_at: r.dueAt?.toISOString() ?? null,
+      period_label: r.periodLabel,
+    }));
+
+    let existingFollowUps: {
+      actionable_id: string;
+      note: string | null;
+      recommended_at: string | null;
+    }[] = [];
+
+    if (openIds.size > 0) {
+      const fuRows = await this.db
+        .select()
+        .from(followUpsTable)
+        .where(
+          and(
+            eq(followUpsTable.userId, dump.userId),
+            inArray(followUpsTable.extractId, [...openIds]),
+          ),
+        );
+      existingFollowUps = fuRows.map((f) => ({
+        actionable_id: f.extractId,
+        note: f.note,
+        recommended_at: f.recommendedAt?.toISOString() ?? null,
+      }));
+    }
+
+    const memoryMap = await this.profile.getProfileMap(dump.userId);
+    const memoryFactKeys = Object.keys(memoryMap);
+    const memoryPromptSection = await this.profile.buildMemoryPromptSection(
+      dump.userId,
+    );
+
+    return {
+      tz,
+      openRows,
+      openIds,
+      openExtracts,
+      existingFollowUps,
+      memoryFactKeys,
+      memoryPromptSection,
+    };
+  }
+
+  /* ── Apply: dump metadata ────────────────────────────── */
+
+  private async saveDumpMetadata(
+    dumpId: string,
+    extract: ExtractPhaseResult,
+    ctx: Awaited<ReturnType<typeof this.gatherContext>>,
+  ) {
+    const polished = extract.polished_text.trim() || null;
+    await this.db
+      .update(dumpsTable)
+      .set({
+        polishedText: polished,
+        additionalContext: {
+          memory_keys_referenced: [...ctx.memoryFactKeys],
+          open_task_count: ctx.openExtracts.length,
+          follow_up_count: ctx.existingFollowUps.length,
+          summary: 'Derived server-side from context included in prompt.',
+        },
+        agentAssumptions:
+          extract.agent_assumptions.length > 0
+            ? extract.agent_assumptions
+            : null,
+      })
+      .where(eq(dumpsTable.id, dumpId));
+  }
+
+  /* ── Apply: memory writes ────────────────────────────── */
+
+  private async applyMemoryWrites(
+    dump: { id: string; userId: string },
+    extract: ExtractPhaseResult,
+  ) {
+    for (const mw of extract.memory_writes) {
+      await this.profile.saveFromAgent(
+        dump.userId,
+        mw.memory_key,
+        mw.note,
+        dump.id,
+      );
+    }
+  }
+
+  /* ── Apply: lifecycle commands ───────────────────────── */
+
+  private async applyLifecycleCommands(
+    dump: { id: string; userId: string },
+    reconcile: ReconcilePhaseResult,
+    openIds: Set<string>,
+  ) {
+    for (const cmd of reconcile.lifecycle_commands) {
+      if (!openIds.has(cmd.actionable_id)) continue;
+
+      const row = await this.extracts.findForUser(
+        dump.userId,
+        cmd.actionable_id,
+      );
+      if (!row || row.status === 'done') continue;
+
+      let updated: ExtractRow | null = null;
+
+      if (cmd.command === 'mark_done') {
+        updated = await this.extracts.markDone(dump.userId, cmd.actionable_id);
+        openIds.delete(cmd.actionable_id);
+      } else if (cmd.command === 'dismiss') {
+        updated = await this.extracts.dismiss(dump.userId, cmd.actionable_id);
+        openIds.delete(cmd.actionable_id);
+      } else if (cmd.command === 'snooze') {
+        const iso = cmd.snooze_until_iso?.trim();
+        if (!iso) continue;
+        updated = await this.extracts.snooze(
+          dump.userId,
+          cmd.actionable_id,
+          'tomorrow',
+          iso,
+        );
+      }
+
+      if (updated) {
+        await this.logEntry({
+          userId: dump.userId,
+          type: 'extract',
+          extractId: cmd.actionable_id,
+          dumpId: dump.id,
+          isAgent: true,
+          pemNote: cmd.agent_log_note,
+          payload: { op: cmd.command, command: cmd },
+        });
+        await this.inboxEvents.publish(dump.id, {
+          type: 'item.updated',
+          dumpId: dump.id,
+          item: this.serializeExtract(updated),
+        });
+      }
+    }
+  }
+
+  /* ── Apply: merges ───────────────────────────────────── */
+
+  private async applyMerges(
+    dump: { id: string; userId: string },
+    reconcile: ReconcilePhaseResult,
+    ctx: Awaited<ReturnType<typeof this.gatherContext>>,
+  ) {
+    for (const merge of reconcile.merge_operations) {
+      if (!ctx.openIds.has(merge.actionable_id)) continue;
+      const full = allowMergeFull(merge.confidence);
+      const soft = allowMergeSoft(merge.confidence);
+      if (!soft) continue;
+
+      const row = await this.extracts.findForUser(
+        dump.userId,
+        merge.actionable_id,
+      );
+      if (!row || row.status === 'done') continue;
+
+      const patch = merge.patch;
+      const now = new Date();
+      const update: Partial<typeof extractsTable.$inferInsert> = {};
+
+      if (patch.text !== undefined) update.extractText = patch.text;
+      if (patch.original_text !== undefined)
+        update.originalText = patch.original_text;
+      if (patch.tone !== undefined) update.tone = patch.tone;
+      if (patch.urgency !== undefined) update.urgency = patch.urgency;
+      if (patch.pem_note !== undefined) update.pemNote = patch.pem_note;
+      if (patch.draft_text !== undefined) update.draftText = patch.draft_text;
+
+      if (full) {
+        if (patch.batch_key !== undefined) update.batchKey = patch.batch_key;
+        if (patch.due_at !== undefined)
+          update.dueAt = parseIsoDate(patch.due_at);
+        if (patch.period_start !== undefined)
+          update.periodStart = parseIsoDate(patch.period_start);
+        if (patch.period_end !== undefined)
+          update.periodEnd = parseIsoDate(patch.period_end);
+        if (patch.period_label !== undefined)
+          update.periodLabel = patch.period_label;
+        if (patch.recommended_at !== undefined)
+          update.recommendedAt = parseIsoDate(patch.recommended_at);
+
+        const tzPending =
+          !ctx.tz &&
+          (!!patch.due_at?.trim() ||
+            !!patch.period_start?.trim() ||
+            !!patch.period_end?.trim());
+        if (
+          patch.due_at !== undefined ||
+          patch.period_start !== undefined ||
+          patch.period_end !== undefined
+        ) {
+          update.timezonePending = tzPending;
+        }
+      }
+
+      if (Object.keys(update).length === 0) continue;
+      update.updatedAt = now;
+
+      const [updated] = await this.db
+        .update(extractsTable)
+        .set(update)
+        .where(
+          and(
+            eq(extractsTable.id, merge.actionable_id),
+            eq(extractsTable.userId, dump.userId),
+          ),
+        )
+        .returning();
+
+      if (updated) {
+        await this.logEntry({
+          userId: dump.userId,
+          type: 'extract',
+          extractId: merge.actionable_id,
+          dumpId: dump.id,
+          isAgent: true,
+          pemNote: merge.agent_log_note,
+          payload: {
+            op: 'merge',
+            confidence: merge.confidence,
+            patch: merge.patch,
+            applied_full: full,
+          },
+        });
+        await this.inboxEvents.publish(dump.id, {
+          type: 'item.updated',
+          dumpId: dump.id,
+          item: this.serializeExtract(updated),
+        });
+      }
+    }
+  }
+
+  /* ── Apply: create new items ─────────────────────────── */
+
+  private async createNewItems(
     dump: { id: string; userId: string; dumpText: string },
-    item: ExtractedActionable,
+    extract: ExtractPhaseResult,
+    reconcile: ReconcilePhaseResult,
+    tz: string | null,
+  ): Promise<{ count: number; extractsByIndex: Map<number, ExtractRow> }> {
+    const dedupIndices = new Set(
+      (reconcile.deduplications ?? []).map((d) => d.new_item_index),
+    );
+
+    let count = 0;
+    const extractsByIndex = new Map<number, ExtractRow>();
+    for (let i = 0; i < extract.new_items.length; i++) {
+      if (dedupIndices.has(i)) {
+        this.log.log(
+          `skip new_item[${i}] "${extract.new_items[i].text}" — dedup match`,
+        );
+        continue;
+      }
+
+      const row = await this.insertNewExtract(dump, extract.new_items[i], tz);
+      if (row) {
+        count++;
+        extractsByIndex.set(i, row);
+        await this.logEntry({
+          userId: dump.userId,
+          type: 'extract',
+          extractId: row.id,
+          dumpId: dump.id,
+          isAgent: true,
+          pemNote: 'Created from dump extraction',
+          payload: { op: 'create', source: extract.new_items[i] },
+        });
+        await this.inboxEvents.publish(dump.id, {
+          type: 'item.created',
+          dumpId: dump.id,
+          item: this.serializeExtract(row),
+        });
+      }
+    }
+    return { count, extractsByIndex };
+  }
+
+  private async insertNewExtract(
+    dump: { id: string; userId: string },
+    item: ExtractedItem,
     tz: string | null,
   ): Promise<ExtractRow | null> {
     const dueAt = parseIsoDate(item.due_at);
@@ -517,9 +517,197 @@ export class DumpExtractService {
     return row ?? null;
   }
 
+  /* ── Apply: follow-ups ───────────────────────────────── */
+
+  private async applyFollowUps(
+    dump: { id: string; userId: string },
+    reconcile: ReconcilePhaseResult,
+  ) {
+    for (const fu of reconcile.follow_up_writes) {
+      const target = await this.extracts.findForUser(
+        dump.userId,
+        fu.actionable_id,
+      );
+      if (!target || target.status === 'done') continue;
+
+      const recAt = parseIsoDate(fu.recommended_at);
+      await this.db
+        .insert(followUpsTable)
+        .values({
+          userId: dump.userId,
+          extractId: fu.actionable_id,
+          note: fu.note?.trim() || null,
+          recommendedAt: recAt,
+          sourceDumpId: dump.id,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: followUpsTable.extractId,
+          set: {
+            note: sql`excluded.note`,
+            recommendedAt: sql`excluded.recommended_at`,
+            sourceDumpId: sql`excluded.source_dump_id`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
+
+      await this.logEntry({
+        userId: dump.userId,
+        type: 'extract',
+        extractId: fu.actionable_id,
+        dumpId: dump.id,
+        isAgent: true,
+        pemNote: fu.agent_log_note,
+        payload: { op: 'follow_up_upsert', follow_up: fu },
+      });
+    }
+  }
+
+  /* ── Apply: calendar writes ──────────────────────────── */
+
+  private async applyCalendarWrites(
+    userId: string,
+    dumpId: string,
+    reconcile: ReconcilePhaseResult,
+    createdExtractMap: Map<number, ExtractRow>,
+  ) {
+    for (const cw of reconcile.calendar_writes) {
+      const linkedExtract =
+        cw.new_item_index != null
+          ? (createdExtractMap.get(cw.new_item_index) ?? null)
+          : null;
+      await this.processCalendarWrite(userId, dumpId, cw, linkedExtract);
+    }
+  }
+
+  private async processCalendarWrite(
+    userId: string,
+    dumpId: string,
+    cw: CalendarWrite,
+    linkedExtract: ExtractRow | null,
+  ): Promise<void> {
+    try {
+      const startAt = new Date(cw.start_at);
+      const endAt = new Date(cw.end_at);
+      if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+        this.log.warn('Invalid calendar write date, skipping');
+        return;
+      }
+
+      const result = await this.calendarSync.writeToGoogleCalendar(userId, {
+        summary: cw.summary,
+        start: startAt,
+        end: endAt,
+        location: cw.location ?? undefined,
+        description: cw.description ?? undefined,
+      });
+
+      if (result && linkedExtract) {
+        await this.db
+          .update(extractsTable)
+          .set({
+            externalEventId: result.eventId,
+            calendarConnectionId: result.connectionId,
+            eventStartAt: startAt,
+            eventEndAt: endAt,
+            eventLocation: cw.location ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(extractsTable.id, linkedExtract.id));
+        this.log.log(
+          `Linked extract ${linkedExtract.id} → calendar event ${result.eventId}`,
+        );
+      }
+
+      await this.logEntry({
+        userId,
+        type: 'calendar',
+        dumpId,
+        extractId: linkedExtract?.id,
+        isAgent: true,
+        pemNote: cw.agent_log_note,
+        payload: {
+          op: 'calendar_write',
+          summary: cw.summary,
+          eventId: result?.eventId ?? null,
+          connectionId: result?.connectionId ?? null,
+          linkedExtractId: linkedExtract?.id ?? null,
+          written: !!result,
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Calendar write failed';
+      this.log.warn(`Calendar write failed: ${msg}`);
+      await this.logEntry({
+        userId,
+        type: 'calendar',
+        dumpId,
+        isAgent: true,
+        pemNote: `Calendar write failed: ${cw.summary}`,
+        payload: { op: 'calendar_write_failed', summary: cw.summary },
+        error: { message: msg },
+      });
+    }
+  }
+
+  /* ── Error handling ──────────────────────────────────── */
+
+  private async handlePipelineError(
+    dump: { id: string; userId: string },
+    dumpId: string,
+    err: unknown,
+    opts?: { isFinalAttempt?: boolean },
+  ) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : 'Unknown error';
+    const lastError = message.slice(0, 2000);
+    const isFinal = opts?.isFinalAttempt ?? true;
+
+    this.log.error(
+      `dump ${dumpId} pipeline failed (final=${isFinal}): ${lastError}`,
+      err instanceof Error ? err.stack : undefined,
+    );
+
+    if (isFinal) {
+      await this.setDumpStatus(dumpId, 'failed', lastError);
+    }
+
+    await this.logEntry({
+      userId: dump.userId,
+      type: 'dump',
+      dumpId,
+      isAgent: true,
+      pemNote: isFinal
+        ? 'Pipeline failed (final)'
+        : 'Pipeline attempt failed, will retry',
+      payload: { op: 'pipeline_failed', final: isFinal },
+      error: {
+        message: lastError,
+        stack: err instanceof Error ? err.stack?.slice(0, 4000) : undefined,
+      },
+    });
+  }
+
+  /* ── Utilities ───────────────────────────────────────── */
+
+  private async setDumpStatus(
+    dumpId: string,
+    status: DumpStatus,
+    lastError: string | null,
+  ): Promise<void> {
+    await this.db
+      .update(dumpsTable)
+      .set({ status, lastError })
+      .where(eq(dumpsTable.id, dumpId));
+  }
+
   private async logEntry(args: {
     userId: string;
-    type: 'dump' | 'extract' | 'ask';
+    type: 'dump' | 'extract' | 'ask' | 'calendar';
     extractId?: string;
     dumpId?: string;
     isAgent: boolean;
@@ -537,17 +725,6 @@ export class DumpExtractService {
       payload: args.payload,
       error: args.error ?? null,
     });
-  }
-
-  private async setDumpStatus(
-    dumpId: string,
-    status: DumpStatus,
-    lastError: string | null,
-  ): Promise<void> {
-    await this.db
-      .update(dumpsTable)
-      .set({ status, lastError })
-      .where(eq(dumpsTable.id, dumpId));
   }
 
   private serializeExtract(row: ExtractRow) {

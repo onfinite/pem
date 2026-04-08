@@ -10,5 +10,6 @@ import { AskService } from './ask.service';
   imports: [DatabaseModule, ProfileModule, UsersModule],
   controllers: [AskController],
   providers: [AskService],
+  exports: [AskService],
 })
 export class AskModule {}

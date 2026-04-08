@@ -7,8 +7,8 @@ import { Pressable, StyleSheet, View } from "react-native";
 
 type Props = {
   chrome: InboxChrome;
-  /** Single emoji shown in the left tile (Layer 3 list mock). */
-  icon?: string;
+  /** Emoji string or a ReactNode (e.g. Lucide icon) for the left tile. */
+  icon?: string | ReactNode;
   title: string;
   /** Dimmed secondary line (11px, textDim). */
   subtitle?: string;
@@ -38,7 +38,11 @@ export default function PemListRow({
             { backgroundColor: chrome.surfaceMuted, borderColor: chrome.border },
           ]}
         >
-          <PemText style={{ fontSize: fontSize.sm }}>{icon}</PemText>
+          {typeof icon === "string" ? (
+            <PemText style={{ fontSize: fontSize.sm }}>{icon}</PemText>
+          ) : (
+            icon
+          )}
         </View>
       ) : (
         <View style={{ width: space[2] }} />

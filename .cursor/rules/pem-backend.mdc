@@ -9,15 +9,33 @@ globs: backend/**
 
 **Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, never `generateObject`). **Background work** lives under **`src/background/`**. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription (`POST /dumps/voice`).
 
-**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA), **`dumps`** (raw **`text`**, **`polished_text`**, **`last_error`**, **`additional_context`** / **`agent_assumptions`** JSON, **`status`**: `processing` | `processed` | `failed`), **`extracts`** (tone, urgency, batch_key, dates, **`recommended_at`**, status — renamed from `actionables`), **`follow_ups`** (one row per extract — reminder note + **`recommended_at`**), **`logs`** (unified audit: **`type`**: `dump` | `extract` | `ask`, **`is_agent`**, **`pem_note`**, **`payload`** JSON, **`error`** JSON, optional **`extract_id`** / **`dump_id`** — replaces old `actionable_change_log`), **`memory_facts`**.
+**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA), **`dumps`** (raw **`text`**, **`polished_text`**, **`last_error`**, **`additional_context`** / **`agent_assumptions`** JSON, **`status`**: `processing` | `processed` | `failed`), **`extracts`** (tone, urgency, batch_key, dates, **`recommended_at`**, status; **`source`**: `dump` | `calendar`; **`external_event_id`**, **`calendar_connection_id`**, **`event_start_at`**, **`event_end_at`**, **`event_location`** for calendar events; `dumpId` nullable for calendar-sourced extracts — renamed from `actionables`), **`calendar_connections`** (provider `google` | `apple`, is_primary, Google OAuth tokens, Apple calendar IDs, sync state), **`follow_ups`** (one row per extract — reminder note + **`recommended_at`**), **`logs`** (unified audit: **`type`**: `dump` | `extract` | `ask` | `calendar`, **`is_agent`**, **`pem_note`**, **`payload`** JSON, **`error`** JSON, optional **`extract_id`** / **`dump_id`** — replaces old `actionable_change_log`), **`memory_facts`**.
 
-**Dump extraction (single LLM call):** Loads **`memory_facts`** + all non-**`done`** extracts + **`follow_ups`** → **`ExtractionService.extractFromDump`** → polish + **`new_items`** + **`merge_operations`** + **`lifecycle_commands`** (done / dismiss / snooze) + **`follow_up_writes`** + **`memory_writes`**. **`additional_context`** on the dump row is **built server-side**. Confidence gates: destructive lifecycle and follow-ups require **`high`**; merges full on **`high`**, soft on **`medium`**. Publishes SSE **`item.created`**, **`item.updated`**, **`inbox.updated`**, **`stream.done`**. All mutations logged to **`logs`** table with `is_agent: true`.
+**Dump extraction (multi-agent pipeline):** Three-phase sequential pipeline with deterministic validation:
+
+1. **Phase 1 — Extract** (`ExtractAgentService`): Receives dump text + memory facts → returns `polished_text`, `new_items[]`, `memory_writes[]`, `agent_assumptions[]`. Focused prompt, small schema — no knowledge of existing tasks.
+2. **Phase 2 — Reconcile** (`ReconcileAgentService`): Receives Phase 1's `new_items` + open tasks + follow-ups + dump text + **memory facts** → returns `merge_operations[]`, `lifecycle_commands[]`, `follow_up_writes[]`, `calendar_writes[]` (with `new_item_index` for linkback), `deduplications[]`. Compares new items against existing state to decide merges, closures, calendar events. Memory context helps it make wiser decisions about task matching.
+3. **Phase 3 — Validate** (`ValidationService`): Deterministic code — no LLM. Checks: date parseability, UUID existence in open set, confidence thresholds, start < end for calendar, duplicate text in new_items. Drops invalid entries with logged issues rather than failing the pipeline.
+
+Orchestrator is `DumpExtractService` (BullMQ worker). **`additional_context`** on the dump row is **built server-side**. Confidence gates: destructive lifecycle and follow-ups require **`high`**; merges full on **`high`**, soft on **`medium`**; calendar writes require ≥ **`medium`**. Publishes SSE **`item.created`**, **`item.updated`**, **`inbox.updated`**, **`stream.done`**. All mutations logged to **`logs`** table with `is_agent: true`. **Calendar linkback:** after writing to Google Calendar, stamps `externalEventId` + `calendarConnectionId` + `eventStartAt`/`eventEndAt` onto the originating extract.
+
+**Calendar integration:** Google Calendar (server-side OAuth + API via `googleapis`) and Apple Calendar (on-device `expo-calendar`, synced via `POST /calendar/apple/sync`). **`CalendarModule`** — connection management, Google OAuth flow (`GET /calendar/google/auth-url`, `GET /calendar/google/callback`), Apple connect/sync endpoints. **`ScheduleModule`** cron: every 2 hours enqueues `calendar-sync` BullMQ jobs for all Google connections; every hour auto-dones past calendar events. Calendar events appear as extracts with `source: 'calendar'`. Extraction agent can emit `calendar_writes` to create events on the primary calendar. **Bidirectional:** dismissing an extract with a linked calendar event deletes it from Google Calendar. Env: `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`.
 
 **Extracts query:** **`GET /extracts/query`** — optional **`status`**, **`batch_key`**, **`tone`**, **`exclude_tone`**, **`urgency`**, **`limit`**, **`cursor`**.
 
+**Brief:** **`GET /inbox/brief`** — overdue, today (timeline), tomorrow, this_week, next_week, later, batch_counts. Timezone-aware (Luxon). Powers the Daily Brief home screen.
+
+**Draft:** **`POST /extracts/:id/draft`** — LLM generates a draft message for follow-up items using gpt-4o. Saves draft to extract row.
+
+**History:** **`GET /extracts/:id/history`** — change logs from unified `logs` table, ordered newest first.
+
+**Batch keys:** `shopping` | `errands` | `follow_ups` (replaces old `calls`/`emails` — follow_ups covers all reaching-out-to-someone tasks). Errands: any physical chore (laundry, dry cleaning, pharmacy, post office, etc.). Phase 3 validation includes **deterministic keyword matching** to catch LLM misses.
+
 **Ask Pem:** **`POST /ask`** — user asks about their data; backend queries extracts + dumps + memory, answers via LLM, logs to **`logs`** table with `type: 'ask'`. Only answers about user's own data.
 
-**Voice:** **`POST /dumps/voice`** — multipart audio upload → OpenAI Whisper API → text → normal dump pipeline.
+**Unified Intake:** **`POST /intake`** (text) and **`POST /intake/voice`** (multipart audio). Intent classification via gpt-4o-mini → routes to dumps pipeline for dumps, Ask for questions, or both. Returns `IntakeResult` { intent, dump_id, text, answer, sources }. **`IntakeModule`** imports `AskModule` + `DumpsModule`.
+
+**Voice:** **`POST /dumps/voice`** — multipart audio upload → OpenAI Whisper API → text → normal dump pipeline (legacy — prefer `/intake/voice`).
 
 **Drizzle:** Change schema in TS → **`npm run db:generate`** → review → **`npm run db:migrate`**. Never hand-edit `drizzle/*.sql` or `drizzle/meta/`.
 
@@ -26,13 +44,16 @@ globs: backend/**
 | Area | Role |
 |------|------|
 | `src/background/` | **`BackgroundModule`** (`@Global`) — BullMQ, dump worker, agents, inbox-events; imports **`ExtractsModule`** + **`ProfileModule`**. |
-| `src/background/agents/<name>/` | LLM agents (e.g. **`extraction/`**). |
+| `src/background/agents/extraction/` | Multi-agent pipeline: **`ExtractAgentService`** (Phase 1), **`ReconcileAgentService`** (Phase 2), **`ValidationService`** (Phase 3 — deterministic QC), schemas. |
 | `src/background/queues/dump/` | BullMQ **`dump`** queue: `DumpProcessor`, `DumpExtractService`. |
+| `src/background/queues/calendar/` | BullMQ **`calendar-sync`** queue: `CalendarSyncProcessor`, `CalendarCronService` (cron every 2h + auto-done every 1h). |
 | `src/background/inbox-events/` | Redis pub/sub — workers publish; **`InboxStreamService`** subscribes for SSE. |
+| `src/calendar/` | `CalendarModule` — connections CRUD, Google OAuth, Google Calendar API, sync service. |
 | `src/dumps/` | `POST /dumps`, `POST /dumps/voice`, `GET /dumps`, `GET /dumps/:id` |
-| `src/inbox/` | `GET /inbox`, `GET /inbox/all`, `GET /inbox/stream` (SSE) |
-| `src/extracts/` | `GET /extracts/done`, `GET /extracts/query`, PATCH done/dismiss/undone/undismiss/snooze |
+| `src/inbox/` | `GET /inbox`, `GET /inbox/brief`, `GET /inbox/all`, `GET /inbox/stream` (SSE) |
+| `src/extracts/` | `GET /extracts/done`, `GET /extracts/query`, `GET /extracts/:id`, `GET /extracts/:id/history`, `POST /extracts/:id/draft`, PATCH done/dismiss/undone/undismiss/snooze |
 | `src/ask/` | `POST /ask` — Ask Pem Q&A |
+| `src/intake/` | `POST /intake`, `POST /intake/voice` — unified intent classification + routing |
 | `src/users/` | `GET /users/me`, `PATCH /users/me/timezone`, profile, push token |
 | `src/profile/` | `memory_facts` CRUD |
 | `src/push/` | Expo push |

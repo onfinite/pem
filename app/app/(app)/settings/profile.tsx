@@ -389,7 +389,7 @@ export default function SettingsProfileScreen() {
       const label = formatFactKey(f.memory_key);
       Alert.alert(
         "Remove this fact?",
-        `“${label}” won’t be used for new preps. You can add it again anytime.`,
+        `“${label}” won’t be used for anymore. You can add it again anytime.`,
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -614,7 +614,7 @@ export default function SettingsProfileScreen() {
               title="Nothing here yet"
               body={
                 memoryTab === "active"
-                  ? "Tap “Add a fact” to tell Pem something useful, or let it pick things up when you prep."
+                  ? "Tap “Add a fact” to tell Pem something useful, or let it learn from your dumps."
                   : "When Pem replaces something it already knew, the older version appears here."
               }
             />

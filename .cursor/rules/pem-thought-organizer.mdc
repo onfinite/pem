@@ -151,7 +151,7 @@ original_text   text        -- raw fragment from dump that produced this
 status          enum        -- 'inbox' | 'done' | 'snoozed' | 'dismissed'
 tone            enum        -- 'confident' | 'tentative' | 'idea' | 'someday'
 urgency         enum        -- 'today' | 'this_week' | 'someday' | 'none'
-batch_key       text        -- nullable. 'shopping' | 'calls' | 'emails' | 'errands' | null
+batch_key       text        -- nullable. 'shopping' | 'errands' | 'follow_ups' | null
 due_at          timestamptz -- nullable. exact datetime if detected
 period_start    timestamptz -- nullable. for period-based timing (e.g. start of weekend)
 period_end      timestamptz -- nullable. for period-based timing (e.g. end of weekend)
@@ -256,7 +256,8 @@ Local intent → detail can offer `[ Open Google Maps ]` only.
 
 ## Batching
 
-Batch keys: `shopping` | `calls` | `emails` | `errands` | null.
+Batch keys: `shopping` | `errands` | `follow_ups` | null.
+`follow_ups` covers calls, emails, texts — any task that involves contacting someone.
 When in doubt, do not batch. Batches require 2+ items with same `batch_key`.
 
 ---
@@ -303,8 +304,8 @@ Use `generateText` with `Output.object({ schema })` and Zod — never `generateO
 
 ## AI model usage
 
-- **gpt-4o-mini** — extraction, classification, tone, urgency, batch detection.
-- **gpt-4o** — Pem's statement, drafts, context lookup when user-facing quality matters.
+- **gpt-4o-mini** — extraction, classification, intent classification, tone, urgency, batch detection.
+- **gpt-4o** — Pem's statement, drafts, Ask Pem answers, context lookup when user-facing quality matters.
 
 ---
 
@@ -314,54 +315,52 @@ Events: `inbox.updated`, `item.created`, `stream.done`. Redis pub/sub + Nest `@S
 
 ---
 
-## App screens — iteration 1
+## App screens
 
-1. Dump  
-2. Inbox  
-3. Item detail (bottom sheet)  
-4. Thoughts  
-5. Done  
-6. Settings  
+1. Brief (home — daily brief with overdue, today timeline, tomorrow, this week, next week, later, batch chips)
+2. Item detail (bottom sheet with history, draft, snooze, copy/share)
+3. Dumps (dump history — thoughts, dictations, anything)
+4. Done
+5. Settings
+6. Category/batch pages (via batch chips)
 
-Navigation: bottom bar Inbox · Thoughts · Done; floating amber mic → Dump; Settings top-right on Inbox.
+Navigation: drawer with Brief · Dumps · Done · Settings. Inline voice/text bar at bottom of every screen — **unified intake** handles dumps AND questions (Pem classifies intent). PemResponseSheet slides up when Pem has an answer.
 
 ---
 
-## API shape — iteration 1
+## API shape
 
 ```
-POST   /dumps
-GET    /inbox
-GET    /inbox/all
-GET    /inbox/stream?dumpId=
-PATCH  /actionables/:id/done | /dismiss | /undone | /undismiss | /snooze
-GET    /actionables/done
+POST   /intake              ← unified entry: dump, question, or both (preferred)
+POST   /intake/voice        ← unified voice entry (Whisper + intent classify)
+POST   /dumps               ← direct dump
+POST   /dumps/voice         ← direct voice dump
 GET    /dumps
 GET    /dumps/:id
+GET    /inbox
+GET    /inbox/brief          ← overdue, today, tomorrow, this_week, next_week, later, batch_counts
+GET    /inbox/all
+GET    /inbox/stream?dumpId=
+GET    /extracts/done
+GET    /extracts/open
+GET    /extracts/query
+GET    /extracts/:id
+GET    /extracts/:id/history
+POST   /extracts/:id/draft
+PATCH  /extracts/:id/done | /dismiss | /undone | /undismiss | /snooze
+POST   /ask                 ← direct Q&A
 PATCH  /users/me/timezone
+GET    /calendar/connections
+GET    /calendar/google/auth-url
+GET    /calendar/google/callback
+POST   /calendar/apple/connect
+POST   /calendar/apple/sync
+PATCH  /calendar/connections/:id/primary
+DELETE /calendar/connections/apple
+DELETE /calendar/connections/:id
 ```
 
-No `/preps` routes. No calendar endpoints in iteration 1.
-
----
-
-## Build order — iteration 1
-
-1. Drop old tables. Create `dumps`, `actionables`, etc. Add `users.timezone`.
-2. POST /dumps → enqueue extraction.
-3. Extraction worker (tone, urgency, batch, dates/periods).
-4. GET /inbox.
-5. GET /inbox/stream (SSE).
-6. PATCH actionables done/dismiss/undone/undismiss.
-7. PATCH actionables snooze (all options).
-8. GET /actionables/done.
-9. GET /dumps + GET /dumps/:id.
-10. GET /inbox/all.
-11. Pem's statement (gpt-4o).
-12. Timezone capture + timezone_pending.
-13. Detail helpfulness: drafts + external links (contextual).
-
-Calendar = iteration 2. Do not build calendar code in iteration 1.
+No `/preps` routes.
 
 ---
 

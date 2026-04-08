@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pem — Full App</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200;1,9..144,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#141410;--bg2:#1c1c18;--bg3:#232320;
+  --border:#2a2a26;--border2:#333330;
+  --text:#FAFAF8;--text2:#888880;--text3:#555550;
+  --amber:#e8763a;--amber-bg:#e8763a14;--amber-border:#e8763a30;
+  --green:#34c759;
+}
+body{background:#0c0c0a;display:flex;align-items:flex-start;justify-content:center;min-height:100vh;font-family:'DM Sans',sans-serif;padding:32px 24px;gap:24px;flex-wrap:wrap;}
+.col{display:flex;flex-direction:column;align-items:center;gap:12px;}
+.phone{width:360px;height:780px;background:var(--bg);border-radius:48px;overflow:hidden;position:relative;box-shadow:0 0 0 1px #2a2a26,0 40px 80px rgba(0,0,0,.7);display:flex;flex-direction:column;flex-shrink:0;}
+.label{font-size:11px;color:#444;font-family:'DM Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;text-align:center;}
+.sb{height:50px;padding:14px 26px 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.sb-t{font-size:15px;font-weight:600;color:var(--text);letter-spacing:-.3px;}
+.sb-i{display:flex;align-items:center;gap:5px;}
+.sb-i svg{fill:var(--text);}
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;}
+
+/* ONBOARDING */
+.onboard{align-items:center;justify-content:center;padding:48px 32px;text-align:center;gap:0;background:var(--bg);}
+.ob-logo{font-family:'Fraunces',serif;font-style:italic;font-size:30px;font-weight:200;color:var(--amber);margin-bottom:10px;}
+.ob-tag{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:20px;color:var(--text2);line-height:1.5;margin-bottom:48px;max-width:240px;}
+.ob-tag em{color:var(--text);font-style:normal;}
+.ob-btn{width:100%;padding:15px;border-radius:14px;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;border:none;font-family:'DM Sans',sans-serif;margin-bottom:10px;transition:all .15s;}
+.ob-btn:active{transform:scale(.98);}
+.ob-apple{background:var(--text);color:var(--bg);}
+.ob-google{background:var(--bg2);color:var(--text);border:1px solid var(--border);}
+.ob-privacy{margin-top:18px;font-size:11px;color:var(--text3);line-height:1.6;max-width:220px;}
+
+/* PERMISSION SHEET */
+.perm-screen{background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;}
+.perm-bg-logo{position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);font-family:'Fraunces',serif;font-style:italic;font-size:28px;font-weight:200;color:var(--amber);opacity:.4;}
+.perm-sheet{background:var(--bg2);border-radius:22px 22px 0 0;padding:18px 26px 44px;width:100%;text-align:center;}
+.perm-handle{width:34px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px;}
+.perm-ico{font-size:36px;margin-bottom:14px;}
+.perm-title{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:20px;color:var(--text);margin-bottom:8px;line-height:1.3;}
+.perm-body{font-size:13px;color:var(--text2);font-weight:300;line-height:1.7;margin-bottom:24px;max-width:240px;margin-left:auto;margin-right:auto;}
+.perm-btn{width:100%;padding:15px;border-radius:12px;font-size:14px;font-weight:500;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;margin-bottom:8px;transition:all .15s;}
+.perm-btn:active{transform:scale(.98);}
+.pa{background:var(--amber);color:#fff;}
+.ps{background:transparent;color:var(--text3);font-size:13px;}
+
+/* FIRST DUMP */
+.fdump{align-items:center;justify-content:center;padding:48px 28px;text-align:center;gap:20px;background:var(--bg);}
+.fd-logo{font-family:'Fraunces',serif;font-style:italic;font-size:22px;font-weight:200;color:var(--amber);}
+.fd-text{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:20px;color:var(--text2);line-height:1.5;max-width:240px;}
+.fd-text em{color:var(--amber);font-style:normal;}
+.fd-sub{font-size:12px;color:var(--text3);font-weight:300;line-height:1.6;max-width:200px;}
+.mic-btn{width:80px;height:80px;border-radius:40px;background:var(--amber);display:flex;align-items:center;justify-content:center;cursor:pointer;animation:pulse 2s ease-out infinite;transition:transform .2s;}
+.mic-btn:active{transform:scale(.92);}
+.mic-btn svg{stroke:#fff;fill:none;width:28px;height:28px;stroke-width:1.8;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(232,118,58,.5);}70%{box-shadow:0 0 0 24px rgba(232,118,58,0);}100%{box-shadow:0 0 0 0 rgba(232,118,58,0);}}
+.type-opt{font-size:11px;color:var(--text3);cursor:pointer;border-bottom:1px solid var(--border);padding-bottom:1px;}
+
+/* DUMP IN PROGRESS */
+.dump-prog{align-items:center;justify-content:center;padding:48px 28px;gap:28px;background:var(--bg);position:relative;}
+.dp-header{position:absolute;top:60px;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:0 22px;}
+.dp-cancel{font-size:13px;color:var(--amber);cursor:pointer;}
+.dp-logo{font-family:'Fraunces',serif;font-style:italic;font-size:18px;font-weight:200;color:var(--amber);}
+.dp-done{font-size:13px;color:var(--text2);cursor:pointer;}
+.dp-label{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:20px;color:var(--text);text-align:center;line-height:1.4;}
+.dp-label span{color:var(--amber);}
+.rec-ind{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;}
+.rec-dot{width:5px;height:5px;border-radius:50%;background:#ff453a;animation:rd 1s ease-in-out infinite;}
+@keyframes rd{0%,100%{opacity:1}50%{opacity:.3}}
+.waveform{display:flex;align-items:center;gap:3px;height:28px;}
+.wb{width:3px;border-radius:3px;background:var(--amber);opacity:.5;}
+.wb:nth-child(1){height:5px;animation:wv 1s ease-in-out 0s infinite}
+.wb:nth-child(2){height:13px;animation:wv 1s ease-in-out .07s infinite}
+.wb:nth-child(3){height:24px;animation:wv 1s ease-in-out .14s infinite}
+.wb:nth-child(4){height:9px;animation:wv 1s ease-in-out .21s infinite}
+.wb:nth-child(5){height:26px;animation:wv 1s ease-in-out .28s infinite}
+.wb:nth-child(6){height:7px;animation:wv 1s ease-in-out .35s infinite}
+.wb:nth-child(7){height:20px;animation:wv 1s ease-in-out .42s infinite}
+.wb:nth-child(8){height:5px;animation:wv 1s ease-in-out .49s infinite}
+.wb:nth-child(9){height:16px;animation:wv 1s ease-in-out .56s infinite}
+.wb:nth-child(10){height:4px;animation:wv 1s ease-in-out .63s infinite}
+.wb:nth-child(11){height:22px;animation:wv 1s ease-in-out .7s infinite}
+.wb:nth-child(12){height:4px;animation:wv 1s ease-in-out .77s infinite}
+@keyframes wv{0%,100%{transform:scaleY(1);opacity:.4}50%{transform:scaleY(1.7);opacity:.9}}
+.transcript{font-size:13px;color:var(--text3);font-weight:300;text-align:center;line-height:1.6;max-width:240px;font-style:italic;min-height:44px;}
+.transcript .said{color:var(--text2);}
+
+/* PROCESSING */
+.proc-screen{align-items:center;justify-content:center;padding:48px 28px;gap:20px;background:var(--bg);}
+.proc-logo{font-family:'Fraunces',serif;font-style:italic;font-size:26px;font-weight:200;color:var(--amber);}
+.proc-dots{display:flex;gap:6px;align-items:center;}
+.pd{width:8px;height:8px;border-radius:50%;background:var(--amber);opacity:.3;animation:pd 1.2s ease-in-out infinite;}
+.pd:nth-child(2){animation-delay:.2s;}
+.pd:nth-child(3){animation-delay:.4s;}
+@keyframes pd{0%,100%{opacity:.3;transform:scale(1)}50%{opacity:1;transform:scale(1.3)}}
+.proc-text{font-size:16px;color:var(--text2);font-weight:300;line-height:1.7;text-align:center;}
+.proc-sub{font-size:12px;color:var(--text3);font-weight:300;}
+
+/* MAIN SCREEN */
+.main-hdr{padding:8px 22px 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.logo{font-family:'Fraunces',serif;font-style:italic;font-size:20px;font-weight:200;color:var(--amber);letter-spacing:-.02em;}
+.hdr-right{display:flex;align-items:center;gap:8px;}
+.hbtn{width:32px;height:32px;border-radius:9px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;}
+.hbtn:active{background:var(--bg3);transform:scale(.95);}
+.hbtn svg{stroke:var(--text2);fill:none;width:14px;height:14px;stroke-width:1.8;}
+.msg-area{flex:1;padding:20px 26px 0;overflow-y:auto;scrollbar-width:none;display:flex;flex-direction:column;}
+.msg-area::-webkit-scrollbar{display:none;}
+.pem-date{font-size:11px;color:var(--text3);font-weight:400;margin-bottom:18px;letter-spacing:.04em;}
+.pem-msg{font-size:15px;font-weight:300;color:var(--text);line-height:1.8;flex:1;}
+.pem-msg .greeting{font-family:'Fraunces',serif;font-style:italic;font-weight:200;font-size:17px;color:var(--text);display:block;margin-bottom:16px;}
+.pem-msg p{margin-bottom:14px;font-size:14px;line-height:1.85;color:var(--text2);}
+.tappable{color:var(--text);font-weight:400;border-bottom:1px solid var(--amber-border);cursor:pointer;transition:color .15s,border-color .15s;padding-bottom:1px;}
+.tappable:active{color:var(--amber);border-color:var(--amber);}
+.sec-break{display:block;height:1px;background:var(--border);margin:18px 0;}
+.low{color:var(--text3);font-size:13px;}
+.closer{color:var(--text3);font-size:13px;display:block;margin-top:4px;}
+.dump-area{padding:16px 22px 36px;flex-shrink:0;}
+.dump-row{display:flex;align-items:center;gap:12px;}
+.dfab{width:52px;height:52px;border-radius:26px;background:var(--amber);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 20px rgba(232,118,58,.35);transition:all .2s;flex-shrink:0;}
+.dfab:active{transform:scale(.92);}
+.dfab svg{stroke:#fff;fill:none;width:20px;height:20px;stroke-width:2;}
+.dump-hint{font-size:12px;color:var(--text3);font-weight:300;line-height:1.5;}
+.dump-hint span{color:var(--text2);font-weight:400;}
+
+/* DEEP DIVE */
+.deep-hdr{padding:8px 22px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.deep-back{font-size:13px;color:var(--amber);cursor:pointer;font-weight:400;flex-shrink:0;}
+.deep-title{font-size:14px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.deep-body{flex:1;padding:20px 22px;overflow-y:auto;scrollbar-width:none;}
+.deep-body::-webkit-scrollbar{display:none;}
+.d-from{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+.d-dump{font-size:13px;color:var(--text3);font-style:italic;font-weight:300;line-height:1.65;background:var(--bg2);border-radius:10px;padding:12px;border:1px solid var(--border);margin-bottom:20px;}
+.d-pem-lbl{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;}
+.d-pem-dot{width:5px;height:5px;border-radius:50%;background:var(--amber);}
+.d-pem-txt{font-size:14px;color:var(--text2);line-height:1.8;font-weight:300;margin-bottom:0;}
+.d-pem-txt strong{color:var(--text);font-weight:400;}
+.deep-acts{display:flex;flex-direction:column;gap:7px;padding:0 22px 36px;flex-shrink:0;}
+.d-btn{width:100%;padding:14px;border-radius:12px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;border:none;font-family:'DM Sans',sans-serif;}
+.d-btn:active{transform:scale(.98);}
+.d-btn svg{stroke:currentColor;fill:none;width:14px;height:14px;stroke-width:2;}
+.d-primary{background:var(--amber);color:#fff;}
+.d-sec{background:var(--bg2);color:var(--text2);border:1px solid var(--border);}
+.d-ghost{background:transparent;color:var(--text3);}
+
+/* HISTORY */
+.hist-hdr{padding:8px 22px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.hist-title{font-size:15px;font-weight:500;color:var(--text);}
+.hist-close{font-size:13px;color:var(--amber);cursor:pointer;}
+.hist-search{margin:10px 22px;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;flex-shrink:0;}
+.hist-search svg{stroke:var(--text3);fill:none;width:13px;height:13px;stroke-width:2;flex-shrink:0;}
+.hist-ph{font-size:12px;color:var(--text3);}
+.hist-list{flex:1;overflow-y:auto;scrollbar-width:none;padding:4px 0;}
+.hist-list::-webkit-scrollbar{display:none;}
+.hist-dl{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;padding:10px 22px 4px;}
+.hist-item{padding:12px 22px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;}
+.hist-item:active{background:var(--bg2);}
+.hist-time{font-size:10px;color:var(--text3);margin-bottom:4px;}
+.hist-txt{font-size:13px;color:var(--text2);font-weight:300;line-height:1.55;font-style:italic;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.hist-pills{margin-top:7px;display:flex;gap:5px;flex-wrap:wrap;}
+.hpill{font-size:9px;color:var(--text3);background:var(--bg2);border:1px solid var(--border);padding:2px 7px;border-radius:7px;}
+
+/* SETTINGS */
+.set-hdr{padding:8px 22px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.set-title{font-size:15px;font-weight:500;color:var(--text);}
+.set-close{font-size:13px;color:var(--amber);cursor:pointer;}
+.set-body{flex:1;overflow-y:auto;scrollbar-width:none;padding:12px 0;}
+.set-body::-webkit-scrollbar{display:none;}
+.set-sl{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;padding:10px 22px 4px;}
+.set-row{display:flex;align-items:center;justify-content:space-between;padding:13px 22px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;}
+.set-row:active{background:var(--bg2);}
+.set-rl{display:flex;flex-direction:column;gap:2px;}
+.set-label{font-size:13px;color:var(--text);font-weight:400;}
+.set-sub{font-size:11px;color:var(--text3);font-weight:300;}
+.set-rr{display:flex;align-items:center;gap:7px;}
+.set-val{font-size:12px;color:var(--text3);}
+.toggle{width:42px;height:24px;background:var(--amber);border-radius:12px;position:relative;cursor:pointer;transition:background .2s;}
+.toggle.off{background:var(--bg3);}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;background:#fff;border-radius:50%;top:3px;left:21px;transition:left .2s;}
+.toggle.off::after{left:3px;}
+.set-chev{stroke:var(--text3);fill:none;width:13px;height:13px;stroke-width:2;}
+.set-danger{padding:13px 22px;font-size:13px;color:#ff453a;cursor:pointer;border-bottom:1px solid var(--border);}
+</style>
+</head>
+<body>
+
+<!-- 1 ONBOARDING -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">9:41</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen onboard">
+    <div class="ob-logo">pem</div>
+    <div class="ob-tag">Get it out of your head.<br><em>Pem organizes it.</em></div>
+    <button class="ob-btn ob-apple"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Continue with Apple</button>
+    <button class="ob-btn ob-google"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg> Continue with Google</button>
+    <div class="ob-privacy">No spam. Your thoughts stay private.<br>Delete everything anytime.</div>
+  </div>
+</div>
+<div class="label">1 — Sign in</div>
+</div>
+
+<!-- 2 CALENDAR PERMISSION -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">9:41</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen perm-screen">
+    <div class="perm-bg-logo">pem</div>
+    <div class="perm-sheet">
+      <div class="perm-handle"></div>
+      <div class="perm-ico">📅</div>
+      <div class="perm-title">Connect your calendar?</div>
+      <div class="perm-body">Pem reads what's coming so it knows what actually matters today. You can always skip this.</div>
+      <button class="perm-btn pa">Connect calendar</button>
+      <button class="perm-btn ps">Not now</button>
+    </div>
+  </div>
+</div>
+<div class="label">2 — Calendar</div>
+</div>
+
+<!-- 3 FIRST DUMP -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">9:41</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen fdump">
+    <div class="fd-logo">pem</div>
+    <div class="fd-text">What's on your mind?<br><em>Dump anything.</em></div>
+    <div class="fd-sub">Voice or text. Messy is fine.<br>Pem figures out the rest.</div>
+    <div class="mic-btn"><svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4zm6.5 9a1 1 0 012 0 8.5 8.5 0 01-7.5 8.45V21h3a1 1 0 010 2h-8a1 1 0 010-2h3v-2.55A8.5 8.5 0 013.5 10a1 1 0 012 0 6.5 6.5 0 0013 0z"/></svg></div>
+    <div class="type-opt">or type it</div>
+  </div>
+</div>
+<div class="label">3 — First dump</div>
+</div>
+
+<!-- 4 DUMP IN PROGRESS -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">11:02</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen dump-prog">
+    <div class="dp-header"><div class="dp-cancel">Cancel</div><div class="dp-logo">pem</div><div class="dp-done">Done</div></div>
+    <div class="dp-label">Listening...<br><span>say anything</span></div>
+    <div class="rec-ind"><div class="rec-dot"></div> Recording</div>
+    <div class="mic-btn"><svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4zm6.5 9a1 1 0 012 0 8.5 8.5 0 01-7.5 8.45V21h3a1 1 0 010 2h-8a1 1 0 010-2h3v-2.55A8.5 8.5 0 013.5 10a1 1 0 012 0 6.5 6.5 0 0013 0z"/></svg></div>
+    <div class="waveform"><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div><div class="wb"></div></div>
+    <div class="transcript"><span class="said">"...mom's birthday next week, also the gym membership, and that investor meeting Tuesday with James from Lightspeed..."</span></div>
+  </div>
+</div>
+<div class="label">4 — Recording</div>
+</div>
+
+<!-- 5 PROCESSING -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">11:02</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen proc-screen">
+    <div class="proc-logo">pem</div>
+    <div class="proc-dots"><div class="pd"></div><div class="pd"></div><div class="pd"></div></div>
+    <div class="proc-text">Got it.<br>Reading what matters.</div>
+    <div class="proc-sub">Head empty. Pem's on it.</div>
+  </div>
+</div>
+<div class="label">5 — Processing</div>
+</div>
+
+<!-- 6 MAIN SCREEN -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">7:08</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen">
+    <div class="main-hdr">
+      <div class="logo">pem</div>
+      <div class="hdr-right">
+        <div class="hbtn"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+        <div class="hbtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+      </div>
+    </div>
+    <div class="msg-area">
+      <div class="pem-date">Monday, April 6 · Good morning</div>
+      <div class="pem-msg">
+        <span class="greeting">Here's where you are, Akee.</span>
+        <p>Today you have <span class="tappable">James at 2pm</span> and <span class="tappable">dentist at 4pm</span>. Leave for the dentist by 3:30.</p>
+        <p>Three things need your attention. The <span class="tappable">gym cancellation</span> is 3 weeks overdue — 5 minutes. <span class="tappable">Text John back</span> — he's been waiting since Friday. And James is in 6 hours.</p>
+        <span class="sec-break"></span>
+        <p>Your <span class="tappable">shopping list</span> has 4 items. Good for the weekend.</p>
+        <p class="low">Two things with no deadline: <span class="tappable">moving to Denver</span>, <span class="tappable">learning guitar</span>. Nothing to do today.</p>
+        <span class="closer">That's it.</span>
+      </div>
+    </div>
+    <div class="dump-area">
+      <div class="dump-row">
+        <div class="dfab"><svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4zm6.5 9a1 1 0 012 0 8.5 8.5 0 01-7.5 8.45V21h3a1 1 0 010 2h-8a1 1 0 010-2h3v-2.55A8.5 8.5 0 013.5 10a1 1 0 012 0 6.5 6.5 0 0013 0z"/></svg></div>
+        <div class="dump-hint"><span>Dump anything</span> on your mind.<br>Pem organizes it.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="label">6 — Main screen</div>
+</div>
+
+<!-- 7 DEEP DIVE -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">7:09</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen">
+    <div class="deep-hdr"><div class="deep-back">← Back</div><div class="deep-title">Gym cancellation</div></div>
+    <div class="deep-body">
+      <div class="d-from">From your dump · Sunday 11pm</div>
+      <div class="d-dump">"...also I've been meaning to cancel that gym membership for like 3 months now..."</div>
+      <div class="d-pem-lbl"><div class="d-pem-dot"></div> Pem</div>
+      <div class="d-pem-txt">This has been on your mind since <strong>January</strong>. Most gyms require <strong>30 days written notice</strong> — email works. You can send it today and be done in 5 minutes.<br><br>Want me to write the email?</div>
+    </div>
+    <div class="deep-acts">
+      <button class="d-btn d-primary"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>Draft the email</button>
+      <button class="d-btn d-sec"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>I handled it</button>
+      <button class="d-btn d-ghost">Later</button>
+    </div>
+  </div>
+</div>
+<div class="label">7 — Deep dive</div>
+</div>
+
+<!-- 8 HISTORY -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">7:11</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen">
+    <div class="hist-hdr"><div class="hist-title">Your thoughts</div><div class="hist-close">Done</div></div>
+    <div class="hist-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><div class="hist-ph">Search everything you've dumped...</div></div>
+    <div class="hist-list">
+      <div class="hist-dl">Today</div>
+      <div class="hist-item">
+        <div class="hist-time">11:02pm</div>
+        <div class="hist-txt">"Ok so mom's birthday is next weekend and I have no idea what to get her, she likes gardening. Also I've been meaning to cancel that gym membership..."</div>
+        <div class="hist-pills"><div class="hpill">mom's birthday</div><div class="hpill">gym</div><div class="hpill">James meeting</div><div class="hpill">accountant</div></div>
+      </div>
+      <div class="hist-dl">Friday</div>
+      <div class="hist-item">
+        <div class="hist-time">3:14pm</div>
+        <div class="hist-txt">"Had this idea — what if pem could let users share their thoughts with each other, like a shared brain dump for teams..."</div>
+        <div class="hist-pills"><div class="hpill">idea saved</div></div>
+      </div>
+      <div class="hist-dl">Last week</div>
+      <div class="hist-item">
+        <div class="hist-time">8:22am</div>
+        <div class="hist-txt">"Need to call accountant about taxes, also the gym thing again, and I keep thinking about moving to Denver..."</div>
+        <div class="hist-pills"><div class="hpill">accountant</div><div class="hpill">Denver</div></div>
+      </div>
+      <div class="hist-item">
+        <div class="hist-time">11:45pm</div>
+        <div class="hist-txt">"Can't sleep. Thinking about the Stripe job offer, whether it makes sense given what I'm building with Pem..."</div>
+        <div class="hist-pills"><div class="hpill">Stripe offer</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="label">8 — Thought history</div>
+</div>
+
+<!-- 9 SETTINGS -->
+<div class="col">
+<div class="phone">
+  <div class="sb"><div class="sb-t">7:12</div><div class="sb-i"><svg width="16" height="11" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y=".5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg><svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="white" stroke-opacity=".35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="white"/><path d="M23 4.5v3a2 2 0 000-3z" fill="white" opacity=".4"/></svg></div></div>
+  <div class="screen">
+    <div class="set-hdr"><div class="set-title">Settings</div><div class="set-close">Done</div></div>
+    <div class="set-body">
+      <div class="set-sl">Calendar</div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">Apple Calendar</div><div class="set-sub">Personal, iCloud</div></div><div class="set-rr"><div class="set-val" style="color:var(--green);">Connected</div></div></div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">Google Calendar</div><div class="set-sub">akee@gmail.com</div></div><div class="set-rr"><div class="set-val">Connect</div><svg class="set-chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+      <div class="set-sl">Notifications</div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">Morning brief</div><div class="set-sub">Pem talks to you at 7am</div></div><div class="set-rr"><div class="toggle"></div></div></div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">Brief me time</div><div class="set-sub">When Pem updates the message</div></div><div class="set-rr"><div class="set-val">7:00 AM</div><svg class="set-chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">Resurface old thoughts</div><div class="set-sub">Remind when something sits too long</div></div><div class="set-rr"><div class="toggle off"></div></div></div>
+      <div class="set-sl">Dump</div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">Default input</div><div class="set-sub">How you prefer to dump</div></div><div class="set-rr"><div class="set-val">Voice</div><svg class="set-chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+      <div class="set-sl">What Pem knows</div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">View what Pem knows</div><div class="set-sub">Patterns, people, recurring thoughts</div></div><div class="set-rr"><svg class="set-chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+      <div class="set-sl">Account</div>
+      <div class="set-row"><div class="set-rl"><div class="set-label">akee@gmail.com</div></div></div>
+      <div class="set-row"><div class="set-label">Sign out</div></div>
+      <div class="set-danger">Delete everything and leave</div>
+    </div>
+  </div>
+</div>
+<div class="label">9 — Settings</div>
+</div>
+
+<script>
+document.querySelectorAll('.toggle').forEach(t=>{t.addEventListener('click',()=>t.classList.toggle('off'));});
+document.querySelectorAll('.tappable').forEach(el=>{el.addEventListener('click',()=>{el.style.color='var(--amber)';el.style.borderColor='var(--amber)';setTimeout(()=>{el.style.color='';el.style.borderColor='';},400);});});
+</script>
+</body>
+</html>
