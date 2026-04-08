@@ -122,20 +122,6 @@ export async function getExtractsQuery(
   );
 }
 
-export async function getDonePage(
-  getToken: () => Promise<string | null>,
-  opts?: { limit?: number; cursor?: string | null },
-) {
-  const q = new URLSearchParams();
-  if (opts?.limit) q.set("limit", String(opts.limit));
-  if (opts?.cursor) q.set("cursor", opts.cursor);
-  const qs = q.toString();
-  return apiFetch<{ items: ApiExtract[]; next_cursor: string | null }>(
-    `/extracts/done${qs ? `?${qs}` : ""}`,
-    { method: "GET", getToken },
-  );
-}
-
 export async function getExtractsOpen(
   getToken: () => Promise<string | null>,
   opts?: { limit?: number; cursor?: string | null },
@@ -228,6 +214,8 @@ export async function patchExtractDismiss(
 // ── Brief ────────────────────────────────────────────────
 
 export type BriefResponse = {
+  /** LLM prose; omit on older servers — client falls back. */
+  statement?: string;
   overdue: ApiExtract[];
   today: ApiExtract[];
   tomorrow: ApiExtract[];
@@ -450,32 +438,54 @@ export async function createVoiceDump(
   return (await res.json()) as { dumpId: string; text: string };
 }
 
-// ── Unified Intake ──────────────────────────────────────
+// ── Ask Pem (separate from dumps — never creates a dump) ──
 
-export type IntakeResponse = {
-  intent: "dump" | "question" | "both";
-  dump_id: string | null;
-  text: string;
-  answer: string | null;
+export type AskPemResponse = {
+  answer: string;
   sources: { id: string; text: string }[];
 };
 
-export async function createIntake(
+export async function askPem(
   getToken: () => Promise<string | null>,
-  text: string,
-): Promise<IntakeResponse> {
-  return apiFetch<IntakeResponse>("/intake", {
+  question: string,
+): Promise<AskPemResponse> {
+  return apiFetch<AskPemResponse>("/ask", {
     method: "POST",
     getToken,
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ question }),
   });
 }
 
-export async function createVoiceIntake(
+export type VoiceAskResponse = AskPemResponse & { text: string };
+
+export type AskHistoryTurn = {
+  id: string;
+  question_text: string;
+  answer_text: string | null;
+  sources: { id: string; text: string }[];
+  input_kind: "text" | "voice";
+  error: { message: string; stack?: string } | null;
+  created_at: string;
+};
+
+export async function getAskHistory(
+  getToken: () => Promise<string | null>,
+  limit?: number,
+) {
+  const q =
+    limit !== undefined && Number.isFinite(limit)
+      ? `?limit=${encodeURIComponent(String(limit))}`
+      : "";
+  return apiFetch<{ turns: AskHistoryTurn[] }>(`/ask/history${q}`, {
+    getToken,
+  });
+}
+
+export async function createVoiceAsk(
   getToken: () => Promise<string | null>,
   audioUri: string,
   mimeType = "audio/m4a",
-): Promise<IntakeResponse> {
+): Promise<VoiceAskResponse> {
   const token = await getToken();
   const formData = new FormData();
   formData.append("audio", {
@@ -483,7 +493,7 @@ export async function createVoiceIntake(
     name: "recording.m4a",
     type: mimeType,
   } as any);
-  const res = await fetch(`${getApiBaseUrl()}/intake/voice`, {
+  const res = await fetch(`${getApiBaseUrl()}/ask/voice`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -495,7 +505,7 @@ export async function createVoiceIntake(
     const text = await res.text().catch(() => "");
     throw new Error(text || `HTTP ${res.status}`);
   }
-  return (await res.json()) as IntakeResponse;
+  return (await res.json()) as VoiceAskResponse;
 }
 
 // ── Calendar ──────────────────────────────────────────────

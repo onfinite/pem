@@ -3,8 +3,6 @@ import DumpsList from "@/components/inbox/DumpsList";
 import ExtractDetailModal from "@/components/inbox/ExtractDetailModal";
 import GlanceRow from "@/components/inbox/GlanceRow";
 import InlineVoiceBar from "@/components/inbox/InlineVoiceBar";
-import PemListRow from "@/components/ui/PemListRow";
-import PemMindEmptyState from "@/components/ui/PemMindEmptyState";
 import PemResponseSheet from "@/components/inbox/PemResponseSheet";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemRefreshControl from "@/components/ui/PemRefreshControl";
@@ -15,8 +13,6 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useDumpInboxStream } from "@/hooks/useDumpInboxStream";
 import {
   getBrief,
-  getDonePage,
-  getExtractsQuery,
   getInboxAll,
   patchExtractDismiss,
   patchExtractDone,
@@ -29,21 +25,26 @@ import { useAuth, useUser } from "@clerk/expo";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import type { LucideIcon } from "lucide-react-native";
-import {
-  BookOpen,
-  CheckCircle2,
-  Clock,
-  Inbox,
-  MapPin,
-  MessageCircle,
-  Settings,
-  ShoppingCart,
-} from "lucide-react-native";
+import { BookOpen, Inbox, Settings } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, FlatList, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Animated, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-type Tab = "brief" | "dumps" | "shopping" | "follow_ups" | "errands" | "someday" | "done";
+type Tab = "brief" | "dumps";
+
+type InboxAllData = {
+  someday: ApiExtract[];
+  batch_groups: { batch_key: string; items: ApiExtract[] }[];
+};
+
+const BATCH_LABELS: Record<string, string> = {
+  shopping: "Shopping",
+  follow_ups: "Follow-ups",
+  errands: "Errands",
+};
+
+/** Same inset as header + tabs — all Brief content aligns to this. */
+const BRIEF_INSET = space[5];
 
 function statementCopy(
   todayCount: number,
@@ -73,27 +74,22 @@ function formatTime(iso: string | null): string | null {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-const CATEGORY_META: Record<string, { label: string; Icon: LucideIcon; emptyTitle: string; emptySubtitle: string; filter: Record<string, string> }> = {
-  shopping: { label: "Shopping", Icon: ShoppingCart, emptyTitle: "Shopping list is empty.", emptySubtitle: "Mention shopping items in your dumps.", filter: { batch_key: "shopping" } },
-  follow_ups: { label: "Follow-ups", Icon: MessageCircle, emptyTitle: "No follow-ups.", emptySubtitle: "Mention calls, emails, or texts and they'll appear here.", filter: { batch_key: "follow_ups" } },
-  errands: { label: "Errands", Icon: MapPin, emptyTitle: "No errands.", emptySubtitle: "Mention errands in your dumps.", filter: { batch_key: "errands" } },
-  someday: { label: "Someday", Icon: Clock, emptyTitle: "Nothing in someday.", emptySubtitle: "Aspirational things land here — no pressure.", filter: { urgency: "someday" } },
-  done: { label: "Done", Icon: CheckCircle2, emptyTitle: "Nothing done yet.", emptySubtitle: "When you handle something, it shows up here.", filter: { status: "done" } },
-};
-
 export default function InboxHomeScreen() {
   const { resolved } = useTheme();
   const chrome = inboxChrome(resolved);
   const insets = useSafeAreaInsets();
   const { user } = useUser();
   const { dumpId: dumpIdParam } = useLocalSearchParams<{ dumpId?: string | string[] }>();
-  const dumpId =
+  const dumpIdFromRoute =
     typeof dumpIdParam === "string"
       ? dumpIdParam
       : Array.isArray(dumpIdParam)
         ? dumpIdParam[0]
         : null;
-  const { streamDone, reset } = useDumpInboxStream(dumpId);
+  /** Inline bar (dump mode) returns dumpId here so we open SSE without relying on URL params. */
+  const [pendingStreamDumpId, setPendingStreamDumpId] = useState<string | null>(null);
+  const streamDumpId = pendingStreamDumpId ?? dumpIdFromRoute;
+
   const { getToken } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
@@ -102,10 +98,10 @@ export default function InboxHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [brief, setBrief] = useState<BriefResponse | null>(null);
-  const [somedayCount, setSomedayCount] = useState(0);
-  const [hasDone, setHasDone] = useState(false);
+  const [allData, setAllData] = useState<InboxAllData | null>(null);
   const [tomorrowExpanded, setTomorrowExpanded] = useState(true);
-  const [weekExpanded, setWeekExpanded] = useState(false);
+  /** Start expanded so counts match visible rows (shopping / this week aren't hidden). */
+  const [weekExpanded, setWeekExpanded] = useState(true);
   const [nextWeekExpanded, setNextWeekExpanded] = useState(false);
   const [laterExpanded, setLaterExpanded] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -115,23 +111,17 @@ export default function InboxHomeScreen() {
   const [pemAnswer, setPemAnswer] = useState<string | null>(null);
   const [pemSources, setPemSources] = useState<{ id: string; text: string }[]>([]);
 
-  const [catItems, setCatItems] = useState<ApiExtract[]>([]);
-  const [catLoading, setCatLoading] = useState(false);
-  const [catRefreshing, setCatRefreshing] = useState(false);
-
   const load = useCallback(async (mode: "initial" | "pull" | "silent" = "initial") => {
     if (mode === "initial") setLoading(true);
     if (mode === "pull") setRefreshing(true);
     if (mode !== "silent") setErr(null);
     try {
-      const [b, all, done] = await Promise.all([
+      const [b, all] = await Promise.all([
         getBrief(() => getTokenRef.current()),
         getInboxAll(() => getTokenRef.current()),
-        getDonePage(() => getTokenRef.current(), { limit: 1 }),
       ]);
       setBrief(b);
-      setSomedayCount(all.someday.length);
-      setHasDone(done.items.length > 0);
+      setAllData({ someday: all.someday, batch_groups: all.batch_groups });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't load inbox");
     } finally {
@@ -140,14 +130,22 @@ export default function InboxHomeScreen() {
     }
   }, []);
 
+  const loadSilentRef = useRef(() => {});
+  loadSilentRef.current = () => void load("silent");
+
+  const { streamDone, reset } = useDumpInboxStream(streamDumpId, {
+    onInboxProgress: () => loadSilentRef.current(),
+  });
+
   useEffect(() => { void load("initial"); }, [load]);
 
   useEffect(() => {
     if (!streamDone) return;
     void load("silent");
     reset();
-    if (dumpId) router.replace("/inbox");
-  }, [streamDone, dumpId, load, reset]);
+    setPendingStreamDumpId(null);
+    if (dumpIdFromRoute) router.replace("/inbox");
+  }, [streamDone, dumpIdFromRoute, load, reset]);
 
   const firstName = user?.firstName ?? "there";
 
@@ -156,21 +154,17 @@ export default function InboxHomeScreen() {
     return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   }, []);
 
-  const statement = useMemo(
-    () =>
-      statementCopy(
-        brief?.today.length ?? 0,
-        brief?.overdue.length ?? 0,
-        brief?.tomorrow.length ?? 0,
-        brief?.this_week.length ?? 0,
-      ),
-    [brief],
-  );
-
-  const refreshAfterAction = useCallback(() => {
-    void load("silent");
-    if (isCategoryTab) void loadCategory(tab);
-  }, [load, isCategoryTab, loadCategory, tab]);
+  const statement = useMemo(() => {
+    const fromApi = brief?.statement?.trim();
+    if (fromApi) return fromApi;
+    if (!brief) return "";
+    return statementCopy(
+      brief.today.length,
+      brief.overdue.length,
+      brief.tomorrow.length,
+      brief.this_week.length,
+    );
+  }, [brief]);
 
   const onDone = useCallback(async () => {
     if (!detail) return;
@@ -179,9 +173,9 @@ export default function InboxHomeScreen() {
       await patchExtractDone(() => getTokenRef.current(), detail.id);
       pemNotificationSuccess();
       setDetail(null);
-      refreshAfterAction();
+      void load("silent");
     } catch { /* optional */ }
-  }, [detail, refreshAfterAction]);
+  }, [detail, load]);
 
   const onDismiss = useCallback(async () => {
     if (!detail) return;
@@ -189,9 +183,9 @@ export default function InboxHomeScreen() {
     try {
       await patchExtractDismiss(() => getTokenRef.current(), detail.id);
       setDetail(null);
-      refreshAfterAction();
+      void load("silent");
     } catch { /* optional */ }
-  }, [detail, refreshAfterAction]);
+  }, [detail, load]);
 
   const onUndone = useCallback(async () => {
     if (!detail) return;
@@ -200,32 +194,9 @@ export default function InboxHomeScreen() {
       await patchExtractUndone(() => getTokenRef.current(), detail.id);
       pemNotificationSuccess();
       setDetail(null);
-      refreshAfterAction();
+      void load("silent");
     } catch { /* optional */ }
-  }, [detail, refreshAfterAction]);
-
-  const isCategoryTab = tab !== "brief" && tab !== "dumps";
-
-  const loadCategory = useCallback(async (slug: Tab, mode: "initial" | "pull" = "initial") => {
-    const meta = CATEGORY_META[slug];
-    if (!meta) return;
-    if (mode === "initial") { setCatItems([]); setCatLoading(true); }
-    if (mode === "pull") setCatRefreshing(true);
-    try {
-      const res = await getExtractsQuery(() => getTokenRef.current(), { ...meta.filter, limit: 50 } as any);
-      setCatItems(res.items);
-    } catch (e) {
-      console.warn("loadCategory error:", e);
-    } finally {
-      if (mode === "initial") setCatLoading(false);
-      if (mode === "pull") setCatRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isCategoryTab) return;
-    void loadCategory(tab);
-  }, [tab, isCategoryTab, loadCategory]);
+  }, [detail, load]);
 
   const hasOverdue = (brief?.overdue.length ?? 0) > 0;
   const hasToday = (brief?.today.length ?? 0) > 0;
@@ -233,9 +204,9 @@ export default function InboxHomeScreen() {
   const hasWeek = (brief?.this_week.length ?? 0) > 0;
   const hasNextWeek = (brief?.next_week.length ?? 0) > 0;
   const hasLater = (brief?.later.length ?? 0) > 0;
-  const batches = brief?.batch_counts.filter((b) => b.count >= 2) ?? [];
-  const hasAnything = hasOverdue || hasToday || hasTomorrow || hasWeek || hasNextWeek || hasLater || somedayCount > 0;
-
+  const batchGroups = allData?.batch_groups.filter((g) => g.items.length > 0) ?? [];
+  const somedayItems = allData?.someday ?? [];
+  const hasAnything = hasOverdue || hasToday || hasTomorrow || hasWeek || hasNextWeek || hasLater;
 
   return (
     <View style={[styles.root, { backgroundColor: chrome.page, paddingTop: insets.top }]}>
@@ -269,26 +240,13 @@ export default function InboxHomeScreen() {
         </Pressable>
       </View>
 
-      {/* ── Tab chips ──────────────────────────── */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabRow}>
+      {/* ── Tabs: Brief + Dumps only ───────────── */}
+      <View style={styles.tabRow}>
         <Chip label="Brief" Icon={Inbox} active={tab === "brief"} chrome={chrome} onPress={() => setTab("brief")} />
         <Chip label="Dumps" Icon={BookOpen} active={tab === "dumps"} chrome={chrome} onPress={() => setTab("dumps")} />
-        {batches.map(({ batch_key, count }) => {
-          const meta = CATEGORY_META[batch_key];
-          if (!meta) return null;
-          return (
-            <Chip key={batch_key} label={meta.label} Icon={meta.Icon} count={count} active={tab === batch_key} chrome={chrome} onPress={() => setTab(batch_key as Tab)} />
-          );
-        })}
-        {somedayCount > 0 && (
-          <Chip label="Someday" Icon={Clock} count={somedayCount} active={tab === "someday"} chrome={chrome} onPress={() => setTab("someday")} />
-        )}
-        {hasDone && (
-          <Chip label="Done" Icon={CheckCircle2} active={tab === "done"} chrome={chrome} onPress={() => setTab("done")} />
-        )}
-      </ScrollView>
+      </View>
 
-      {/* ── Brief tab ──────────────────────────── */}
+      {/* ── Brief ──────────────────────────────── */}
       {tab === "brief" && (
         <>
           {loading ? (
@@ -298,7 +256,7 @@ export default function InboxHomeScreen() {
           ) : (
             <ScrollView
               style={{ flex: 1 }}
-              contentContainerStyle={styles.scrollContent}
+              contentContainerStyle={[styles.scrollContent, { paddingHorizontal: BRIEF_INSET }]}
               refreshControl={<PemRefreshControl refreshing={refreshing} onRefresh={() => void load("pull")} />}
             >
               {/* Date + Statement */}
@@ -318,7 +276,13 @@ export default function InboxHomeScreen() {
                 </PemText>
               </View>
 
-              {!hasAnything && (
+              {!hasToday && hasAnything && (
+                <PemText variant="caption" style={{ color: chrome.textDim, marginBottom: space[3] }}>
+                  Nothing for today — see below for this week and lists.
+                </PemText>
+              )}
+
+              {!hasAnything && batchGroups.length === 0 && somedayItems.length === 0 && (
                 <View style={styles.emptyState}>
                   <PemText style={{
                     fontFamily: fontFamily.display.italic,
@@ -339,7 +303,7 @@ export default function InboxHomeScreen() {
                     lineHeight: Math.round(fontSize.sm * 1.7),
                     maxWidth: 240,
                   }}>
-                    Say or type anything below.{"\n"}Pem will figure out what to do with it.
+                    {"Say or type anything below.\nPem will figure out what to do with it."}
                   </PemText>
                 </View>
               )}
@@ -403,56 +367,49 @@ export default function InboxHomeScreen() {
                   <ItemList items={brief!.later} chrome={chrome} onPress={setDetail} />
                 </CollapsibleSection>
               )}
+
+              {/* ── Inline batch groups ───────────── */}
+              {batchGroups.map(({ batch_key, items }) => (
+                <InlineBatch
+                  key={batch_key}
+                  label={BATCH_LABELS[batch_key] ?? batch_key}
+                  items={items}
+                  chrome={chrome}
+                  defaultExpanded
+                  onPress={setDetail}
+                />
+              ))}
+
+              {/* ── Someday (quiet) ───────────────── */}
+              {somedayItems.length > 0 && (
+                <InlineBatch
+                  label="Someday"
+                  items={somedayItems}
+                  chrome={chrome}
+                  defaultExpanded={false}
+                  onPress={setDetail}
+                />
+              )}
+
             </ScrollView>
           )}
         </>
       )}
 
-      {/* ── Dumps tab ──────────────────────────── */}
+      {/* ── Dumps ──────────────────────────────── */}
       {tab === "dumps" && (
         <DumpsList chrome={chrome} getToken={() => getTokenRef.current()} />
       )}
-
-      {/* ── Category tabs (shopping, follow-ups, errands, someday, done) ── */}
-      {isCategoryTab && (() => {
-        const meta = CATEGORY_META[tab];
-        if (!meta) return null;
-        if (catLoading) return <PemLoadingIndicator placement="pageCenter" />;
-        return (
-          <FlatList
-            style={{ flex: 1 }}
-            data={catItems}
-            keyExtractor={(item) => item.id}
-            refreshControl={<PemRefreshControl refreshing={catRefreshing} onRefresh={() => void loadCategory(tab, "pull")} />}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
-              <PemListRow
-                chrome={chrome}
-                icon={item.source === "calendar" ? "📅" : undefined}
-                title={item.text}
-                subtitle={item.pem_note ?? item.tone}
-                showChevron
-                onPress={() => setDetail(item)}
-              />
-            )}
-            ListEmptyComponent={
-              <PemMindEmptyState
-                chrome={chrome}
-                title={meta.emptyTitle}
-                subtitle={meta.emptySubtitle}
-                micHint="tap the mic below"
-              />
-            }
-          />
-        );
-      })()}
 
       <ThinkingPill visible={thinking} chrome={chrome} />
 
       <InlineVoiceBar
         resolved={resolved}
         onDumpSuccess={() => setDumpSuccess(true)}
-        onDumpCreated={() => void load("silent")}
+        onDumpCreated={(id) => {
+          setPendingStreamDumpId(id);
+          void load("silent");
+        }}
         onPemResponse={(answer, sources) => { setPemAnswer(answer); setPemSources(sources); }}
         onThinking={() => setThinking(true)}
         onThinkingDone={() => setThinking(false)}
@@ -488,7 +445,7 @@ export default function InboxHomeScreen() {
 
 /* ── Sub-components ──────────────────────────── */
 
-function Chip({ label, Icon, count, active, chrome, onPress }: { label: string; Icon: LucideIcon; count?: number; active?: boolean; chrome: ReturnType<typeof inboxChrome>; onPress: () => void }) {
+function Chip({ label, Icon, active, chrome, onPress }: { label: string; Icon: LucideIcon; active?: boolean; chrome: ReturnType<typeof inboxChrome>; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="tab"
@@ -506,14 +463,42 @@ function Chip({ label, Icon, count, active, chrome, onPress }: { label: string; 
       <PemText variant="caption" style={{ color: active ? chrome.page : chrome.text, fontWeight: active ? "600" : "400" }}>
         {label}
       </PemText>
-      {count != null && count > 0 && (
-        <View style={[styles.chipBadge, { backgroundColor: active ? chrome.page : chrome.textMuted }]}>
-          <PemText variant="caption" style={{ color: active ? chrome.text : "#fff", fontSize: 10, fontWeight: "700" }}>
-            {count > 99 ? "99+" : count}
-          </PemText>
+    </Pressable>
+  );
+}
+
+function InlineBatch({
+  label,
+  items,
+  chrome,
+  onPress,
+  defaultExpanded = true,
+}: {
+  label: string;
+  items: ApiExtract[];
+  chrome: ReturnType<typeof inboxChrome>;
+  onPress: (item: ApiExtract) => void;
+  defaultExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  return (
+    <View>
+      <Pressable accessibilityRole="button" onPress={() => setExpanded((v) => !v)} style={styles.batchHeader}>
+        <PemText variant="caption" style={{ color: chrome.textDim, letterSpacing: 1.2 }}>
+          {label.toUpperCase()} · {items.length}
+        </PemText>
+        <PemText variant="caption" style={{ color: chrome.textDim }}>
+          {expanded ? "▲" : "▼"}
+        </PemText>
+      </Pressable>
+      {expanded && (
+        <View style={{ gap: space[2], paddingBottom: space[2] }}>
+          {items.map((item) => (
+            <GlanceRow key={item.id} item={item} chrome={chrome} onPress={() => onPress(item)} />
+          ))}
         </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
@@ -532,7 +517,7 @@ function SectionLabel({ label, color, chrome }: { label: string; color: string; 
 
 function CollapsibleSection({ label, count, expanded, onToggle, chrome, children }: { label: string; count: number; expanded: boolean; onToggle: () => void; chrome: ReturnType<typeof inboxChrome>; children: React.ReactNode }) {
   return (
-    <View style={{ paddingHorizontal: space[4] }}>
+    <View>
       <Pressable accessibilityRole="button" onPress={onToggle} style={styles.collapseHeader}>
         <PemText variant="caption" style={{ color: chrome.textDim, letterSpacing: 1.2 }}>
           {label} · {count}
@@ -584,7 +569,7 @@ function ThinkingPill({ visible, chrome }: { visible: boolean; chrome: ReturnTyp
 
 function ItemList({ items, chrome, onPress }: { items: ApiExtract[]; chrome: ReturnType<typeof inboxChrome>; onPress: (item: ApiExtract) => void }) {
   return (
-    <View style={{ paddingHorizontal: space[4], gap: space[2], paddingBottom: space[2] }}>
+    <View style={{ gap: space[2], paddingBottom: space[2] }}>
       {items.map((item) => (
         <GlanceRow key={item.id} item={item} chrome={chrome} onPress={() => onPress(item)} />
       ))}
@@ -601,7 +586,6 @@ const styles = StyleSheet.create({
     paddingBottom: space[2],
   },
   avatar: { width: 32, height: 32, borderRadius: 16 },
-  tabScroll: { flexGrow: 0 },
   tabRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -610,24 +594,21 @@ const styles = StyleSheet.create({
     paddingBottom: space[3],
   },
   scrollContent: { paddingBottom: 120 },
-  listContent: { flexGrow: 1, paddingBottom: 120 },
-  statement: { paddingHorizontal: space[6], paddingTop: space[2] },
+  statement: { paddingTop: space[2] },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: space[10],
-    paddingHorizontal: space[6],
   },
-  sep: { height: StyleSheet.hairlineWidth, marginVertical: space[4], marginHorizontal: space[6] },
+  sep: { height: StyleSheet.hairlineWidth, marginVertical: space[4] },
   secLabel: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: space[6],
     marginBottom: space[2],
   },
   dot: { width: 5, height: 5, borderRadius: 2.5 },
-  timeline: { paddingHorizontal: space[4], gap: space[2], paddingBottom: space[2] },
+  timeline: { gap: space[2], paddingBottom: space[2] },
   timelineRow: { flexDirection: "row", alignItems: "center", gap: space[2] },
   timeCol: { width: 54, alignItems: "flex-end" },
   chip: {
@@ -639,13 +620,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  chipBadge: {
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+  batchHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 5,
+    paddingVertical: space[3],
   },
   collapseHeader: {
     flexDirection: "row",

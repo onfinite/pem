@@ -3,6 +3,11 @@ import PemText from "@/components/ui/PemText";
 import type { InboxChrome } from "@/constants/inboxChrome";
 import { fontSize, space } from "@/constants/typography";
 import {
+  batchKeyLabel,
+  toneChipLabel,
+  urgencyChipLabel,
+} from "@/lib/extractLabels";
+import {
   generateExtractDraft,
   getExtractHistory,
   patchExtractReschedule,
@@ -25,6 +30,7 @@ import {
   Share,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Calendar } from "lucide-react-native";
@@ -80,6 +86,9 @@ export default function ExtractDetailModal({
   getToken,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  /** Fixed sheet height so the drawer does not jump when content changes. */
+  const sheetHeight = Math.round(windowHeight * 0.78);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [draft, setDraft] = useState<string | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
@@ -87,6 +96,10 @@ export default function ExtractDetailModal({
   const [moveOpen, setMoveOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportText, setReportText] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   useEffect(() => {
     if (!visible || !item) {
@@ -96,13 +109,40 @@ export default function ExtractDetailModal({
       setMoveOpen(false);
       setReportOpen(false);
       setReportText("");
+      setMoreOpen(false);
+      setHistoryOpen(false);
+      setHistoryLoading(false);
+      setHistoryLoaded(false);
       return;
     }
-    getExtractHistory(getToken, item.id)
-      .then((r) => setLogs(r.logs))
-      .catch(() => {});
+    setHistoryOpen(false);
+    setHistoryLoaded(false);
+    setLogs([]);
+    setHistoryLoading(false);
     if (item.draft_text) setDraft(item.draft_text);
-  }, [visible, item, getToken]);
+  }, [visible, item?.id, getToken]);
+
+  const loadHistory = useCallback(() => {
+    if (!item || historyLoaded || historyLoading) return;
+    setHistoryLoading(true);
+    getExtractHistory(getToken, item.id)
+      .then((r) => {
+        setLogs(r.logs);
+        setHistoryLoaded(true);
+      })
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, [item, getToken, historyLoaded, historyLoading]);
+
+  const toggleHistory = useCallback(() => {
+    pemImpactLight();
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryOpen(true);
+    void loadHistory();
+  }, [historyOpen, loadHistory]);
 
   const handleDraft = useCallback(async () => {
     if (!item) return;
@@ -172,23 +212,51 @@ export default function ExtractDetailModal({
   const hasCalendar = !!item.event_start_at;
   const showDraftButton = item.batch_key === "follow_ups" && !draft;
 
+  const toneL = toneChipLabel(item.tone);
+  const urgencyL = urgencyChipLabel(item.urgency);
+  const batchL = batchKeyLabel(item.batch_key);
+  const metaChipLabels = [...new Set([toneL, urgencyL, batchL].filter(Boolean))] as string[];
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalRoot}>
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityRole="button" />
         <View
-          style={[styles.sheet, { backgroundColor: chrome.surface, paddingBottom: insets.bottom + space[4] }]}
+          style={[
+            styles.sheet,
+            {
+              height: sheetHeight,
+              backgroundColor: chrome.surface,
+            },
+          ]}
         >
-          <View style={[styles.handle, { backgroundColor: chrome.borderStrong }]} />
+          <View style={styles.sheetBody}>
+            <View style={[styles.handle, { backgroundColor: chrome.borderStrong }]} />
 
-          <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
             {/* Title + meta */}
             <PemText variant="title" style={{ color: chrome.text, marginBottom: space[2] }}>
               {item.text}
             </PemText>
-            <PemText variant="caption" style={{ color: chrome.textDim, marginBottom: space[3] }}>
-              {item.tone} · {item.urgency}
-            </PemText>
+            {metaChipLabels.length > 0 ? (
+              <View style={[styles.metaChips, { marginBottom: space[3] }]}>
+                {metaChipLabels.map((label) => (
+                  <View
+                    key={label}
+                    style={[styles.metaChip, { borderColor: chrome.border, backgroundColor: chrome.page }]}
+                  >
+                    <PemText variant="caption" style={{ color: chrome.textMuted, fontSize: fontSize.xs }}>
+                      {label}
+                    </PemText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             {/* Calendar event info */}
             {hasCalendar ? (
@@ -277,26 +345,56 @@ export default function ExtractDetailModal({
               </View>
             ) : null}
 
-            {/* History timeline */}
-            {logs.length > 0 ? (
-              <View style={{ marginTop: space[5] }}>
-                <PemText variant="caption" style={{ color: chrome.textDim, letterSpacing: 1, marginBottom: space[2] }}>
-                  HISTORY
+            {/* Activity / history — opt-in */}
+            <View style={{ marginTop: space[5] }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: historyOpen }}
+                accessibilityLabel={historyOpen ? "Hide activity" : "View activity"}
+                onPress={toggleHistory}
+                style={styles.historyToggle}
+              >
+                <PemText variant="caption" style={{ color: chrome.textDim, letterSpacing: 1 }}>
+                  {historyOpen ? "Hide activity" : "View activity"}
                 </PemText>
-                {logs.map((log) => (
-                  <View key={log.id} style={styles.logRow}>
-                    <PemText variant="caption" style={{ color: chrome.textMuted }}>
-                      {log.is_agent ? "🤖" : "👤"}{" "}
-                      {log.pem_note ?? log.type} — {fmtShort(log.created_at)}
-                    </PemText>
+                <PemText variant="caption" style={{ color: chrome.textDim }}>
+                  {historyOpen ? "▲" : "▼"}
+                </PemText>
+              </Pressable>
+              {historyOpen ? (
+                historyLoading ? (
+                  <ActivityIndicator style={{ marginTop: space[3] }} color={chrome.textMuted} />
+                ) : logs.length > 0 ? (
+                  <View style={{ marginTop: space[2] }}>
+                    {logs.map((log) => (
+                      <View key={log.id} style={styles.logRow}>
+                        <PemText variant="caption" style={{ color: chrome.textMuted }}>
+                          {log.is_agent ? "🤖" : "👤"}{" "}
+                          {log.pem_note ?? log.type} — {fmtShort(log.created_at)}
+                        </PemText>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            ) : null}
-          </ScrollView>
+                ) : (
+                  <PemText variant="caption" style={{ color: chrome.textDim, marginTop: space[2] }}>
+                    No activity logged for this item yet.
+                  </PemText>
+                )
+              ) : null}
+            </View>
+            </ScrollView>
+          </View>
 
           {/* Actions */}
-          <View style={[styles.actions, { borderTopColor: chrome.border }]}>
+          <View
+            style={[
+              styles.actions,
+              {
+                borderTopColor: chrome.border,
+                paddingBottom: insets.bottom + space[4],
+              },
+            ]}
+          >
             {reportOpen ? (
               <View style={{ gap: space[2], marginBottom: space[2] }}>
                 <PemText variant="caption" style={{ color: chrome.textDim }}>
@@ -372,46 +470,36 @@ export default function ExtractDetailModal({
                     Undo done
                   </PemButton>
                 )}
-                <View style={{ height: space[2] }} />
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setReportOpen(true)}
-                  style={{ paddingVertical: space[3] }}
-                >
-                  <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Report issue</PemText>
-                </Pressable>
+                <View style={styles.linkRow}>
+                  <Pressable accessibilityRole="button" onPress={() => setReportOpen(true)} style={{ paddingVertical: space[3] }}>
+                    <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Report issue</PemText>
+                  </Pressable>
+                </View>
               </>
+            ) : moreOpen ? (
+              <View style={{ gap: space[1], marginBottom: space[2] }}>
+                <Pressable accessibilityRole="button" onPress={() => { setMoreOpen(false); onDismiss(); }} style={[styles.snoozeRow, { backgroundColor: chrome.page }]}>
+                  <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>Dismiss</PemText>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => { setMoreOpen(false); setSnoozeOpen(true); }} style={[styles.snoozeRow, { backgroundColor: chrome.page }]}>
+                  <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>Later</PemText>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => { setMoreOpen(false); setMoveOpen(true); }} style={[styles.snoozeRow, { backgroundColor: chrome.page }]}>
+                  <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>Move to</PemText>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => { setMoreOpen(false); setReportOpen(true); }} style={[styles.snoozeRow, { backgroundColor: chrome.page }]}>
+                  <PemText variant="body" style={{ color: chrome.text, fontSize: fontSize.sm }}>Report issue</PemText>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => setMoreOpen(false)} style={{ paddingVertical: space[2] }}>
+                  <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Cancel</PemText>
+                </Pressable>
+              </View>
             ) : (
               <>
-                <PemButton onPress={onDone}>I handled it</PemButton>
-                <View style={{ height: space[2] }} />
-                <PemButton variant="secondary" onPress={onDismiss}>
-                  Dismiss
-                </PemButton>
-                <View style={{ height: space[2] }} />
+                <PemButton onPress={onDone}>Handled</PemButton>
                 <View style={styles.linkRow}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setSnoozeOpen(true)}
-                    style={{ paddingVertical: space[3] }}
-                  >
-                    <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Later</PemText>
-                  </Pressable>
-                  <PemText variant="bodyMuted" style={{ color: chrome.textDim }}> · </PemText>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setMoveOpen(true)}
-                    style={{ paddingVertical: space[3] }}
-                  >
-                    <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Move to</PemText>
-                  </Pressable>
-                  <PemText variant="bodyMuted" style={{ color: chrome.textDim }}> · </PemText>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setReportOpen(true)}
-                    style={{ paddingVertical: space[3] }}
-                  >
-                    <PemText variant="bodyMuted" style={{ textAlign: "center" }}>Report</PemText>
+                  <Pressable accessibilityRole="button" onPress={() => setMoreOpen(true)} style={{ paddingVertical: space[3] }}>
+                    <PemText variant="bodyMuted" style={{ textAlign: "center" }}>More options…</PemText>
                   </Pressable>
                 </View>
               </>
@@ -443,9 +531,26 @@ function fmtRange(start: string, end: string | null): string {
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
-  sheet: { maxHeight: "85%", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: space[2] },
+  sheet: {
+    flexDirection: "column",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: space[2],
+    overflow: "hidden",
+  },
+  sheetBody: {
+    flex: 1,
+    minHeight: 0,
+  },
   handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: space[3] },
-  scroll: { paddingHorizontal: space[5] },
+  scroll: {
+    flex: 1,
+    paddingHorizontal: space[5],
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: space[4],
+  },
   quote: { borderWidth: 1, borderRadius: 10, padding: space[3] },
   calRow: { borderWidth: 1, borderRadius: 10, padding: space[3], marginBottom: space[3] },
   calButton: {
@@ -458,9 +563,32 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
   },
-  actions: { paddingHorizontal: space[5], paddingTop: space[3], borderTopWidth: StyleSheet.hairlineWidth },
+  actions: {
+    flexShrink: 0,
+    paddingHorizontal: space[5],
+    paddingTop: space[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   draftActions: { flexDirection: "row", gap: space[2], marginTop: space[2] },
   logRow: { paddingVertical: space[1] },
+  historyToggle: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: space[2],
+  },
+  metaChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space[2],
+    alignItems: "center",
+  },
+  metaChip: {
+    paddingHorizontal: space[3],
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   snoozeRow: { paddingVertical: space[2], paddingHorizontal: space[3], borderRadius: 8 },
   linkRow: { flexDirection: "row", justifyContent: "center", alignItems: "center" },
   reportInput: {

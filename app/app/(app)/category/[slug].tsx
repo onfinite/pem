@@ -1,4 +1,5 @@
 import ExtractDetailModal from "@/components/inbox/ExtractDetailModal";
+import { extractListSubtitle } from "@/lib/extractLabels";
 import PemListRow from "@/components/ui/PemListRow";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemMindEmptyState from "@/components/ui/PemMindEmptyState";
@@ -17,7 +18,7 @@ import {
 import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
 import { firstParam } from "@/lib/routeParams";
 import { useAuth } from "@clerk/expo";
-import { router, useLocalSearchParams } from "expo-router";
+import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, View } from "react-native";
@@ -63,18 +64,18 @@ const SLUG_CONFIG: Record<
     emptySubtitle: "Mention errands in your dumps and they'll appear here.",
     filter: { batch_key: "errands" },
   },
-  done: {
-    title: "Done",
-    icon: "✓",
-    emptyTitle: "Nothing done yet.",
-    emptySubtitle: "When you handle something, it shows up here.",
-    filter: { status: "done" },
-  },
 };
 
 export default function CategoryScreen() {
   const params = useLocalSearchParams<{ slug?: string | string[] }>();
   const slug = firstParam(params.slug) ?? "ideas";
+  if (slug === "done") {
+    return <Redirect href="/inbox" />;
+  }
+  return <CategoryScreenInner slug={slug} />;
+}
+
+function CategoryScreenInner({ slug }: { slug: string }) {
   const config = SLUG_CONFIG[slug] ?? SLUG_CONFIG.ideas;
   const { resolved } = useTheme();
   const chrome = inboxChrome(resolved);
@@ -214,8 +215,8 @@ export default function CategoryScreen() {
               chrome={chrome}
               icon={item.source === "calendar" ? "📅" : config.icon}
               title={item.text}
-              subtitle={item.pem_note ?? item.tone}
-              showChevron
+              subtitle={extractListSubtitle(item)}
+              showChevron={false}
               onPress={() => setDetail(item)}
             />
           )}

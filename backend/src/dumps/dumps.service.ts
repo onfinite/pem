@@ -1,10 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
@@ -14,6 +9,7 @@ import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import { ExtractsService } from '../extracts/extracts.service';
 import { StorageService } from '../storage/storage.service';
+import { TranscriptionService } from '../transcription/transcription.service';
 import {
   extractsTable,
   dumpsTable,
@@ -33,6 +29,7 @@ export class DumpsService {
     private readonly extracts: ExtractsService,
     private readonly config: ConfigService,
     private readonly storage: StorageService,
+    private readonly transcription: TranscriptionService,
   ) {}
 
   async createDump(user: UserRow, text: string): Promise<{ dumpId: string }> {
@@ -58,41 +55,7 @@ export class DumpsService {
   }
 
   async transcribeAudio(audio: Express.Multer.File): Promise<string> {
-    if (!audio?.buffer) {
-      throw new BadRequestException('No audio file provided');
-    }
-
-    const apiKey = this.config.get<string>('openai.apiKey');
-    if (!apiKey) {
-      throw new BadRequestException('Transcription service unavailable');
-    }
-
-    const formData = new FormData();
-    const blob = new Blob([new Uint8Array(audio.buffer)], {
-      type: audio.mimetype || 'audio/m4a',
-    });
-    formData.append('file', blob, audio.originalname || 'recording.m4a');
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'en');
-
-    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '');
-      this.log.error(`Whisper API error: ${res.status} ${errBody}`);
-      throw new BadRequestException('Transcription failed');
-    }
-
-    const json = (await res.json()) as { text: string };
-    const text = json.text?.trim();
-    if (!text) {
-      throw new BadRequestException('Could not transcribe audio');
-    }
-    return text;
+    return this.transcription.transcribe(audio);
   }
 
   async createFromVoice(

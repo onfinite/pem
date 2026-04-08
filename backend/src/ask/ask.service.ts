@@ -8,12 +8,15 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
+  askTurnsTable,
   extractsTable,
   dumpsTable,
   logsTable,
+  type AskInputKind,
   type ExtractRow,
 } from '../database/schemas';
 import { ProfileService } from '../profile/profile.service';
+import { TranscriptionService } from '../transcription/transcription.service';
 
 const SYSTEM = `You are Pem, a personal thought organizer. The user is asking you a question about their own thoughts, tasks, ideas, calendar events, and life context stored in Pem.
 
@@ -34,15 +37,22 @@ export class AskService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly config: ConfigService,
     private readonly profile: ProfileService,
+    private readonly transcription: TranscriptionService,
   ) {}
 
   async answer(
     userId: string,
     question: string,
+    opts?: { inputKind?: AskInputKind },
   ): Promise<{ answer: string; sources: { id: string; text: string }[] }> {
+    const inputKind = opts?.inputKind ?? 'text';
+    const q = question.trim();
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) {
-      return { answer: "I can't process questions right now.", sources: [] };
+      const msg = "I can't process questions right now.";
+      await this.persistAskTurn(userId, q, msg, [], inputKind, null);
+      await this.logAskEntry(userId, q, msg);
+      return { answer: msg, sources: [] };
     }
 
     const [extracts, recentDumps, memorySection] = await Promise.all([
@@ -85,7 +95,7 @@ ${dumpsContext || '(none)'}
 ${memorySection || '(none)'}
 
 ## Question
-"${question.trim()}"`;
+"${q}"`;
 
     try {
       const result = await generateText({
@@ -99,17 +109,108 @@ ${memorySection || '(none)'}
         .slice(0, 5)
         .map((e) => ({ id: e.id, text: e.extractText }));
 
-      await this.logAskEntry(userId, question, result.text);
+      await this.persistAskTurn(
+        userId,
+        q,
+        result.text,
+        sources,
+        inputKind,
+        null,
+      );
+      await this.logAskEntry(userId, q, result.text);
 
       return { answer: result.text, sources };
     } catch (err) {
       this.log.error('Ask Pem failed', err instanceof Error ? err.stack : err);
-      await this.logAskEntry(userId, question, null, err);
+      const fallback = "Sorry, I couldn't process that right now. Try again.";
+      await this.persistAskTurn(
+        userId,
+        q,
+        fallback,
+        [],
+        inputKind,
+        this.serializeErr(err),
+      );
+      await this.logAskEntry(userId, q, null, err);
       return {
-        answer: "Sorry, I couldn't process that right now. Try again.",
+        answer: fallback,
         sources: [],
       };
     }
+  }
+
+  /** Whisper → Ask only. Never creates a dump or uploads audio. */
+  async answerFromVoice(
+    userId: string,
+    audio: Express.Multer.File,
+  ): Promise<{
+    text: string;
+    answer: string;
+    sources: { id: string; text: string }[];
+  }> {
+    const text = await this.transcription.transcribe(audio);
+    const { answer, sources } = await this.answer(userId, text, {
+      inputKind: 'voice',
+    });
+    return { text, answer, sources };
+  }
+
+  async listHistory(userId: string, limitRaw?: number) {
+    const limit = Math.min(Math.max(limitRaw ?? 30, 1), 100);
+    const rows = await this.db
+      .select()
+      .from(askTurnsTable)
+      .where(eq(askTurnsTable.userId, userId))
+      .orderBy(desc(askTurnsTable.createdAt))
+      .limit(limit);
+
+    return {
+      turns: rows.map((r) => ({
+        id: r.id,
+        question_text: r.questionText,
+        answer_text: r.answerText,
+        sources: r.sources,
+        input_kind: r.inputKind,
+        error: r.error,
+        created_at: r.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  private async persistAskTurn(
+    userId: string,
+    questionText: string,
+    answerText: string | null,
+    sources: { id: string; text: string }[],
+    inputKind: AskInputKind,
+    error: { message: string; stack?: string } | null,
+  ) {
+    try {
+      await this.db.insert(askTurnsTable).values({
+        userId,
+        questionText: questionText.slice(0, 16_000),
+        answerText: answerText ? answerText.slice(0, 32_000) : null,
+        sources,
+        inputKind,
+        error,
+      });
+    } catch (e) {
+      this.log.warn(
+        `Failed to persist ask turn: ${e instanceof Error ? e.message : 'unknown'}`,
+      );
+    }
+  }
+
+  private serializeErr(err: unknown): { message: string; stack?: string } {
+    return {
+      message:
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string'
+            ? err
+            : 'Unknown error',
+      stack: err instanceof Error ? err.stack?.slice(0, 4000) : undefined,
+    };
   }
 
   private async getRelevantExtracts(userId: string): Promise<ExtractRow[]> {

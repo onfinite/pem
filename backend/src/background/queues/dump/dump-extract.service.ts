@@ -97,10 +97,14 @@ export class DumpExtractService {
       });
 
       // ── Phase 3: Validate (deterministic) ──
+      const openTaskTextById = new Map(
+        ctx.openRows.map((r) => [r.id, r.extractText]),
+      );
       const { extract, reconcile, issues } = this.validation.validate(
         extracted,
         reconciled,
         ctx.openIds,
+        openTaskTextById,
       );
 
       // ── Apply results ──

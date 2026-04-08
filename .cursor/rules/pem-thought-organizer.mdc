@@ -324,17 +324,18 @@ Events: `inbox.updated`, `item.created`, `stream.done`. Redis pub/sub + Nest `@S
 5. Settings
 6. Category/batch pages (via batch chips)
 
-Navigation: drawer with Brief · Dumps · Done · Settings. Inline voice/text bar at bottom of every screen — **unified intake** handles dumps AND questions (Pem classifies intent). PemResponseSheet slides up when Pem has an answer.
+Navigation: drawer with Brief · Dumps · Done · Settings. Inline voice/text bar at bottom of every screen — user chooses **Dump** or **Ask** (no auto-routing). PemResponseSheet slides up when Pem has an answer (Ask mode).
 
 ---
 
 ## API shape
 
 ```
-POST   /intake              ← unified entry: dump, question, or both (preferred)
-POST   /intake/voice        ← unified voice entry (Whisper + intent classify)
-POST   /dumps               ← direct dump
-POST   /dumps/voice         ← direct voice dump
+POST   /dumps               ← text dump (extraction pipeline)
+POST   /dumps/voice         ← voice dump (Whisper + save + optional audio)
+POST   /ask                 ← text question (answer only)
+POST   /ask/voice           ← voice question (Whisper + answer; no dump)
+GET    /ask/history         ← recent Q&A (persisted in ask_turns)
 GET    /dumps
 GET    /dumps/:id
 GET    /inbox

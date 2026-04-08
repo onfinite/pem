@@ -35,7 +35,11 @@ const ERRAND_KEYWORDS =
   /\b(laundry|dry clean|pick up|drop off|post office|pharmacy|car wash|oil change|return|trash|recycle|mow|clean|tidy|vacuum|iron|groceries|package)\b/i;
 const SHOPPING_KEYWORDS = /\b(buy|order|purchase|shop|get from store)\b/i;
 const FOLLOWUP_KEYWORDS =
-  /\b(call|text|email|reply|message|reach out|follow up|contact|write to|send)\b/i;
+  /\b(call|phone|text|email|reply|message|reach out|follow up|contact|write to|send|dm|facetime)\b/i;
+
+/** People-contact phrasing — shopping batch must never win over these. */
+const PEOPLE_CONTACT =
+  /\b(call|text|email|phone|message|reach out|contact)\b.*\b(mom|dad|mother|father|parent|parents|wife|husband|spouse|sister|brother|family|friend)\b|\b(mom|dad|mother|father|parent|parents)\b.*\b(call|text|email|phone|message)\b/i;
 
 function inferBatchKey(
   text: string,
@@ -43,9 +47,33 @@ function inferBatchKey(
 ): 'errands' | 'shopping' | 'follow_ups' | null {
   const combined = `${text} ${originalText}`;
   if (ERRAND_KEYWORDS.test(combined)) return 'errands';
-  if (FOLLOWUP_KEYWORDS.test(combined)) return 'follow_ups';
+  if (FOLLOWUP_KEYWORDS.test(combined) || PEOPLE_CONTACT.test(combined)) {
+    return 'follow_ups';
+  }
   if (SHOPPING_KEYWORDS.test(combined)) return 'shopping';
   return null;
+}
+
+type KnownBatchKey = 'errands' | 'shopping' | 'follow_ups';
+
+function normalizeBatchKey(
+  v: string | null | undefined,
+): KnownBatchKey | null | undefined {
+  if (v == null) return v;
+  if (v === 'errands' || v === 'shopping' || v === 'follow_ups') return v;
+  return null;
+}
+
+/** If the model chose shopping but keywords imply follow-up or errand, fix it. */
+function correctShoppingMisbatch(
+  batchKey: string | null | undefined,
+  text: string,
+  originalText: string,
+): KnownBatchKey | null | undefined {
+  if (batchKey !== 'shopping') return normalizeBatchKey(batchKey);
+  const inferred = inferBatchKey(text, originalText);
+  if (inferred === 'follow_ups' || inferred === 'errands') return inferred;
+  return 'shopping';
 }
 
 function allowLifecycleDestructive(c: Confidence): boolean {
@@ -70,6 +98,8 @@ export class ValidationService {
     extract: ExtractPhaseResult,
     reconcile: ReconcilePhaseResult,
     openTaskIds: Set<string>,
+    /** For merge batch_key sanity checks — id → current extract text */
+    openTaskTextById?: ReadonlyMap<string, string>,
   ): ValidatedPipeline {
     const issues: ValidationIssue[] = [];
 
@@ -79,6 +109,7 @@ export class ValidationService {
       openTaskIds,
       cleanExtract.new_items.length,
       issues,
+      openTaskTextById,
     );
 
     if (issues.length > 0) {
@@ -145,6 +176,21 @@ export class ValidationService {
             severity: 'warn',
           });
         }
+      } else {
+        const fixed = correctShoppingMisbatch(
+          item.batch_key,
+          item.text,
+          item.original_text,
+        );
+        if (fixed !== item.batch_key) {
+          item.batch_key = fixed as typeof item.batch_key;
+          issues.push({
+            phase: 'extract',
+            field: `new_items[${i}].batch_key`,
+            message: `Corrected mis-batched shopping → ${fixed}`,
+            severity: 'warn',
+          });
+        }
       }
 
       return true;
@@ -174,6 +220,7 @@ export class ValidationService {
     openIds: Set<string>,
     newItemCount: number,
     issues: ValidationIssue[],
+    openTaskTextById?: ReadonlyMap<string, string>,
   ): ReconcilePhaseResult {
     const merges = raw.merge_operations.filter((m) => {
       if (!isValidUuid(m.actionable_id) || !openIds.has(m.actionable_id)) {
@@ -202,6 +249,22 @@ export class ValidationService {
           message: 'Unparseable date — cleared from patch',
           severity: 'warn',
         });
+      }
+      if (
+        m.patch.batch_key === 'shopping' &&
+        openTaskTextById?.has(m.actionable_id)
+      ) {
+        const taskText = openTaskTextById.get(m.actionable_id) ?? '';
+        const fixed = correctShoppingMisbatch('shopping', taskText, '');
+        if (fixed === 'follow_ups' || fixed === 'errands') {
+          m.patch.batch_key = fixed;
+          issues.push({
+            phase: 'reconcile',
+            field: 'merge_operations.patch.batch_key',
+            message: `Reconcile wanted shopping but task text implies ${fixed} — corrected`,
+            severity: 'warn',
+          });
+        }
       }
       return true;
     });

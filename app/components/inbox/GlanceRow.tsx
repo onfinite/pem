@@ -1,10 +1,10 @@
 import PemText from "@/components/ui/PemText";
 import type { InboxChrome } from "@/constants/inboxChrome";
 import { space } from "@/constants/typography";
+import { batchKeyLabel } from "@/lib/extractLabels";
 import type { ApiExtract } from "@/lib/pemApi";
 import {
   Calendar,
-  ChevronRight,
   MapPin,
   MessageCircle,
   ShoppingCart,
@@ -44,7 +44,8 @@ export default function GlanceRow({ item, chrome, onPress }: Props) {
     );
   }
   if (isCalSource && item.event_location) subParts.push(item.event_location);
-  if (item.batch_key) subParts.push(item.batch_key.replace(/_/g, " "));
+  const batch = batchKeyLabel(item.batch_key);
+  if (batch) subParts.push(batch);
   if (item.snoozed_until) subParts.push("snoozed");
 
   return (
@@ -76,21 +77,22 @@ export default function GlanceRow({ item, chrome, onPress }: Props) {
           </PemText>
         ) : null}
       </View>
-      <View style={styles.right}>
-        {overdue ? (
-          <View style={[styles.badge, { borderColor: chrome.urgentBorder, backgroundColor: chrome.urgentBg }]}>
-            <PemText variant="caption" style={{ color: "#ff453a", fontSize: 9, fontWeight: "600" }}>
-              overdue
+      {overdue || (item.due_at && !overdue) ? (
+        <View style={styles.right}>
+          {overdue ? (
+            <View style={[styles.badge, { borderColor: chrome.urgentBorder, backgroundColor: chrome.urgentBg }]}>
+              <PemText variant="caption" style={{ color: "#ff453a", fontSize: 9, fontWeight: "600" }}>
+                overdue
+              </PemText>
+            </View>
+          ) : null}
+          {item.due_at && !overdue ? (
+            <PemText variant="caption" style={{ color: chrome.textDim, fontSize: 10, fontVariant: ["tabular-nums"] }}>
+              {new Date(item.due_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
             </PemText>
-          </View>
-        ) : null}
-        {item.due_at && !overdue ? (
-          <PemText variant="caption" style={{ color: chrome.textDim, fontSize: 10, fontVariant: ["tabular-nums"] }}>
-            {new Date(item.due_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-          </PemText>
-        ) : null}
-        <ChevronRight size={16} color={chrome.textDim} strokeWidth={2} />
-      </View>
+          ) : null}
+        </View>
+      ) : null}
     </Pressable>
   );
 }

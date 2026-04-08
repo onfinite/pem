@@ -7,6 +7,7 @@ import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow, ExtractRow } from '../database/schemas';
 import { ExtractsService } from '../extracts/extracts.service';
+import { BriefStatementService } from './brief-statement.service';
 import { InboxStreamService } from './inbox-stream.service';
 
 @ApiTags('inbox')
@@ -17,6 +18,7 @@ export class InboxController {
   constructor(
     private readonly extracts: ExtractsService,
     private readonly stream: InboxStreamService,
+    private readonly briefStatement: BriefStatementService,
   ) {}
 
   @Get()
@@ -34,7 +36,17 @@ export class InboxController {
   async getBrief(@CurrentUser() user: UserRow) {
     const data = await this.extracts.getBrief(user.id);
     const ser = (a: ExtractRow) => this.extracts.serialize(a);
+
+    const statement = await this.briefStatement.generate({
+      overdue: data.overdue.length,
+      today: data.today.length,
+      tomorrow: data.tomorrow.length,
+      this_week: data.this_week.length,
+      todayItems: data.today.slice(0, 5).map((r) => r.extractText),
+    });
+
     return {
+      statement,
       overdue: data.overdue.map(ser),
       today: data.today.map(ser),
       tomorrow: data.tomorrow.map(ser),

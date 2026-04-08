@@ -9,7 +9,7 @@ globs: backend/**
 
 **Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, never `generateObject`). **Background work** lives under **`src/background/`**. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription (`POST /dumps/voice`).
 
-**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA), **`dumps`** (raw **`text`**, **`polished_text`**, **`last_error`**, **`additional_context`** / **`agent_assumptions`** JSON, **`status`**: `processing` | `processed` | `failed`), **`extracts`** (tone, urgency, batch_key, dates, **`recommended_at`**, status; **`source`**: `dump` | `calendar`; **`external_event_id`**, **`calendar_connection_id`**, **`event_start_at`**, **`event_end_at`**, **`event_location`** for calendar events; `dumpId` nullable for calendar-sourced extracts — renamed from `actionables`), **`calendar_connections`** (provider `google` | `apple`, is_primary, Google OAuth tokens, Apple calendar IDs, sync state), **`follow_ups`** (one row per extract — reminder note + **`recommended_at`**), **`logs`** (unified audit: **`type`**: `dump` | `extract` | `ask` | `calendar`, **`is_agent`**, **`pem_note`**, **`payload`** JSON, **`error`** JSON, optional **`extract_id`** / **`dump_id`** — replaces old `actionable_change_log`), **`memory_facts`**.
+**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA), **`dumps`** (raw **`text`**, **`polished_text`**, **`last_error`**, **`additional_context`** / **`agent_assumptions`** JSON, **`status`**: `processing` | `processed` | `failed`), **`extracts`** (tone, urgency, batch_key, dates, **`recommended_at`**, status; **`source`**: `dump` | `calendar`; **`external_event_id`**, **`calendar_connection_id`**, **`event_start_at`**, **`event_end_at`**, **`event_location`** for calendar events; `dumpId` nullable for calendar-sourced extracts — renamed from `actionables`), **`calendar_connections`** (provider `google` | `apple`, is_primary, Google OAuth tokens, Apple calendar IDs, sync state), **`follow_ups`** (one row per extract — reminder note + **`recommended_at`**), **`ask_turns`** (Ask Pem Q&A per user: question, answer, **`sources`** JSON, **`input_kind`** `text` \| `voice`, optional **`error`**), **`logs`** (unified audit: **`type`**: `dump` | `extract` | `ask` | `calendar`, **`is_agent`**, **`pem_note`**, **`payload`** JSON, **`error`** JSON, optional **`extract_id`** / **`dump_id`** — replaces old `actionable_change_log`), **`memory_facts`**.
 
 **Dump extraction (multi-agent pipeline):** Three-phase sequential pipeline with deterministic validation:
 
@@ -33,9 +33,7 @@ Orchestrator is `DumpExtractService` (BullMQ worker). **`additional_context`** o
 
 **Ask Pem:** **`POST /ask`** — user asks about their data; backend queries extracts + dumps + memory, answers via LLM, logs to **`logs`** table with `type: 'ask'`. Only answers about user's own data.
 
-**Unified Intake:** **`POST /intake`** (text) and **`POST /intake/voice`** (multipart audio). Intent classification via gpt-4o-mini → routes to dumps pipeline for dumps, Ask for questions, or both. Returns `IntakeResult` { intent, dump_id, text, answer, sources }. **`IntakeModule`** imports `AskModule` + `DumpsModule`.
-
-**Voice:** **`POST /dumps/voice`** — multipart audio upload → OpenAI Whisper API → text → normal dump pipeline (legacy — prefer `/intake/voice`).
+**Dumps vs Ask — separate HTTP surfaces (no unified intake):** **`POST /dumps`** + **`POST /dumps/voice`** → save dump, queue extraction, optional audio on dump row. **`POST /ask`** + **`POST /ask/voice`** → `AskService.answer` only; voice uses shared **`TranscriptionService`** (Whisper) then **never** creates a dump or stores audio. **`TranscriptionModule`** is imported by **`DumpsModule`** and **`AskModule`**.
 
 **Drizzle:** Change schema in TS → **`npm run db:generate`** → review → **`npm run db:migrate`**. Never hand-edit `drizzle/*.sql` or `drizzle/meta/`.
 
@@ -52,8 +50,7 @@ Orchestrator is `DumpExtractService` (BullMQ worker). **`additional_context`** o
 | `src/dumps/` | `POST /dumps`, `POST /dumps/voice`, `GET /dumps`, `GET /dumps/:id` |
 | `src/inbox/` | `GET /inbox`, `GET /inbox/brief`, `GET /inbox/all`, `GET /inbox/stream` (SSE) |
 | `src/extracts/` | `GET /extracts/done`, `GET /extracts/query`, `GET /extracts/:id`, `GET /extracts/:id/history`, `POST /extracts/:id/draft`, PATCH done/dismiss/undone/undismiss/snooze |
-| `src/ask/` | `POST /ask` — Ask Pem Q&A |
-| `src/intake/` | `POST /intake`, `POST /intake/voice` — unified intent classification + routing |
+| `src/ask/` | `POST /ask`, `POST /ask/voice`, `GET /ask/history` — Ask Pem; persists rows in **`ask_turns`** |
 | `src/users/` | `GET /users/me`, `PATCH /users/me/timezone`, profile, push token |
 | `src/profile/` | `memory_facts` CRUD |
 | `src/push/` | Expo push |

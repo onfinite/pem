@@ -3,6 +3,11 @@ import PemText from "@/components/ui/PemText";
 import { inboxChrome } from "@/constants/inboxChrome";
 import { fontFamily, fontSize, lh, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
+import {
+  batchKeyLabel,
+  toneChipLabel,
+  urgencyChipLabel,
+} from "@/lib/extractLabels";
 import { getDumpAudioUrl, getDumpDetail, type ApiExtract, type LogEntry } from "@/lib/pemApi";
 import { firstParam } from "@/lib/routeParams";
 import { useAuth } from "@clerk/expo";
@@ -40,13 +45,6 @@ function statusLabel(s: string) {
   if (s === "dismissed") return "Dismissed";
   if (s === "snoozed") return "Snoozed";
   return "Inbox";
-}
-
-function toneLabel(t: string) {
-  if (t === "confident") return "Confident";
-  if (t === "tentative") return "Tentative";
-  if (t === "idea") return "Idea";
-  return "Someday";
 }
 
 function logIcon(log: LogEntry) {
@@ -325,61 +323,62 @@ export default function ThoughtDetailScreen() {
                 text={`${extracts.length} extract${extracts.length > 1 ? "s" : ""} created`}
                 chrome={chrome}
               />
-              {extracts.map((ext) => (
-                <View
-                  key={ext.id}
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: chrome.surface,
-                      borderColor: chrome.border,
-                      marginBottom: space[2],
-                    },
-                  ]}
-                >
-                  <View style={styles.extractHeader}>
-                    {ext.source === "calendar" ? (
-                      <Calendar size={14} color={chrome.textDim} strokeWidth={1.8} />
-                    ) : (
-                      <FileText size={14} color={chrome.textDim} strokeWidth={1.8} />
+              {extracts.map((ext) => {
+                const tone = toneChipLabel(ext.tone);
+                const batch = batchKeyLabel(ext.batch_key);
+                const urg = urgencyChipLabel(ext.urgency);
+                return (
+                  <View
+                    key={ext.id}
+                    style={[
+                      styles.card,
+                      {
+                        backgroundColor: chrome.surface,
+                        borderColor: chrome.border,
+                        marginBottom: space[2],
+                      },
+                    ]}
+                  >
+                    <View style={styles.extractHeader}>
+                      {ext.source === "calendar" ? (
+                        <Calendar size={14} color={chrome.textDim} strokeWidth={1.8} />
+                      ) : (
+                        <FileText size={14} color={chrome.textDim} strokeWidth={1.8} />
+                      )}
+                      <PemText
+                        style={{
+                          flex: 1,
+                          marginLeft: space[2],
+                          fontSize: fontSize.sm,
+                          fontWeight: "500",
+                          color: chrome.text,
+                        }}
+                        numberOfLines={2}
+                      >
+                        {ext.text}
+                      </PemText>
+                    </View>
+                    <View style={styles.extractMeta}>
+                      <Tag label={statusLabel(ext.status)} color={chrome.textDim} chrome={chrome} />
+                      {tone ? <Tag label={tone} color={chrome.textDim} chrome={chrome} /> : null}
+                      {batch ? <Tag label={batch} color={chrome.textDim} chrome={chrome} /> : null}
+                      {urg ? <Tag label={urg} color={chrome.textDim} chrome={chrome} /> : null}
+                    </View>
+                    {ext.pem_note && (
+                      <PemText
+                        style={{
+                          marginTop: space[1],
+                          fontSize: 11,
+                          color: chrome.textMuted,
+                          fontStyle: "italic",
+                        }}
+                      >
+                        {ext.pem_note}
+                      </PemText>
                     )}
-                    <PemText
-                      style={{
-                        flex: 1,
-                        marginLeft: space[2],
-                        fontSize: fontSize.sm,
-                        fontWeight: "500",
-                        color: chrome.text,
-                      }}
-                      numberOfLines={2}
-                    >
-                      {ext.text}
-                    </PemText>
                   </View>
-                  <View style={styles.extractMeta}>
-                    <Tag label={statusLabel(ext.status)} color={chrome.textDim} chrome={chrome} />
-                    <Tag label={toneLabel(ext.tone)} color={chrome.textDim} chrome={chrome} />
-                    {ext.batch_key && (
-                      <Tag label={ext.batch_key} color={chrome.textDim} chrome={chrome} />
-                    )}
-                    {ext.urgency && ext.urgency !== "none" && (
-                      <Tag label={ext.urgency.replace("_", " ")} color={chrome.textDim} chrome={chrome} />
-                    )}
-                  </View>
-                  {ext.pem_note && (
-                    <PemText
-                      style={{
-                        marginTop: space[1],
-                        fontSize: 11,
-                        color: chrome.textMuted,
-                        fontStyle: "italic",
-                      }}
-                    >
-                      {ext.pem_note}
-                    </PemText>
-                  )}
-                </View>
-              ))}
+                );
+              })}
             </>
           )}
 

@@ -27,13 +27,14 @@ const SYSTEM = `You are Pem's extraction agent (Phase 1 of 2). You receive a raw
 - batch_key: shopping | errands | follow_ups | null.
   • shopping — buying items: groceries, online orders, supplies, things to purchase.
   • errands — ANY physical task or chore: laundry, dry cleaning, pick up packages, return items, post office, pharmacy, car wash, oil change, dropping things off, cleaning, tidying, taking out trash, watering plants, mowing lawn. If it involves DOING something physical, it is errands.
-  • follow_ups — reaching out to someone: call, text, email, reply, follow up, send a message. Any task involving contacting or communicating with another person.
+  • follow_ups — reaching out to someone: call, text, email, reply, follow up, send a message. Any task involving contacting or communicating with another person (including family: mom, dad, parents). **Calls to people are never shopping** — even if the user also mentioned groceries elsewhere in the dump.
   IMPORTANT: Default to a batch when possible. null ONLY for meetings, appointments, abstract thinking, or career/life goals.
 
 ## batch_key examples
 "I need to do my laundry tomorrow" → batch_key: "errands"
 "buy milk and eggs" → batch_key: "shopping"
 "call the dentist to reschedule" → batch_key: "follow_ups"
+"call my mom and dad" / "phone my parents" → batch_key: "follow_ups" (never shopping)
 "think about career change" → batch_key: null, tone: "idea"
 "pick up the package from the post office" → batch_key: "errands"
 "meet John tomorrow at 2pm" → batch_key: null (it's a meeting)
