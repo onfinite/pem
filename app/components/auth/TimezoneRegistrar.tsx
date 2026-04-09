@@ -1,6 +1,10 @@
-import { getMe, patchTimezone } from "@/lib/pemApi";
+import { patchTimezone } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef } from "react";
+import { AppState } from "react-native";
+
+const TZ_STORAGE_KEY = "@pem/last_sent_tz";
 
 function deviceTimeZone(): string {
   try {
@@ -10,28 +14,38 @@ function deviceTimeZone(): string {
   }
 }
 
-/**
- * After auth, send device IANA timezone once so the API can interpret dates.
- */
+async function syncIfChanged(getToken: () => Promise<string | null>) {
+  try {
+    const tz = deviceTimeZone();
+    const last = await AsyncStorage.getItem(TZ_STORAGE_KEY);
+    if (last === tz) return;
+    await patchTimezone(getToken, tz);
+    await AsyncStorage.setItem(TZ_STORAGE_KEY, tz);
+  } catch {
+    /* non-fatal */
+  }
+}
+
 export default function TimezoneRegistrar() {
   const { isSignedIn, getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
   const ran = useRef(false);
 
   useEffect(() => {
-    if (!isSignedIn || ran.current) return;
-    ran.current = true;
+    if (!isSignedIn) return;
+    if (!ran.current) {
+      ran.current = true;
+      syncIfChanged(getTokenRef.current);
+    }
 
-    void (async () => {
-      try {
-        const me = await getMe(getToken);
-        if (me.timezone) return;
-        const tz = deviceTimeZone();
-        await patchTimezone(getToken, tz);
-      } catch {
-        /* non-fatal */
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        syncIfChanged(getTokenRef.current);
       }
-    })();
-  }, [isSignedIn, getToken]);
+    });
+    return () => sub.remove();
+  }, [isSignedIn]);
 
   return null;
 }

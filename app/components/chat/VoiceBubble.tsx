@@ -27,7 +27,7 @@ async function ensureLocalAudio(
 }
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Check, CheckCheck, Pause, Play } from "lucide-react-native";
-import { useState, useCallback, useRef, useEffect } from "react"; // useEffect still needed for speed load
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -107,14 +107,16 @@ const waveStyles = StyleSheet.create({
 
 type Props = {
   message: ApiMessage & {
-    _clientStatus?: "sending" | "sent";
+    _clientStatus?: "sending" | "sent" | "failed";
     _localUri?: string;
   };
   isUser: boolean;
   isSending?: boolean;
+  isFailed?: boolean;
+  onRetry?: () => void;
 };
 
-export default function VoiceBubble({ message, isUser, isSending }: Props) {
+export default function VoiceBubble({ message, isUser, isSending, isFailed, onRetry }: Props) {
   const { colors } = useTheme();
   const transcript = message.transcript ?? message.content;
   const [showTranscript, setShowTranscript] = useState(!!transcript);
@@ -126,47 +128,73 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
   }, []);
 
   // Resolve to a stable local file URI before handing to the player.
-  // - Freshly recorded: _localUri is already on-device, use directly.
-  // - Historical / R2 URL: download once to cacheDirectory keyed by message ID,
-  //   so the player always plays from disk with no streaming surprises.
   const [localUri, setLocalUri] = useState<string | null>(
     message._localUri ?? null,
   );
-  const isDownloading = !isSending && !localUri && !!message.voice_url;
+  const [downloadFailed, setDownloadFailed] = useState(false);
+  const isDownloading = !isSending && !localUri && !downloadFailed && !!message.voice_url;
 
   useEffect(() => {
-    if (isSending || message._localUri) return; // already have a local file
+    if (isSending || message._localUri) return;
     if (!message.voice_url) return;
     let cancelled = false;
+    setDownloadFailed(false);
     ensureLocalAudio(message.id, message.voice_url)
       .then((uri) => { if (!cancelled) setLocalUri(uri); })
       .catch((e) => {
         console.warn("[VoiceBubble] download error:", e);
-        // Fall back to remote URL if download fails
-        if (!cancelled) setLocalUri(message.voice_url!);
+        if (!cancelled) {
+          // Fall back to remote URL so player can at least attempt streaming
+          setLocalUri(message.voice_url!);
+          setDownloadFailed(true);
+        }
       });
     return () => { cancelled = true; };
   }, [message.id, message.voice_url, message._localUri, isSending]);
 
-  const player = useAudioPlayer(localUri ?? undefined, { keepAudioSessionActive: true });
+  // Audio source for the player — only pass a value once localUri is resolved
+  const audioSource = localUri ?? undefined;
+  const player = useAudioPlayer(audioSource, { keepAudioSessionActive: true });
   const status = useAudioPlayerStatus(player);
-
 
   const duration = status.duration || 0;
   const currentTime = status.currentTime || 0;
   const progress = duration > 0 ? currentTime / duration : 0;
   const isPlaying = status.playing;
   const isLoaded = status.isLoaded;
-  // Show spinner while: uploading, downloading remote audio, or player still loading local file
-  const showSpinner = isSending || isDownloading || (!!localUri && !isLoaded);
+
+  // Timeout: if player hasn't loaded within 8s after localUri is set, give up on spinner.
+  // This prevents the infinite-loading bug when the player silently fails to init.
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  useEffect(() => {
+    if (!localUri || isLoaded) {
+      setLoadTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!isLoaded) {
+        console.warn("[VoiceBubble] player load timed out for", message.id);
+        setLoadTimedOut(true);
+      }
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [localUri, isLoaded, message.id]);
+
+  const showSpinner = isDownloading || (!!localUri && !isLoaded && !loadTimedOut);
 
   const togglePlay = useCallback(async () => {
-    if (!isLoaded) return;
     try {
+      if (!isLoaded) {
+        // Player didn't load — try replacing the source to force a re-init
+        if (localUri) {
+          setLoadTimedOut(false);
+          player.replace({ uri: localUri });
+        }
+        return;
+      }
       if (isPlaying) {
         player.pause();
       } else {
-        // Seek to start if already played to end
         if (duration > 0 && currentTime >= duration - 0.1) {
           await player.seekTo(0);
         }
@@ -175,7 +203,7 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
     } catch (e) {
       console.error("[VoiceBubble] play error:", e);
     }
-  }, [isLoaded, isPlaying, player, duration, currentTime]);
+  }, [isLoaded, isPlaying, player, duration, currentTime, localUri]);
 
   const cycleSpeed = useCallback(() => {
     const next = (speedIdx + 1) % SPEEDS.length;
@@ -211,9 +239,10 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
           { backgroundColor: bubbleBg },
           isUser ? styles.bubbleUser : styles.bubblePem,
           isSending && { opacity: 0.7 },
+          isFailed && { opacity: 0.6 },
         ]}
       >
-        {/* Row 1: play · waveform · speed chip */}
+        {/* Row 1: play · waveform · speed chip · duration */}
         <View style={styles.voiceRow}>
           {showSpinner ? (
             <View style={[styles.playBtn, { backgroundColor: playBtnBg }]}>
@@ -238,7 +267,6 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
             inactiveColor={inactiveBarColor}
           />
 
-          {/* Speed chip — only when ready to play */}
           {showSpinner ? (
             <View style={styles.speedChipPlaceholder} />
           ) : (
@@ -248,31 +276,11 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
               </Text>
             </Pressable>
           )}
-        </View>
 
-        {/* Row 2: duration on left · [hide/show text] + message time + ticks on right */}
-        <View style={styles.bottomRow}>
+          {/* Duration — to the right of speed chip */}
           <Text style={[styles.smallText, { color: dimText }]}>
             {isPlaying || currentTime > 0 ? formatDuration(currentTime) : formatDuration(duration)}
           </Text>
-
-          <View style={styles.bottomRight}>
-            {transcript && (
-              <Pressable onPress={() => setShowTranscript((v) => !v)} hitSlop={8}>
-                <Text style={[styles.toggleText, { color: toggleColor }]}>
-                  {showTranscript ? "Hide text" : "Show text"}
-                </Text>
-              </Pressable>
-            )}
-            <View style={styles.timeTickRow}>
-              <Text style={[styles.smallText, { color: dimText }]}>{time}</Text>
-              {isUser && (
-                isSending
-                  ? <Check size={13} color={tickColor} strokeWidth={2} />
-                  : <CheckCheck size={13} color={tickColor} strokeWidth={2} />
-              )}
-            </View>
-          </View>
         </View>
 
         {/* Transcript */}
@@ -281,6 +289,34 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
             {transcript}
           </Text>
         )}
+
+        {/* Bottom row: hide/show text on left · message time + ticks on right */}
+        <View style={styles.bottomRow}>
+          {transcript ? (
+            <Pressable onPress={() => setShowTranscript((v) => !v)} hitSlop={8}>
+              <Text style={[styles.toggleText, { color: toggleColor }]}>
+                {showTranscript ? "Hide text" : "Show text"}
+              </Text>
+            </Pressable>
+          ) : (
+            <View />
+          )}
+          <View style={styles.timeTickRow}>
+            <Text style={[styles.smallText, { color: dimText }]}>{time}</Text>
+            {isUser &&
+              (isFailed ? (
+                <Pressable onPress={onRetry} hitSlop={8}>
+                  <Text style={{ fontFamily: fontFamily.sans.medium, fontSize: 11, color: "#ff3b30" }}>
+                    Failed — retry
+                  </Text>
+                </Pressable>
+              ) : isSending ? (
+                <Check size={13} color={tickColor} strokeWidth={2} />
+              ) : (
+                <CheckCheck size={13} color={tickColor} strokeWidth={2} />
+              ))}
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -334,12 +370,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 5,
-  },
-  bottomRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    marginTop: 4,
   },
   timeTickRow: {
     flexDirection: "row",

@@ -33,6 +33,24 @@ export class ExtractsController {
     private readonly draft: DraftService,
   ) {}
 
+  @Get('counts')
+  @ApiOperation({ summary: 'Task counts for the pill — today, overdue, total open' })
+  async getCounts(@CurrentUser() user: UserRow) {
+    return this.extracts.getTaskCounts(user.id);
+  }
+
+  @Get('calendar')
+  @ApiOperation({
+    summary:
+      'Calendar view — items for a month, undated tasks, overdue, dot map',
+  })
+  async getCalendarView(
+    @CurrentUser() user: UserRow,
+    @Query('month') month?: string,
+  ) {
+    return this.extracts.getCalendarView(user.id, month);
+  }
+
   @Get('done')
   @ApiOperation({ summary: 'Done list — newest first' })
   async listDone(

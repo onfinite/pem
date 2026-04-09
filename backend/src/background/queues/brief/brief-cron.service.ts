@@ -39,63 +39,63 @@ export class BriefCronService {
 
   @Cron('0 * * * *')
   async checkAndGenerateBriefs(): Promise<void> {
-    const now = new Date();
-
     const users = await this.db.select().from(usersTable);
 
     for (const user of users) {
       if (!user.timezone) continue;
       try {
         const userNow = DateTime.now().setZone(user.timezone);
-        if (userNow.hour !== 0) continue;
 
-        const todayStart = userNow.startOf('day').toJSDate();
+        // Generate brief at midnight
+        if (userNow.hour === 0) {
+          const todayStart = userNow.startOf('day').toJSDate();
+          const existingBrief = await this.db
+            .select({ id: messagesTable.id })
+            .from(messagesTable)
+            .where(
+              and(
+                eq(messagesTable.userId, user.id),
+                eq(messagesTable.kind, 'brief'),
+                eq(messagesTable.role, 'pem'),
+                gte(messagesTable.createdAt, todayStart),
+              ),
+            )
+            .limit(1);
+          if (existingBrief.length === 0) {
+            await this.generateBrief(user.id, user.timezone, user.name, user.summary);
+          }
+        }
 
-        const existingBrief = await this.db
-          .select({ id: messagesTable.id })
-          .from(messagesTable)
-          .where(
-            and(
-              eq(messagesTable.userId, user.id),
-              eq(messagesTable.kind, 'brief'),
-              eq(messagesTable.role, 'pem'),
-              gte(messagesTable.createdAt, todayStart),
-            ),
-          )
-          .limit(1);
-
-        if (existingBrief.length > 0) continue;
-
-        await this.generateBrief(user.id, user.timezone);
-
+        // Push notification at user's notification time
         const notifTime = user.notificationTime ?? '07:00';
-        const [h, m] = notifTime.split(':').map(Number);
-        const notifDate = DateTime.fromObject(
-          {
-            year: userNow.year,
-            month: userNow.month,
-            day: userNow.day,
-            hour: h,
-            minute: m,
-          },
-          { zone: user.timezone },
-        ).toJSDate();
-        const delay = notifDate.getTime() - now.getTime();
-
-        if (delay > 0 && user.pushToken) {
-          setTimeout(() => {
-            this.push.notifyInboxUpdated(user.id).catch(() => {});
-          }, delay);
+        const [nh] = notifTime.split(':').map(Number);
+        if (userNow.hour === nh && user.pushToken) {
+          const todayStart = userNow.startOf('day').toJSDate();
+          const brief = await this.db
+            .select({ id: messagesTable.id })
+            .from(messagesTable)
+            .where(
+              and(
+                eq(messagesTable.userId, user.id),
+                eq(messagesTable.kind, 'brief'),
+                eq(messagesTable.role, 'pem'),
+                gte(messagesTable.createdAt, todayStart),
+              ),
+            )
+            .limit(1);
+          if (brief.length > 0) {
+            await this.push.notifyBrief(user.id);
+          }
         }
       } catch (e) {
         this.log.error(
-          `Brief generation failed for user ${user.id}: ${e instanceof Error ? e.message : String(e)}`,
+          `Brief check failed for user ${user.id}: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
     }
   }
 
-  async generateBrief(userId: string, timezone: string): Promise<void> {
+  async generateBrief(userId: string, timezone: string, userName?: string | null, userSummary?: string | null): Promise<void> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) return;
 
@@ -161,11 +161,14 @@ Errands: ${errands.length} items`;
     const openai = createOpenAI({ apiKey });
     const agentModel = this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
 
+    const nameNote = userName ? `\nThe user's name is ${userName}. Use it occasionally.` : '';
+    const summaryBlock = userSummary ? `\nAbout the user:\n${userSummary}\n` : '';
+
     try {
       const result = await generateText({
         model: openai(agentModel),
         system: BRIEF_SYSTEM,
-        prompt: context,
+        prompt: `${summaryBlock}${nameNote}\n\n${context}`,
       });
 
       await this.db.insert(messagesTable).values({

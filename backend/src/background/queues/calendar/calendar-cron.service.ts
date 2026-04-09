@@ -19,8 +19,8 @@ export class CalendarCronService {
     private readonly sync: CalendarSyncService,
   ) {}
 
-  /** Every 2 hours: enqueue sync jobs for all active Google connections. */
-  @Cron(CronExpression.EVERY_2_HOURS)
+  /** Every 30 minutes: enqueue sync jobs for all active Google connections. */
+  @Cron(CronExpression.EVERY_30_MINUTES)
   async enqueueGoogleSyncs(): Promise<void> {
     const rows = await this.db
       .select({ id: calendarConnectionsTable.id })

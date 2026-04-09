@@ -15,29 +15,49 @@ export class PushService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
   async notifyInboxUpdated(userId: string): Promise<void> {
+    await this.sendPush(userId, {
+      title: 'Pem',
+      body: 'New items in your inbox.',
+      data: { kind: 'inbox_updated' },
+    });
+  }
+
+  async notifyChatReply(userId: string): Promise<void> {
+    await this.sendPush(userId, {
+      title: 'Pem',
+      body: 'Replied to your message',
+      data: { kind: 'chat_reply' },
+    });
+  }
+
+  async notifyBrief(userId: string): Promise<void> {
+    await this.sendPush(userId, {
+      title: 'Good morning',
+      body: 'Your daily brief is ready',
+      data: { kind: 'morning_brief' },
+    });
+  }
+
+  private async sendPush(
+    userId: string,
+    payload: { title: string; body: string; data: Record<string, unknown> },
+  ): Promise<void> {
     const rows = await this.db
       .select({ pushToken: usersTable.pushToken })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
     const token = rows[0]?.pushToken;
-    if (!token) {
-      this.log.debug(
-        `inbox update — no push_token (client must PATCH /users/me/push-token)`,
-      );
-      return;
-    }
+    if (!token) return;
     if (!Expo.isExpoPushToken(token)) {
-      this.log.warn(`inbox update — invalid Expo token; skipping push`);
+      this.log.warn('Invalid Expo push token — skipping');
       return;
     }
 
     const message: ExpoPushMessage = {
       to: token,
       sound: 'default',
-      title: 'Pem organized your dump',
-      body: 'New items are in your inbox.',
-      data: { kind: 'inbox_updated' },
+      ...payload,
     };
 
     try {
@@ -45,9 +65,7 @@ export class PushService {
       for (const chunk of chunks) {
         const tickets = await this.expo.sendPushNotificationsAsync(chunk);
         for (const t of tickets) {
-          if (t.status === 'error') {
-            this.log.warn(`push error: ${t.message}`);
-          }
+          if (t.status === 'error') this.log.warn(`push error: ${t.message}`);
         }
       }
     } catch (e) {

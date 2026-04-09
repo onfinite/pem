@@ -6,9 +6,10 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { getToken, ...rest } = init;
   const token = await getToken();
+  if (!token) throw new Error("No auth token available");
   const headers = new Headers(rest.headers);
   headers.set("Accept", "application/json");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Authorization", `Bearer ${token}`);
   if (rest.body && !headers.has("Content-Type") && !(rest.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
@@ -57,6 +58,14 @@ export type ApiMessage = {
   polished_text: string | null;
   parent_message_id: string | null;
   created_at: string;
+  metadata?: {
+    tasks_created?: number;
+    tasks_updated?: number;
+    tasks_completed?: number;
+    calendar_written?: number;
+    calendar_updated?: number;
+    calendar_deleted?: number;
+  } | null;
 };
 
 export async function sendChatMessage(
@@ -107,6 +116,47 @@ export async function getChatMessages(
   const qs = params.toString();
   return apiFetch(`/chat/messages${qs ? `?${qs}` : ""}`, {
     method: "GET",
+    getToken,
+  });
+}
+
+export type TaskCounts = {
+  today: number;
+  overdue: number;
+  total_open: number;
+  this_week: number;
+  someday: number;
+};
+
+export async function getTaskCounts(
+  getToken: () => Promise<string | null>,
+): Promise<TaskCounts> {
+  return apiFetch<TaskCounts>("/extracts/counts", { method: "GET", getToken });
+}
+
+export type CalendarViewResponse = {
+  items: ApiExtract[];
+  undated: ApiExtract[];
+  overdue: ApiExtract[];
+  dot_map: Record<string, { tasks: number; events: number }>;
+};
+
+export async function getExtractsCalendar(
+  getToken: () => Promise<string | null>,
+  month?: string,
+): Promise<CalendarViewResponse> {
+  const q = month ? `?month=${month}` : "";
+  return apiFetch<CalendarViewResponse>(`/extracts/calendar${q}`, {
+    method: "GET",
+    getToken,
+  });
+}
+
+export async function triggerCalendarSync(
+  getToken: () => Promise<string | null>,
+): Promise<{ synced: boolean }> {
+  return apiFetch<{ synced: boolean }>("/calendar/sync-all", {
+    method: "POST",
     getToken,
   });
 }
@@ -424,7 +474,14 @@ export async function patchTimezone(
 }
 
 export async function getMe(getToken: () => Promise<string | null>) {
-  return apiFetch<{ id: string; timezone?: string | null }>("/users/me", {
+  return apiFetch<{
+    id: string;
+    name?: string | null;
+    timezone?: string | null;
+    notification_time?: string | null;
+    summary?: string | null;
+    onboarding_completed?: boolean;
+  }>("/users/me", {
     method: "GET",
     getToken,
   });
@@ -441,59 +498,61 @@ export async function setUserPushToken(
   });
 }
 
-export type ApiProfileFact = {
-  id: string;
-  memory_key: string;
-  note: string;
-  status: string;
-  learned_at: string;
-  source_dump_id: string | null;
-  provenance: string | null;
-};
-
-export async function getUserProfileFactsPage(
+export async function getUserSummary(
   getToken: () => Promise<string | null>,
-  opts: { limit: number; cursor?: string | null; status?: string },
 ) {
-  const q = new URLSearchParams();
-  q.set("limit", String(opts.limit));
-  if (opts.cursor) q.set("cursor", opts.cursor);
-  if (opts.status) q.set("status", opts.status);
-  return apiFetch<{ facts: ApiProfileFact[]; next_cursor: string | null }>(
-    `/users/me/profile?${q.toString()}`,
-    { method: "GET", getToken },
+  return apiFetch<{ summary: string | null }>("/users/me/summary", {
+    method: "GET",
+    getToken,
+  });
+}
+
+export async function updateUserSummary(
+  getToken: () => Promise<string | null>,
+  summary: string,
+) {
+  return apiFetch<{ ok: true }>("/users/me/summary", {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ summary }),
+  });
+}
+
+export async function setNotificationTime(
+  getToken: () => Promise<string | null>,
+  time: string,
+) {
+  return apiFetch<{ ok: true; notification_time: string }>(
+    "/users/me/notification-time",
+    {
+      method: "PATCH",
+      getToken,
+      body: JSON.stringify({ time }),
+    },
   );
 }
 
-export async function createProfileFact(
+export async function completeOnboarding(
   getToken: () => Promise<string | null>,
-  key: string,
-  note: string,
 ) {
-  return apiFetch<{ fact: ApiProfileFact }>("/users/me/profile", {
+  return apiFetch<{ ok: true }>("/users/me/onboarding-complete", {
     method: "POST",
     getToken,
-    body: JSON.stringify({ key, note }),
   });
 }
 
-export async function updateProfileFact(
+export async function getExtractsDone(
   getToken: () => Promise<string | null>,
-  id: string,
-  patch: { key?: string; note?: string },
+  opts?: { limit?: number; cursor?: string | null },
 ) {
-  return apiFetch<{ fact: ApiProfileFact }>(`/users/me/profile/${id}`, {
-    method: "PATCH",
-    getToken,
-    body: JSON.stringify(patch),
-  });
-}
-
-export async function deleteProfileFact(
-  getToken: () => Promise<string | null>,
-  id: string,
-) {
-  await apiFetch<void>(`/users/me/profile/${id}`, { method: "DELETE", getToken });
+  const q = new URLSearchParams();
+  if (opts?.limit) q.set("limit", String(opts.limit));
+  if (opts?.cursor) q.set("cursor", opts.cursor);
+  const qs = q.toString();
+  return apiFetch<{ items: ApiExtract[]; next_cursor: string | null }>(
+    `/extracts/done${qs ? `?${qs}` : ""}`,
+    { method: "GET", getToken },
+  );
 }
 
 /** Voice dump — upload audio for transcription and dump creation. */

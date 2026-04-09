@@ -2,22 +2,28 @@ import ChatBubble from "@/components/chat/ChatBubble";
 import ChatDateHeader from "@/components/chat/ChatDateHeader";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatStatusBubble from "@/components/chat/ChatStatusBubble";
-import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
+import TaskDrawer, { type TaskDrawerHandle } from "@/components/chat/TaskDrawer";
 import { fontFamily, fontSize, space } from "@/constants/typography";
+import { pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useChatStream } from "@/hooks/useChatStream";
+import { pemImpactLight } from "@/lib/pemHaptics";
 import {
   getChatMessages,
+  getTaskCounts,
   sendChatMessage,
   sendVoiceMessage,
   type ApiMessage,
+  type TaskCounts,
 } from "@/lib/pemApi";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
-import { Settings } from "lucide-react-native";
+import { CalendarDays, Settings } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Animated,
   FlatList,
   Pressable,
   StyleSheet,
@@ -52,8 +58,8 @@ async function writeCache(messages: ClientMessage[]) {
 }
 
 export type ClientMessage = ApiMessage & {
-  _clientStatus?: "sending" | "sent";
-  _localUri?: string; // local file URI for freshly recorded voice — use for playback
+  _clientStatus?: "sending" | "sent" | "failed";
+  _localUri?: string;
 };
 
 type DisplayItem =
@@ -73,11 +79,23 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [taskCounts, setTaskCounts] = useState<TaskCounts | null>(null);
+  const drawerRef = useRef<TaskDrawerHandle>(null);
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const c = await getTaskCounts(getTokenRef.current);
+      setTaskCounts(c);
+    } catch { /* non-critical */ }
+  }, []);
+
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
 
   const loadMessages = useCallback(
     async (before?: string) => {
       try {
-        const res = await getChatMessages(getToken, { before, limit: 50 });
+        const res = await getChatMessages(getTokenRef.current, { before, limit: 50 });
         const withStatus: ClientMessage[] = res.messages.map((m) => ({
           ...m,
           _clientStatus: "sent" as const,
@@ -90,7 +108,6 @@ export default function ChatScreen() {
           });
         } else {
           setMessages(withStatus);
-          // Persist latest messages for instant next-open display
           writeCache(withStatus);
         }
         setHasMore(res.has_more);
@@ -100,19 +117,24 @@ export default function ChatScreen() {
         setLoading(false);
       }
     },
-    [getToken],
+    [], // Stable — uses ref for getToken
   );
 
+  // Load once on mount: show cache instantly, then fetch fresh
   useEffect(() => {
-    // Show cached messages instantly, then fetch fresh ones in background
+    let mounted = true;
     readCache().then((cached) => {
+      if (!mounted) return;
       if (cached.length > 0) {
         setMessages(cached);
-        setLoading(false); // Hide spinner — cached content is visible
+        setLoading(false);
       }
-      loadMessages(); // Always fetch fresh regardless
+      loadMessages();
     });
-  }, [loadMessages]);
+    fetchCounts();
+    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useChatStream({
     onPemMessage: (msg) => {
@@ -125,6 +147,8 @@ export default function ChatScreen() {
         if (msg.parent_message_id) delete next[msg.parent_message_id];
         return next;
       });
+      // Pem response likely means tasks changed — refresh counts
+      fetchCounts();
     },
     onStatus: (messageId, text) => {
       setStatusMap((prev) => ({ ...prev, [messageId]: text }));
@@ -136,10 +160,15 @@ export default function ChatScreen() {
         ),
       );
     },
+    onTasksUpdated: () => {
+      fetchCounts();
+      drawerRef.current?.refresh();
+    },
   });
 
   const handleSend = useCallback(
     async (text: string) => {
+      pemImpactLight();
       const tempId = `temp-text-${Date.now()}`;
       const optimistic: ClientMessage = {
         id: tempId,
@@ -158,7 +187,7 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, optimistic]);
 
       try {
-        const res = await sendChatMessage(getToken, {
+        const res = await sendChatMessage(getTokenRef.current, {
           kind: "text",
           content: text,
         });
@@ -171,14 +200,19 @@ export default function ChatScreen() {
         );
       } catch (e) {
         console.warn("Failed to send message:", e);
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId ? { ...m, _clientStatus: "failed" as const } : m,
+          ),
+        );
       }
     },
-    [getToken],
+    [],
   );
 
   const handleSendVoice = useCallback(
-    async (audioUri: string) => {
+    (audioUri: string) => {
+      pemImpactLight();
       const tempId = `temp-voice-${Date.now()}`;
       const optimistic: ClientMessage = {
         id: tempId,
@@ -197,27 +231,33 @@ export default function ChatScreen() {
       };
       setMessages((prev) => [...prev, optimistic]);
 
-      try {
-        const res = await sendVoiceMessage(getToken, audioUri);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tempId
-              ? {
-                  ...res.message,
-                  // Prefer local file URI for immediate playback; fall back to signed URL
-                  voice_url: audioUri,
-                  _localUri: audioUri,
-                  _clientStatus: "sent" as const,
-                }
-              : m,
-          ),
-        );
-      } catch (e) {
-        console.warn("Failed to send voice:", e);
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      }
+      sendVoiceMessage(getTokenRef.current, audioUri)
+        .then((res) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? {
+                    ...res.message,
+                    voice_url: audioUri,
+                    _localUri: audioUri,
+                    _clientStatus: "sent" as const,
+                  }
+                : m,
+            ),
+          );
+        })
+        .catch((e) => {
+          console.warn("Failed to send voice:", e);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? { ...m, _clientStatus: "failed" as const }
+                : m,
+            ),
+          );
+        });
     },
-    [getToken],
+    [],
   );
 
   const handleLoadMore = useCallback(() => {
@@ -257,7 +297,13 @@ export default function ChatScreen() {
   const renderItem = ({ item }: { item: DisplayItem }) => {
     if (item.type === "date") return <ChatDateHeader date={item.date} />;
     if (item.type === "typing") return <ChatStatusBubble />;
-    return <ChatBubble message={item.message} />;
+    return (
+      <ChatBubble
+        message={item.message}
+        onRetry={handleRetry}
+        onViewTasks={handleOpenDrawer}
+      />
+    );
   };
 
   const keyExtractor = (item: DisplayItem, index: number) => {
@@ -266,73 +312,231 @@ export default function ChatScreen() {
     return "typing-indicator";
   };
 
+  const handleOpenDrawer = useCallback(() => {
+    pemImpactLight();
+    drawerRef.current?.open();
+  }, []);
+
+  const handleCountsChanged = useCallback(() => {
+    fetchCounts();
+  }, [fetchCounts]);
+
+  const handleRetry = useCallback(
+    (msg: ClientMessage) => {
+      if (msg.kind === "voice" && msg._localUri) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id ? { ...m, _clientStatus: "sending" as const } : m,
+          ),
+        );
+        sendVoiceMessage(getTokenRef.current, msg._localUri)
+          .then((res) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id
+                  ? {
+                      ...res.message,
+                      voice_url: msg._localUri!,
+                      _localUri: msg._localUri,
+                      _clientStatus: "sent" as const,
+                    }
+                  : m,
+              ),
+            );
+          })
+          .catch(() => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id
+                  ? { ...m, _clientStatus: "failed" as const }
+                  : m,
+              ),
+            );
+          });
+      } else if (msg.content) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id ? { ...m, _clientStatus: "sending" as const } : m,
+          ),
+        );
+        sendChatMessage(getTokenRef.current, {
+          kind: "text",
+          content: msg.content,
+        })
+          .then((res) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id
+                  ? { ...res.message, _clientStatus: "sent" as const }
+                  : m,
+              ),
+            );
+          })
+          .catch(() => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id
+                  ? { ...m, _clientStatus: "failed" as const }
+                  : m,
+              ),
+            );
+          });
+      }
+    },
+    [],
+  );
+
   return (
-    <View style={[styles.root, { backgroundColor: colors.pageBackground }]}>
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + space[1],
-            backgroundColor: colors.pageBackground,
-            borderBottomColor: colors.borderMuted,
-          },
-        ]}
-      >
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-            Pem
-          </Text>
-        </View>
-        <Pressable
-          onPress={() => router.push("/settings")}
-          style={styles.headerRight}
-          hitSlop={12}
-        >
-          <Settings size={22} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <PemLoadingIndicator placement="pageCenter" />
-        </View>
-      ) : messages.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-            {"Hey! I'm Pem."}
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+    <>
+      <View style={[styles.root, { backgroundColor: colors.pageBackground }]}>
+        <View
+          style={[
+            styles.header,
             {
-              "Dump your thoughts, ask questions, or tell me what's on your mind. I'll handle the rest."
-            }
-          </Text>
+              paddingTop: insets.top + space[1],
+              backgroundColor: colors.pageBackground,
+              borderBottomColor: colors.borderMuted,
+            },
+          ]}
+        >
+          <Pressable
+            onPress={handleOpenDrawer}
+            style={styles.headerLeft}
+            hitSlop={12}
+          >
+            <CalendarDays size={22} color={colors.textSecondary} />
+            {taskCounts && taskCounts.total_open > 0 && (
+              <View style={[styles.headerDot, {
+                backgroundColor: taskCounts.overdue > 0 ? colors.error : pemAmber,
+              }]} />
+            )}
+          </Pressable>
+          <Pressable onPress={handleOpenDrawer} style={styles.headerCenter} hitSlop={8}>
+            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+              Pem
+            </Text>
+            {taskCounts && taskCounts.total_open > 0 && (
+              <Text style={[styles.headerBadge, {
+                color: taskCounts.overdue > 0 ? colors.error : colors.textTertiary,
+              }]}>
+                {taskCounts.overdue > 0
+                  ? `${taskCounts.overdue} overdue`
+                  : taskCounts.today > 0
+                    ? `${taskCounts.today} today`
+                    : `${taskCounts.total_open} open`}
+              </Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => router.push("/settings")}
+            style={styles.headerRight}
+            hitSlop={12}
+          >
+            <Settings size={22} color={colors.textSecondary} />
+          </Pressable>
         </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={displayItems}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={styles.listContent}
-          inverted
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.3}
-        />
-      )}
 
-      <View
-        style={{
-          backgroundColor: colors.pageBackground,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.borderMuted,
-          paddingBottom: Math.max(insets.bottom, space[2]),
-        }}
-      >
-        <ChatInput onSendText={handleSend} onSendVoice={handleSendVoice} />
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <SkeletonBubbles />
+          </View>
+        ) : messages.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              {"Hey! I'm Pem."}
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+              {
+                "Dump your thoughts, ask questions, or tell me what's on your mind. I'll handle the rest."
+              }
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={displayItems}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            contentContainerStyle={styles.listContent}
+            inverted
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={styles.paginationSpinner}>
+                  <ActivityIndicator size="small" color={pemAmber} />
+                </View>
+              ) : null
+            }
+          />
+        )}
+
+        <View
+          style={{
+            backgroundColor: colors.pageBackground,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: colors.borderMuted,
+            paddingBottom: Math.max(insets.bottom, space[2]),
+          }}
+        >
+          <ChatInput onSendText={handleSend} onSendVoice={handleSendVoice} />
+        </View>
       </View>
+
+      <TaskDrawer ref={drawerRef} onCountsChanged={handleCountsChanged} />
+    </>
+  );
+}
+
+function SkeletonBubbles() {
+  const { colors } = useTheme();
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.7, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [opacity]);
+
+  const bg = colors.cardBackground;
+  return (
+    <View style={skeletonStyles.wrap}>
+      {[0.6, 0.45, 0.7, 0.5].map((w, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            skeletonStyles.bubble,
+            {
+              backgroundColor: bg,
+              width: `${w * 100}%` as any,
+              alignSelf: i % 2 === 0 ? "flex-start" : "flex-end",
+              opacity,
+            },
+          ]}
+        />
+      ))}
     </View>
   );
 }
+
+const skeletonStyles = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    justifyContent: "flex-end",
+    paddingHorizontal: space[3],
+    paddingBottom: space[4],
+    gap: space[2],
+  },
+  bubble: {
+    height: 44,
+    borderRadius: 16,
+  },
+});
 
 const styles = StyleSheet.create({
   root: {
@@ -345,6 +549,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[4],
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  headerLeft: {
+    position: "absolute",
+    left: space[4],
+    bottom: space[2],
+  },
+  headerDot: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
   headerCenter: {
     flex: 1,
     alignItems: "center",
@@ -352,6 +569,11 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.lg,
+  },
+  headerBadge: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.xs,
+    marginTop: 1,
   },
   headerRight: {
     position: "absolute",
@@ -381,5 +603,9 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingVertical: space[2],
+  },
+  paginationSpinner: {
+    paddingVertical: space[4],
+    alignItems: "center",
   },
 });

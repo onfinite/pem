@@ -77,6 +77,16 @@ export class CalendarController {
     return { ok: true };
   }
 
+  // ── Sync all ─────────────────────────────────────────────
+
+  @Post('sync-all')
+  @UseGuards(ClerkAuthGuard)
+  @ApiBearerAuth('clerk')
+  @ApiOperation({ summary: 'Trigger sync for all calendar connections' })
+  async syncAll(@CurrentUser() user: UserRow) {
+    return this.sync.syncAllForUser(user.id);
+  }
+
   // ── Google OAuth ──────────────────────────────────────────
 
   @Get('google/auth-url')

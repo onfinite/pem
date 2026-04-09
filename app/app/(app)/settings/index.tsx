@@ -9,17 +9,34 @@ import PemText from "@/components/ui/PemText";
 import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
 import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import { useClerk, useUser } from "@clerk/expo";
+import {
+  getUserSummary,
+  updateUserSummary,
+  setNotificationTime,
+  getMe,
+} from "@/lib/pemApi";
+import { useAuth, useClerk, useUser } from "@clerk/expo";
 import { router } from "expo-router";
-import { Bookmark, Check, ChevronRight, Monitor, Moon, Sun, UserRound, X } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import {
+  Bell,
+  Check,
+  ChevronRight,
+  Monitor,
+  Moon,
+  Sun,
+  UserRound,
+  X,
+} from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from "react-native";
 import {
@@ -33,11 +50,209 @@ const THEME_OPTIONS: { value: ThemePreference; label: string; Icon: typeof Sun }
   { value: "system", label: "System", Icon: Monitor },
 ];
 
-/**
- * Manual top inset on the root (no `ScreenScroll` / `SafeAreaView`).
- * During a native-stack push, `useSafeAreaInsets()` can report `top: 0` for a frame;
- * fall back to `initialWindowMetrics` so the first paint matches later frames.
- */
+const NOTIF_TIMES = [
+  "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00",
+];
+
+function formatTime12(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function SummaryCard() {
+  const { colors } = useTheme();
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+  const [summary, setSummary] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getUserSummary(getTokenRef.current)
+      .then((r) => setSummary(r.summary))
+      .catch(() => {});
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await updateUserSummary(getTokenRef.current, draft);
+      setSummary(draft);
+      setEditing(false);
+    } catch { /* ignore */ }
+    setSaving(false);
+  }, [draft]);
+
+  return (
+    <>
+      <PemText variant="label" style={styles.sectionLabel}>
+        About you
+      </PemText>
+      <PemText variant="caption" style={styles.sectionHint}>
+        Pem updates this from your conversations. You can edit it too.
+      </PemText>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.cardBackground,
+            borderColor: colors.borderMuted,
+          },
+        ]}
+      >
+        {summary ? (
+          <PemText variant="body" style={{ color: colors.textSecondary, lineHeight: 20 }}>
+            {summary}
+          </PemText>
+        ) : (
+          <PemText variant="caption" style={{ color: colors.textTertiary }}>
+            No summary yet — Pem will learn about you from your conversations.
+          </PemText>
+        )}
+        <Pressable
+          onPress={() => {
+            setDraft(summary ?? "");
+            setEditing(true);
+          }}
+          style={{ marginTop: space[3], alignSelf: "flex-start" }}
+          hitSlop={8}
+        >
+          <PemText variant="body" style={{ color: pemAmber }}>Edit</PemText>
+        </Pressable>
+      </View>
+
+      <Modal visible={editing} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.screen, { backgroundColor: colors.pageBackground, paddingTop: space[8] }]}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: space[4], paddingVertical: space[3] }}>
+            <Pressable onPress={() => setEditing(false)} hitSlop={8}>
+              <PemText variant="body" style={{ color: colors.textSecondary }}>Cancel</PemText>
+            </Pressable>
+            <Pressable onPress={handleSave} disabled={saving} hitSlop={8}>
+              <PemText variant="body" style={{ color: pemAmber }}>
+                {saving ? "Saving..." : "Save"}
+              </PemText>
+            </Pressable>
+          </View>
+          <TextInput
+            style={{
+              flex: 1,
+              fontFamily: fontFamily.sans.regular,
+              fontSize: fontSize.base,
+              color: colors.textPrimary,
+              paddingHorizontal: space[4],
+              paddingTop: space[3],
+              textAlignVertical: "top",
+            }}
+            multiline
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Tell Pem about yourself — goals, preferences, life situation..."
+            placeholderTextColor={colors.textTertiary}
+            maxLength={2000}
+            autoFocus
+          />
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function NotificationTimeCard() {
+  const { colors } = useTheme();
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+  const [currentTime, setCurrentTime] = useState("07:00");
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    getMe(getTokenRef.current)
+      .then((r) => setCurrentTime(r.notification_time ?? "07:00"))
+      .catch(() => {});
+  }, []);
+
+  const handleSelect = useCallback(async (time: string) => {
+    setCurrentTime(time);
+    setExpanded(false);
+    try {
+      await setNotificationTime(getTokenRef.current, time);
+    } catch { /* ignore */ }
+  }, []);
+
+  return (
+    <>
+      <PemText variant="label" style={styles.sectionLabel}>
+        Morning brief
+      </PemText>
+      <PemText variant="caption" style={styles.sectionHint}>
+        When Pem sends your daily brief notification.
+      </PemText>
+      <Pressable
+        onPress={() => setExpanded((p) => !p)}
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.cardBackground,
+            borderColor: colors.borderMuted,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space[3],
+          },
+        ]}
+      >
+        <Bell size={20} stroke={colors.textSecondary} strokeWidth={1.8} />
+        <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>
+          {formatTime12(currentTime)}
+        </PemText>
+        <ChevronRight
+          size={18}
+          stroke={colors.textSecondary}
+          strokeWidth={1.5}
+          style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
+        />
+      </Pressable>
+      {expanded && (
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.cardBackground,
+              borderColor: colors.borderMuted,
+              marginTop: space[2],
+              padding: space[2],
+            },
+          ]}
+        >
+          {NOTIF_TIMES.map((t) => (
+            <Pressable
+              key={t}
+              onPress={() => handleSelect(t)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingVertical: space[2],
+                paddingHorizontal: space[3],
+                borderRadius: radii.md,
+              }}
+            >
+              <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>
+                {formatTime12(t)}
+              </PemText>
+              {t === currentTime && (
+                <Check size={18} stroke={pemAmber} strokeWidth={2.5} />
+              )}
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </>
+  );
+}
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const topInset =
@@ -211,51 +426,9 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <PemText variant="label" style={styles.sectionLabel}>
-          Pem memory
-        </PemText>
-        <PemText variant="caption" style={styles.sectionHint}>
-          Facts Pem learns from your dumps so it organizes better—not shared with others.
-        </PemText>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="What Pem knows about you"
-          onPress={() => router.push("/settings/profile")}
-          style={({ pressed }) => [pressed && { opacity: 0.92 }]}
-        >
-          <View
-            style={[
-              styles.card,
-              styles.memoryCard,
-              {
-                backgroundColor: colors.cardBackground,
-                borderColor: colors.borderMuted,
-              },
-              Platform.select({
-                ios: {
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: resolved === "dark" ? 0.18 : 0.05,
-                  shadowRadius: 8,
-                },
-                android: { elevation: 2 },
-              }),
-            ]}
-          >
-            <View style={[styles.memoryIconWell, { backgroundColor: colors.brandMutedSurface }]}>
-              <Bookmark size={22} stroke={colors.pemAmber} strokeWidth={2} />
-            </View>
-            <View style={styles.memoryText}>
-              <PemText variant="body" style={{ color: colors.textPrimary }}>
-                What Pem knows about you
-              </PemText>
-              <PemText variant="caption" style={{ color: colors.textSecondary }}>
-                View saved details
-              </PemText>
-            </View>
-            <ChevronRight size={22} stroke={colors.textSecondary} strokeWidth={2} />
-          </View>
-        </Pressable>
+        <SummaryCard />
+
+        <NotificationTimeCard />
 
         <PemText variant="label" style={styles.sectionLabel}>
           Appearance
@@ -385,24 +558,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     padding: space[5],
-  },
-  memoryCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[4],
-    paddingVertical: space[4],
-  },
-  memoryIconWell: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  memoryText: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
   },
   profileRow: {
     flexDirection: "row",

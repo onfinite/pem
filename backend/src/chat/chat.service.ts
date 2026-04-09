@@ -118,6 +118,7 @@ export class ChatService {
       triage_category: m.triageCategory,
       processing_status: m.processingStatus,
       polished_text: m.polishedText,
+      metadata: m.metadata ?? null,
       parent_message_id: m.parentMessageId,
       created_at: m.createdAt.toISOString(),
     };

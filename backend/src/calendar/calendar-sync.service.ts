@@ -24,6 +24,26 @@ export class CalendarSyncService {
     private readonly google: GoogleCalendarService,
   ) {}
 
+  /** Sync all calendar connections for a user. Google connections sync immediately; Apple is device-pushed. */
+  async syncAllForUser(userId: string): Promise<{ synced: boolean }> {
+    const conns = await this.connections.listForUser(userId);
+    for (const conn of conns) {
+      if (conn.provider === 'google') {
+        try {
+          await this.syncGoogleConnection(conn.id);
+        } catch (err) {
+          this.log.warn(
+            `syncAllForUser: Google sync failed for ${conn.id}: ${
+              err instanceof Error ? err.message : 'Unknown error'
+            }`,
+          );
+        }
+      }
+      // Apple is device-pushed — nothing to do server-side
+    }
+    return { synced: true };
+  }
+
   /** Sync a single Google Calendar connection: fetch events, upsert extracts. */
   async syncGoogleConnection(connectionId: string): Promise<void> {
     const conn = await this.connections.findById(connectionId);
@@ -163,6 +183,12 @@ export class CalendarSyncService {
         conn.googleRefreshToken,
         externalEventId,
       );
+
+      await this.logCalendarOp(conn.userId, 'calendar_event_deleted', {
+        connectionId,
+        externalEventId,
+      });
+
       return true;
     } catch (err: unknown) {
       const code =
@@ -208,7 +234,81 @@ export class CalendarSyncService {
       );
     }
 
+    await this.logCalendarOp(userId, 'calendar_event_written', {
+      summary: event.summary,
+      start: event.start.toISOString(),
+      end: event.end.toISOString(),
+      eventId: result.eventId,
+      connectionId: primary.id,
+    });
+
     return { eventId: result.eventId, connectionId: primary.id };
+  }
+
+  async updateGoogleCalendarEvent(
+    connectionId: string,
+    externalEventId: string,
+    updates: {
+      summary?: string;
+      start?: Date;
+      end?: Date;
+      location?: string;
+      description?: string;
+    },
+  ): Promise<void> {
+    const conn = await this.connections.findById(connectionId);
+    if (!conn || conn.provider !== 'google') return;
+    if (!conn.googleAccessToken) return;
+
+    const body: Record<string, unknown> = {};
+    if (updates.summary) body.summary = updates.summary;
+    if (updates.location) body.location = updates.location;
+    if (updates.description) body.description = updates.description;
+    if (updates.start) {
+      body.start = { dateTime: updates.start.toISOString() };
+      body.end = { dateTime: (updates.end ?? updates.start).toISOString() };
+    }
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${externalEventId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${conn.googleAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      },
+    );
+
+    if (!res.ok) {
+      const txt = await res.text();
+      this.log.warn(`Google Calendar update failed: ${res.status} ${txt}`);
+    }
+
+    await this.logCalendarOp(conn.userId, 'calendar_event_updated', {
+      connectionId,
+      externalEventId,
+      updates,
+    });
+  }
+
+  private async logCalendarOp(
+    userId: string,
+    op: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.db.insert(logsTable).values({
+        userId,
+        type: 'calendar',
+        pemNote: op,
+        isAgent: true,
+        payload,
+      });
+    } catch (e) {
+      this.log.warn(`Log insert failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    }
   }
 
   private async upsertCalendarExtract(

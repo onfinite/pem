@@ -1,5 +1,8 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { ConfigService } from '@nestjs/config';
+import { createOpenAI } from '@ai-sdk/openai';
+import { generateText } from 'ai';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
@@ -37,6 +40,7 @@ export class ChatOrchestratorService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly config: ConfigService,
     private readonly triage: TriageService,
     private readonly pemAgent: PemAgentService,
     private readonly chatEvents: ChatEventsService,
@@ -118,7 +122,17 @@ export class ChatOrchestratorService {
 
       if (category === 'question_only') {
         await this.publishStatus(userId, messageId, 'Looking things up...');
-        const answer = await this.questionService.answer(userId, content);
+        const [userRow] = await this.db
+          .select()
+          .from(usersTable)
+          .where(eq(usersTable.id, userId))
+          .limit(1);
+        const answer = await this.questionService.answer(
+          userId,
+          content,
+          userRow?.name ?? null,
+          userRow?.summary ?? null,
+        );
         await this.savePemResponse(userId, messageId, answer);
         return;
       }
@@ -150,13 +164,25 @@ export class ChatOrchestratorService {
         memorySection: ctx.memorySection,
         recentMessages: recentMsgs,
         ragContext,
+        userName: ctx.userName,
+        userSummary: ctx.userSummary,
       });
 
       // Apply actions
       await this.applyAgentActions(userId, messageId, agentOutput, ctx);
 
+      // Build metadata for the response message
+      const meta: Record<string, unknown> = {};
+      if (agentOutput.creates.length) meta.tasks_created = agentOutput.creates.length;
+      if (agentOutput.updates.length) meta.tasks_updated = agentOutput.updates.length;
+      if (agentOutput.completions.length) meta.tasks_completed = agentOutput.completions.length;
+      if (agentOutput.calendar_writes.length) meta.calendar_written = agentOutput.calendar_writes.length;
+      if (agentOutput.calendar_updates.length) meta.calendar_updated = agentOutput.calendar_updates.length;
+      if (agentOutput.calendar_deletes.length) meta.calendar_deleted = agentOutput.calendar_deletes.length;
+      const metadata = Object.keys(meta).length > 0 ? meta : undefined;
+
       // Save response
-      await this.savePemResponse(userId, messageId, agentOutput.response_text);
+      await this.savePemResponse(userId, messageId, agentOutput.response_text, metadata);
 
       // Save polished text on user message
       if (agentOutput.polished_text) {
@@ -170,6 +196,13 @@ export class ChatOrchestratorService {
       this.embeddings
         .embedMessage(messageId, userId, content, msg.createdAt)
         .catch((e) => this.log.warn(`Embed failed: ${e}`));
+
+      // Seed initial summary if user has none yet
+      if (!ctx.userSummary) {
+        this.seedSummaryIfReady(userId).catch((e) =>
+          this.log.warn(`Summary seed failed: ${e}`),
+        );
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       this.log.error(`Pipeline failed for message ${messageId}: ${errMsg}`);
@@ -237,7 +270,15 @@ export class ChatOrchestratorService {
 
     const memorySection = await this.profile.buildMemoryPromptSection(userId);
 
-    return { tz, openRows, openExtracts, calendarEvents, memorySection };
+    return {
+      tz,
+      openRows,
+      openExtracts,
+      calendarEvents,
+      memorySection,
+      userName: userRow?.name ?? null,
+      userSummary: userRow?.summary ?? null,
+    };
   }
 
   private async getRecentMessages(userId: string) {
@@ -302,6 +343,10 @@ export class ChatOrchestratorService {
       if (upd.patch.pem_note !== undefined) patch.pemNote = upd.patch.pem_note;
       if (upd.patch.draft_text !== undefined)
         patch.draftText = upd.patch.draft_text;
+      if (upd.patch.event_start_at !== undefined)
+        patch.eventStartAt = parseIsoDate(upd.patch.event_start_at);
+      if (upd.patch.event_end_at !== undefined)
+        patch.eventEndAt = parseIsoDate(upd.patch.event_end_at);
       if (Object.keys(patch).length === 0) continue;
       patch.updatedAt = new Date();
       await this.db
@@ -374,23 +419,95 @@ export class ChatOrchestratorService {
           cw.linked_new_item_index != null
             ? createdExtractMap.get(cw.linked_new_item_index)
             : null;
-        if (result && linkedExtract) {
+        if (linkedExtract) {
+          const eventPatch: Record<string, unknown> = {
+            eventStartAt: startAt,
+            eventEndAt: endAt,
+            eventLocation: cw.location ?? null,
+            updatedAt: new Date(),
+          };
+          if (result) {
+            eventPatch.externalEventId = result.eventId;
+            eventPatch.calendarConnectionId = result.connectionId;
+          }
           await this.db
             .update(extractsTable)
-            .set({
-              externalEventId: result.eventId,
-              calendarConnectionId: result.connectionId,
-              eventStartAt: startAt,
-              eventEndAt: endAt,
-              eventLocation: cw.location ?? null,
-              updatedAt: new Date(),
-            })
+            .set(eventPatch)
             .where(eq(extractsTable.id, linkedExtract.id));
         }
       } catch (e) {
         this.log.warn(
           `Calendar write failed: ${e instanceof Error ? e.message : 'unknown'}`,
         );
+      }
+    }
+
+    // Calendar updates (reschedule)
+    for (const cu of output.calendar_updates) {
+      try {
+        const row = await this.extracts.findForUser(userId, cu.extract_id);
+        if (!row || !row.externalEventId || !row.calendarConnectionId) continue;
+
+        await this.calendarSync.updateGoogleCalendarEvent(
+          row.calendarConnectionId,
+          row.externalEventId,
+          {
+            summary: cu.summary,
+            start: cu.start_at ? new Date(cu.start_at) : undefined,
+            end: cu.end_at ? new Date(cu.end_at) : undefined,
+            location: cu.location ?? undefined,
+            description: cu.description ?? undefined,
+          },
+        );
+
+        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        if (cu.start_at) patch.eventStartAt = new Date(cu.start_at);
+        if (cu.end_at) patch.eventEndAt = new Date(cu.end_at);
+        if (cu.location !== undefined) patch.eventLocation = cu.location;
+        if (cu.summary) patch.extractText = cu.summary;
+        await this.db
+          .update(extractsTable)
+          .set(patch)
+          .where(and(eq(extractsTable.id, cu.extract_id), eq(extractsTable.userId, userId)));
+
+        await this.logEntry({
+          userId,
+          type: 'extract',
+          extractId: cu.extract_id,
+          messageId,
+          isAgent: true,
+          pemNote: 'Calendar event updated',
+          payload: { op: 'calendar_update', update: cu },
+        });
+      } catch (e) {
+        this.log.warn(`Calendar update failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      }
+    }
+
+    // Calendar deletes
+    for (const cd of output.calendar_deletes) {
+      try {
+        const row = await this.extracts.findForUser(userId, cd.extract_id);
+        if (!row || !row.externalEventId || !row.calendarConnectionId) continue;
+
+        await this.calendarSync.deleteFromGoogleCalendar(
+          row.calendarConnectionId,
+          row.externalEventId,
+        );
+
+        await this.extracts.dismiss(userId, cd.extract_id, { initiatedBy: 'agent' });
+
+        await this.logEntry({
+          userId,
+          type: 'extract',
+          extractId: cd.extract_id,
+          messageId,
+          isAgent: true,
+          pemNote: cd.reason || 'Calendar event deleted',
+          payload: { op: 'calendar_delete' },
+        });
+      } catch (e) {
+        this.log.warn(`Calendar delete failed: ${e instanceof Error ? e.message : 'unknown'}`);
       }
     }
 
@@ -402,6 +519,14 @@ export class ChatOrchestratorService {
         mw.note,
         messageId,
       );
+    }
+
+    // Summary update
+    if (output.summary_update) {
+      await this.db
+        .update(usersTable)
+        .set({ summary: output.summary_update })
+        .where(eq(usersTable.id, userId));
     }
   }
 
@@ -446,6 +571,7 @@ export class ChatOrchestratorService {
     userId: string,
     parentMessageId: string,
     responseText: string,
+    metadata?: Record<string, unknown>,
   ) {
     const [pemMsg] = await this.db
       .insert(messagesTable)
@@ -455,6 +581,7 @@ export class ChatOrchestratorService {
         kind: 'text',
         content: responseText,
         parentMessageId,
+        metadata: metadata ?? null,
       })
       .returning();
 
@@ -469,12 +596,13 @@ export class ChatOrchestratorService {
         role: pemMsg.role,
         kind: pemMsg.kind,
         content: pemMsg.content,
+        metadata: metadata ?? null,
         parent_message_id: pemMsg.parentMessageId,
         created_at: pemMsg.createdAt.toISOString(),
       },
     });
 
-    await this.push.notifyInboxUpdated(userId);
+    await this.push.notifyChatReply(userId);
   }
 
   private async publishStatus(userId: string, messageId: string, text: string) {
@@ -492,6 +620,58 @@ export class ChatOrchestratorService {
     )
       return "Hey! What's on your mind?";
     return 'Got it!';
+  }
+
+  private async seedSummaryIfReady(userId: string): Promise<void> {
+    const MIN_MESSAGES = 3;
+
+    const [{ count }] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(messagesTable)
+      .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, 'user')));
+
+    if (Number(count) < MIN_MESSAGES) return;
+
+    const recentMsgs = await this.db
+      .select({ content: messagesTable.content, transcript: messagesTable.transcript })
+      .from(messagesTable)
+      .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, 'user')))
+      .orderBy(desc(messagesTable.createdAt))
+      .limit(15);
+
+    const msgTexts = recentMsgs
+      .map((m) => m.transcript ?? m.content ?? '')
+      .filter(Boolean)
+      .join('\n---\n');
+
+    if (!msgTexts.trim()) return;
+
+    const [userRow] = await this.db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+
+    if (userRow?.summary) return;
+
+    const openai = createOpenAI({ apiKey: this.config.get('OPENAI_API_KEY') });
+
+    const { text } = await generateText({
+      model: openai('gpt-4o-mini'),
+      system: `You summarize what you know about a person from their messages to an AI assistant.
+Write a ~200 word profile summary covering: name (if mentioned), life situation, goals, priorities, worries, routines, and personality.
+Be warm and accurate. Only include facts clearly present. Write in third person.
+Output ONLY the summary text, no preamble.`,
+      prompt: `Here are the user's recent messages:\n\n${msgTexts}`,
+    });
+
+    if (text.trim()) {
+      await this.db
+        .update(usersTable)
+        .set({ summary: text.trim() })
+        .where(and(eq(usersTable.id, userId), sql`summary IS NULL`));
+      this.log.log(`Seeded initial summary for user ${userId}`);
+    }
   }
 
   private async logEntry(args: {

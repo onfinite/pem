@@ -10,9 +10,12 @@ export type ChatStreamCallbacks = {
   onMessageUpdated?: (messageId: string, field: string, value: unknown) => void;
   onToken?: (token: string) => void;
   onStreamDone?: (messageId: string) => void;
+  onTasksUpdated?: () => void;
 };
 
-type ChatSseEvents = "pem_message" | "status" | "message_updated" | "pem_token" | "pem_stream_done";
+type ChatSseEvents = "pem_message" | "status" | "message_updated" | "pem_token" | "pem_stream_done" | "tasks_updated";
+
+const MAX_RECONNECT_DELAY = 30_000;
 
 export function useChatStream(callbacks: ChatStreamCallbacks) {
   const { getToken } = useAuth();
@@ -21,16 +24,31 @@ export function useChatStream(callbacks: ChatStreamCallbacks) {
   cbRef.current = callbacks;
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const attemptRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  const disconnect = useCallback(() => {
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+    esRef.current?.removeAllEventListeners();
+    esRef.current?.close();
+    esRef.current = null;
+  }, []);
 
   const connect = useCallback(() => {
     void (async () => {
-      const token = await getTokenRef.current();
-      if (!token) return;
+      if (!mountedRef.current) return;
 
-      if (esRef.current) {
-        esRef.current.removeAllEventListeners();
-        esRef.current.close();
+      const token = await getTokenRef.current();
+      if (!token) {
+        // Token not available yet — retry after a short delay, don't spam
+        reconnectTimer.current = setTimeout(() => {
+          if (mountedRef.current) connect();
+        }, 2000);
+        return;
       }
+
+      disconnect();
 
       const url = `${getApiBaseUrl()}/chat/stream`;
       const es = new EventSource<ChatSseEvents>(url, {
@@ -58,6 +76,8 @@ export function useChatStream(callbacks: ChatStreamCallbacks) {
             cbRef.current.onToken?.(data.token);
           } else if (eventType === "pem_stream_done") {
             cbRef.current.onStreamDone?.(data.messageId);
+          } else if (eventType === "tasks_updated") {
+            cbRef.current.onTasksUpdated?.();
           }
         } catch { /* ignore parse errors */ }
       };
@@ -67,18 +87,33 @@ export function useChatStream(callbacks: ChatStreamCallbacks) {
       es.addEventListener("message_updated", handler);
       es.addEventListener("pem_token", handler);
       es.addEventListener("pem_stream_done", handler);
-    })();
-  }, []);
+      es.addEventListener("tasks_updated", handler);
 
-  const disconnect = useCallback(() => {
-    esRef.current?.removeAllEventListeners();
-    esRef.current?.close();
-    esRef.current = null;
-  }, []);
+      // On open — reset reconnect backoff
+      es.addEventListener("open" as any, () => {
+        attemptRef.current = 0;
+      });
+
+      // On error — reconnect with exponential backoff + fresh token
+      es.addEventListener("error" as any, () => {
+        if (!mountedRef.current) return;
+        disconnect();
+        attemptRef.current += 1;
+        const delay = Math.min(1000 * 2 ** attemptRef.current, MAX_RECONNECT_DELAY);
+        reconnectTimer.current = setTimeout(() => {
+          if (mountedRef.current) connect();
+        }, delay);
+      });
+    })();
+  }, [disconnect]);
 
   useEffect(() => {
+    mountedRef.current = true;
     connect();
-    return disconnect;
+    return () => {
+      mountedRef.current = false;
+      disconnect();
+    };
   }, [connect, disconnect]);
 
   return { reconnect: connect, disconnect };

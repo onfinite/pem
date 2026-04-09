@@ -67,7 +67,7 @@ export class ChatQuestionService {
     private readonly profile: ProfileService,
   ) {}
 
-  async answer(userId: string, question: string): Promise<string> {
+  async answer(userId: string, question: string, userName?: string | null, userSummary?: string | null): Promise<string> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) {
       return "I can't look that up right now — try again in a moment.";
@@ -104,10 +104,13 @@ export class ChatQuestionService {
 
       const openai = createOpenAI({ apiKey });
 
+      const nameNote = userName ? ` The user's name is ${userName}.` : '';
+      const summaryBlock = userSummary ? `\nAbout the user:\n${userSummary}\n\n` : '';
+
       const { text } = await generateText({
         model: openai('gpt-4o'),
-        system: `You are Pem. The user asked a question in chat. Answer using ONLY the context below (all open tasks, timeline view, memory, related messages). If the context does not contain the answer, say you don't have that information yet. Be warm and concise — no markdown. Use a natural list style if listing tasks (e.g. "You have: potatoes, tomatoes, and cherries on your shopping list").`,
-        prompt: `${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
+        system: `You are Pem.${nameNote} The user asked a question in chat. Answer using ONLY the context below (all open tasks, timeline view, memory, related messages). If the context does not contain the answer, say you don't have that information yet. Be warm and concise — no markdown. Use a natural list style if listing tasks (e.g. "You have: potatoes, tomatoes, and cherries on your shopping list").`,
+        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
       });
 
       return (

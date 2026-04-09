@@ -3,18 +3,19 @@ import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, space, radii } from "@/constants/typography";
 import {
   useAudioRecorder,
-  useAudioRecorderState,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   IOSOutputFormat,
   AudioQuality,
   type RecordingOptions,
 } from "expo-audio";
+import { pemImpactLight, pemImpactMedium } from "@/lib/pemHaptics";
 import { ArrowUp, Mic, Pause, Play, Send, Trash2 } from "lucide-react-native";
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
-  ActivityIndicator,
+  Alert,
   Keyboard,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -55,89 +56,52 @@ function dbToHeight(db: number | undefined): number {
   return 3 + normalized * 25;
 }
 
-function LiveWaveform({
-  levels,
-  color,
-  dimColor,
-}: {
-  levels: number[];
-  color: string;
-  dimColor: string;
-}) {
-  return (
-    <View style={waveStyles.container}>
-      {levels.map((h, i) => (
-        <View
-          key={i}
-          style={[
-            waveStyles.bar,
-            {
-              height: h,
-              backgroundColor: i === levels.length - 1 ? color : dimColor,
-            },
-          ]}
-        />
-      ))}
-    </View>
-  );
-}
-
-const waveStyles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 28,
-    gap: 1.5,
-    flex: 1,
-  },
-  bar: { width: 2.5, borderRadius: 1.25 },
-});
-
 type Props = {
   onSendText: (text: string) => void;
-  onSendVoice: (audioUri: string) => Promise<void>;
+  onSendVoice: (audioUri: string) => void;
   disabled?: boolean;
 };
 
-export default function ChatInput({
-  onSendText,
-  onSendVoice,
-  disabled,
-}: Props) {
+export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) {
   const { colors } = useTheme();
   const [text, setText] = useState("");
-  const [mode, setMode] = useState<
-    "idle" | "recording" | "paused" | "sending"
-  >("idle");
+  const [mode, setMode] = useState<"idle" | "recording" | "paused">("idle");
   const inputRef = useRef<TextInput>(null);
-  const recorder = useAudioRecorder(RECORDING_PRESET);
-  const state = useAudioRecorderState(recorder, 100);
+
+  // Recorder from expo-audio — we listen to its native state via a status callback
+  const recorder = useAudioRecorder(RECORDING_PRESET, (status) => {
+    // When metering comes in, push a bar to the waveform
+    if (mode === "recording" && status.isRecording) {
+      const h = dbToHeight(status.metering);
+      levelsRef.current = [...levelsRef.current.slice(-WAVEFORM_MAX_BARS + 1), h];
+      setLevels([...levelsRef.current]);
+    }
+  });
+
+  // Waveform state
   const levelsRef = useRef<number[]>([]);
   const [levels, setLevels] = useState<number[]>([]);
 
-  const hasText = text.trim().length > 0;
-  const isRecMode = mode === "recording" || mode === "paused";
-  const durationSec = state.durationMillis / 1000;
+  // JS-based timer — completely independent of native bridge
+  const startTimeRef = useRef(0);
+  const accumulatedRef = useRef(0);
+  const [displaySec, setDisplaySec] = useState(0);
 
   useEffect(() => {
     if (mode !== "recording") return;
-    const h = dbToHeight(state.metering);
-    levelsRef.current = [...levelsRef.current.slice(-WAVEFORM_MAX_BARS + 1), h];
-    setLevels([...levelsRef.current]);
-  }, [state.durationMillis, state.metering, mode]);
-
-  useEffect(() => {
-    if (mode === "recording" && durationSec >= MAX_DURATION_S) {
-      void handlePause();
-    }
-  }, [durationSec, mode]);
-
-  useEffect(() => {
-    if (mode === "idle") {
-      levelsRef.current = [];
-      setLevels([]);
-    }
+    const id = setInterval(() => {
+      const elapsed = accumulatedRef.current + (Date.now() - startTimeRef.current);
+      const sec = Math.floor(elapsed / 1000);
+      setDisplaySec(sec);
+      if (sec >= MAX_DURATION_S) {
+        handlePause();
+      }
+    }, 250);
+    return () => clearInterval(id);
   }, [mode]);
+
+  const hasText = text.trim().length > 0;
+  const isRecMode = mode === "recording" || mode === "paused";
 
   const handleSend = () => {
     const trimmed = text.trim();
@@ -150,31 +114,46 @@ export default function ChatInput({
   const handleStartRecording = useCallback(async () => {
     try {
       const perm = await requestRecordingPermissionsAsync();
-      if (!perm.granted) return;
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
+      if (!perm.granted) {
+        Alert.alert(
+          "Microphone access",
+          "Pem needs microphone access for voice messages. Enable it in Settings.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Settings", onPress: () => Linking.openSettings() },
+          ],
+        );
+        return;
+      }
+      pemImpactMedium();
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
+      levelsRef.current = [];
+      setLevels([]);
+      accumulatedRef.current = 0;
+      startTimeRef.current = Date.now();
+      setDisplaySec(0);
       setMode("recording");
     } catch (e) {
       console.warn("Recording start failed:", e);
     }
   }, [recorder]);
 
-  const handlePause = useCallback(async () => {
+  const handlePause = useCallback(() => {
     try {
       recorder.pause();
+      accumulatedRef.current += Date.now() - startTimeRef.current;
       setMode("paused");
     } catch (e) {
       console.warn("Pause failed:", e);
     }
   }, [recorder]);
 
-  const handleResume = useCallback(async () => {
+  const handleResume = useCallback(() => {
     try {
       recorder.record();
+      startTimeRef.current = Date.now();
       setMode("recording");
     } catch (e) {
       console.warn("Resume failed:", e);
@@ -182,54 +161,53 @@ export default function ChatInput({
   }, [recorder]);
 
   const handleCancel = useCallback(async () => {
-    try {
-      await recorder.stop();
-    } catch {
-      /* already stopped */
-    }
+    try { await recorder.stop(); } catch { /* ignore */ }
     await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    accumulatedRef.current = 0;
+    setDisplaySec(0);
+    levelsRef.current = [];
+    setLevels([]);
     setMode("idle");
   }, [recorder]);
 
   const handleSendVoice = useCallback(async () => {
-    setMode("sending");
+    pemImpactMedium();
+    if (mode === "recording") {
+      accumulatedRef.current += Date.now() - startTimeRef.current;
+    }
     try {
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
-      const uri = recorder.uri;
-      if (uri) {
-        await onSendVoice(uri);
-      }
     } catch (e) {
-      console.warn("Voice send failed:", e);
-    } finally {
-      setMode("idle");
+      console.warn("Stop failed:", e);
     }
-  }, [recorder, onSendVoice]);
+    await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
 
-  if (isRecMode || mode === "sending") {
+    const uri = recorder.uri;
+    // Go back to idle IMMEDIATELY — don't wait for upload
+    accumulatedRef.current = 0;
+    setDisplaySec(0);
+    levelsRef.current = [];
+    setLevels([]);
+    setMode("idle");
+
+    if (uri) {
+      // Fire and forget — bubble appears in chat instantly (optimistic)
+      onSendVoice(uri);
+    }
+  }, [recorder, onSendVoice, mode]);
+
+  if (isRecMode) {
     return (
       <View style={styles.container}>
-        <Pressable
-          onPress={handleCancel}
-          style={styles.recSideBtn}
-          hitSlop={8}
-          disabled={mode === "sending"}
-        >
+        <Pressable onPress={handleCancel} style={styles.recSideBtn} hitSlop={8}>
           <Trash2 size={20} color="#ff3b30" />
         </Pressable>
 
-        <View
-          style={[
-            styles.recordingBar,
-            { backgroundColor: colors.secondarySurface },
-          ]}
-        >
+        <View style={[styles.recordingBar, { backgroundColor: colors.secondarySurface }]}>
           <Pressable
             onPress={mode === "recording" ? handlePause : handleResume}
             style={styles.recPauseBtn}
             hitSlop={6}
-            disabled={mode === "sending"}
           >
             {mode === "recording" ? (
               <Pause size={16} color={colors.textPrimary} strokeWidth={2.5} />
@@ -238,27 +216,31 @@ export default function ChatInput({
             )}
           </Pressable>
 
-          <LiveWaveform
-            levels={levels}
-            color={pemAmber}
-            dimColor={`${pemAmber}88`}
-          />
+          <View style={waveStyles.container}>
+            {levels.map((h, i) => (
+              <View
+                key={i}
+                style={[
+                  waveStyles.bar,
+                  {
+                    height: h,
+                    backgroundColor: i === levels.length - 1 ? pemAmber : `${pemAmber}88`,
+                  },
+                ]}
+              />
+            ))}
+          </View>
 
           <Text style={[styles.timer, { color: colors.textSecondary }]}>
-            {formatTime(durationSec)}
+            {formatTime(displaySec)}
           </Text>
         </View>
 
         <Pressable
           onPress={handleSendVoice}
           style={[styles.actionBtn, { backgroundColor: pemAmber }]}
-          disabled={mode === "sending"}
         >
-          {mode === "sending" ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Send size={18} color="#fff" strokeWidth={2.5} />
-          )}
+          <Send size={18} color="#fff" strokeWidth={2.5} />
         </Pressable>
       </View>
     );
@@ -266,9 +248,7 @@ export default function ChatInput({
 
   return (
     <View style={styles.container}>
-      <View
-        style={[styles.inputPill, { backgroundColor: colors.secondarySurface }]}
-      >
+      <View style={[styles.inputPill, { backgroundColor: colors.secondarySurface }]}>
         <TextInput
           ref={inputRef}
           value={text}
@@ -295,10 +275,7 @@ export default function ChatInput({
       ) : (
         <Pressable
           onPress={handleStartRecording}
-          style={[
-            styles.actionBtn,
-            { backgroundColor: colors.secondarySurface },
-          ]}
+          style={[styles.actionBtn, { backgroundColor: colors.secondarySurface }]}
           disabled={disabled}
         >
           <Mic size={20} color={pemAmber} strokeWidth={2} />
@@ -307,6 +284,17 @@ export default function ChatInput({
     </View>
   );
 }
+
+const waveStyles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 28,
+    gap: 1.5,
+    flex: 1,
+  },
+  bar: { width: 2.5, borderRadius: 1.25 },
+});
 
 const styles = StyleSheet.create({
   container: {

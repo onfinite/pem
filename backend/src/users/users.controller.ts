@@ -1,15 +1,10 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
-  Param,
-  ParseUUIDPipe,
   Patch,
   Post,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -18,16 +13,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import type { MemoryFactRow, UserRow } from '../database/schemas';
-import { ProfileService } from '../profile/profile.service';
-import {
-  CreateProfileFactDto,
-  UpdateProfileFactDto,
-} from './dto/profile-fact.dto';
+import type { UserRow } from '../database/schemas';
 import { PushTokenDto } from './dto/push-token.dto';
 import { TimezoneDto } from './dto/timezone.dto';
 import { UserMeDto } from './dto/user-me.dto';
@@ -36,10 +25,7 @@ import { UserService } from './user.service';
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
-  constructor(
-    private readonly users: UserService,
-    private readonly profile: ProfileService,
-  ) {}
+  constructor(private readonly users: UserService) {}
 
   @Get('me')
   @UseGuards(ClerkAuthGuard)
@@ -62,89 +48,52 @@ export class UsersController {
       name: user.name,
       push_token: user.pushToken,
       timezone: user.timezone,
+      notification_time: user.notificationTime,
+      summary: user.summary ?? null,
+      onboarding_completed: user.onboardingCompleted,
     };
   }
 
-  @Get('me/profile')
+  @Get('me/summary')
   @UseGuards(ClerkAuthGuard)
-  @SkipThrottle()
   @ApiBearerAuth('clerk')
-  @ApiOperation({
-    summary:
-      'Memory facts (natural language). ?limit=&cursor= paginates by learned_at. ?status=active|historical|all',
-  })
-  async getProfileFacts(
-    @CurrentUser() user: UserRow,
-    @Query('limit') limitRaw?: string,
-    @Query('cursor') cursor?: string,
-    @Query('status') statusRaw?: string,
-  ) {
-    const status =
-      statusRaw === 'active' || statusRaw === 'historical' ? statusRaw : 'all';
-    const hasLimit =
-      limitRaw !== undefined &&
-      limitRaw !== '' &&
-      !Number.isNaN(Number(limitRaw));
-    if (hasLimit) {
-      const limit = Math.min(Math.max(Number(limitRaw), 1), 50);
-      const { rows, nextCursor } = await this.profile.listFactsPaginated(
-        user.id,
-        limit,
-        cursor || undefined,
-        status,
-      );
-      return {
-        facts: rows.map((r) => this.serializeFact(r)),
-        next_cursor: nextCursor,
-      };
-    }
-    const rows = await this.profile.listFacts(user.id, status);
-    return {
-      facts: rows.map((r) => this.serializeFact(r)),
-    };
+  @ApiOperation({ summary: 'Get user profile summary' })
+  async getSummary(@CurrentUser() user: UserRow) {
+    return { summary: user.summary ?? null };
   }
 
-  @Post('me/profile')
+  @Patch('me/summary')
   @UseGuards(ClerkAuthGuard)
   @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Add a profile fact (user-edited)' })
-  async createProfileFact(
+  @ApiOperation({ summary: 'Update user profile summary' })
+  async updateSummary(
     @CurrentUser() user: UserRow,
-    @Body() body: CreateProfileFactDto,
+    @Body() body: { summary: string },
   ) {
-    const row = await this.profile.createUserFact(user.id, body.key, body.note);
-    return { fact: this.serializeFact(row) };
+    await this.users.updateSummary(user.id, body.summary);
+    return { ok: true };
   }
 
-  @Patch('me/profile/:id')
+  @Patch('me/notification-time')
   @UseGuards(ClerkAuthGuard)
   @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Update a profile fact' })
-  async updateProfileFact(
+  @ApiOperation({ summary: 'Set notification time for morning brief (HH:MM)' })
+  async setNotificationTime(
     @CurrentUser() user: UserRow,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Body() body: UpdateProfileFactDto,
+    @Body() body: { time: string },
   ) {
-    if (body.key === undefined && body.note === undefined) {
-      throw new BadRequestException('Provide at least key or note to update');
-    }
-    const row = await this.profile.updateUserFact(user.id, id, {
-      key: body.key,
-      note: body.note,
-    });
-    return { fact: this.serializeFact(row) };
+    await this.users.setNotificationTime(user.id, body.time);
+    return { ok: true, notification_time: body.time };
   }
 
-  @Delete('me/profile/:id')
+  @Post('me/onboarding-complete')
   @UseGuards(ClerkAuthGuard)
   @ApiBearerAuth('clerk')
-  @HttpCode(204)
-  @ApiOperation({ summary: 'Delete a profile fact' })
-  async deleteProfileFact(
-    @CurrentUser() user: UserRow,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): Promise<void> {
-    await this.profile.deleteUserFact(user.id, id);
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Mark onboarding as complete' })
+  async completeOnboarding(@CurrentUser() user: UserRow) {
+    await this.users.completeOnboarding(user.id);
+    return { ok: true };
   }
 
   @Patch('me/push-token')
@@ -169,17 +118,5 @@ export class UsersController {
   ): Promise<{ ok: true; timezone: string }> {
     await this.users.setTimezone(user.id, body.timezone);
     return { ok: true, timezone: body.timezone };
-  }
-
-  private serializeFact(r: MemoryFactRow) {
-    return {
-      id: r.id,
-      memory_key: r.memoryKey,
-      note: r.note,
-      status: r.status,
-      learned_at: r.learnedAt?.toISOString?.() ?? r.learnedAt,
-      source_message_id: r.sourceMessageId,
-      provenance: r.provenance,
-    };
   }
 }

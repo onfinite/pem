@@ -115,6 +115,27 @@ export class UserService {
     });
   }
 
+  async updateSummary(userId: string, summary: string): Promise<void> {
+    await this.db
+      .update(usersTable)
+      .set({ summary })
+      .where(eq(usersTable.id, userId));
+  }
+
+  async setNotificationTime(userId: string, time: string): Promise<void> {
+    await this.db
+      .update(usersTable)
+      .set({ notificationTime: time })
+      .where(eq(usersTable.id, userId));
+  }
+
+  async completeOnboarding(userId: string): Promise<void> {
+    await this.db
+      .update(usersTable)
+      .set({ onboardingCompleted: true })
+      .where(eq(usersTable.id, userId));
+  }
+
   async setTimezone(userId: string, timezone: string): Promise<void> {
     const [prev] = await this.db
       .select({ tz: usersTable.timezone })

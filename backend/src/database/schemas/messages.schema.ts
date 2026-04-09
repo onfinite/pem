@@ -1,4 +1,11 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { usersTable } from './users.schema';
 
@@ -40,6 +47,7 @@ export const messagesTable = pgTable(
     processingStatus: text('processing_status').$type<ProcessingStatus>(),
     polishedText: text('polished_text'),
     parentMessageId: uuid('parent_message_id'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

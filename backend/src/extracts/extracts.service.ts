@@ -9,8 +9,10 @@ import {
   asc,
   desc,
   eq,
+  gte,
   inArray,
   isNotNull,
+  isNull,
   lt,
   lte,
   ne,
@@ -104,7 +106,7 @@ export class ExtractsService {
 
   async wakeSnoozed(userId: string): Promise<void> {
     const now = new Date();
-    await this.db
+    const woken = await this.db
       .update(extractsTable)
       .set({ status: 'inbox', snoozedUntil: null, updatedAt: now })
       .where(
@@ -113,7 +115,19 @@ export class ExtractsService {
           eq(extractsTable.status, 'snoozed'),
           lte(extractsTable.snoozedUntil, now),
         ),
-      );
+      )
+      .returning({ id: extractsTable.id });
+
+    for (const row of woken) {
+      await this.db.insert(logsTable).values({
+        userId,
+        type: 'extract',
+        extractId: row.id,
+        pemNote: 'Auto-unsnoozed (snooze expired)',
+        isAgent: true,
+        payload: { op: 'auto_unsnooze' },
+      });
+    }
   }
 
   async findForUser(
@@ -630,6 +644,161 @@ export class ExtractsService {
         reported_issue_id: created?.id ?? null,
       },
     });
+  }
+
+  async getTaskCounts(
+    userId: string,
+  ): Promise<{
+    today: number;
+    overdue: number;
+    total_open: number;
+    this_week: number;
+    someday: number;
+  }> {
+    await this.wakeSnoozed(userId);
+    const zone = await this.getUserTimezone(userId);
+    const now = DateTime.now().setZone(zone);
+    const todayStart = now.startOf('day').toJSDate();
+    const todayEnd = now.endOf('day').toJSDate();
+
+    const openRows = await this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          or(
+            eq(extractsTable.status, 'inbox'),
+            eq(extractsTable.status, 'snoozed'),
+          ),
+        ),
+      );
+
+    let today = 0;
+    let overdue = 0;
+    let thisWeek = 0;
+    let someday = 0;
+
+    for (const row of openRows) {
+      const dueAt = row.dueAt ?? row.eventStartAt;
+      if (dueAt) {
+        const due = new Date(dueAt);
+        if (due < todayStart) {
+          overdue++;
+        } else if (due <= todayEnd) {
+          today++;
+        } else {
+          thisWeek++;
+        }
+      } else if (row.urgency === 'today') {
+        today++;
+      } else if (row.urgency === 'this_week') {
+        thisWeek++;
+      } else {
+        someday++;
+      }
+    }
+
+    return {
+      today,
+      overdue,
+      total_open: openRows.length,
+      this_week: thisWeek,
+      someday,
+    };
+  }
+
+  async getCalendarView(
+    userId: string,
+    monthStr: string | undefined,
+  ): Promise<{
+    items: ReturnType<typeof this.serialize>[];
+    undated: ReturnType<typeof this.serialize>[];
+    overdue: ReturnType<typeof this.serialize>[];
+    dot_map: Record<string, { tasks: number; events: number }>;
+  }> {
+    await this.wakeSnoozed(userId);
+    const zone = await this.getUserTimezone(userId);
+    const now = DateTime.now().setZone(zone);
+
+    // Parse month or default to current
+    let monthDt: DateTime;
+    if (monthStr && /^\d{4}-\d{2}$/.test(monthStr)) {
+      monthDt = DateTime.fromFormat(monthStr, 'yyyy-MM', { zone });
+    } else {
+      monthDt = now.startOf('month');
+    }
+
+    // Range: first day of month - 7 days to last day of month + 7 days (cover week overflow)
+    const rangeStart = monthDt.startOf('month').minus({ days: 7 }).toJSDate();
+    const rangeEnd = monthDt.endOf('month').plus({ days: 7 }).toJSDate();
+    const todayStart = now.startOf('day').toJSDate();
+
+    // Fetch all open extracts for the user
+    const allOpen = await this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          or(
+            eq(extractsTable.status, 'inbox'),
+            eq(extractsTable.status, 'snoozed'),
+          ),
+        ),
+      )
+      .orderBy(asc(extractsTable.createdAt));
+
+    const items: ExtractRow[] = [];
+    const undated: ExtractRow[] = [];
+    const overdue: ExtractRow[] = [];
+    const dotMap: Record<string, { tasks: number; events: number }> = {};
+
+    for (const row of allOpen) {
+      const anchor = row.eventStartAt ?? row.dueAt ?? row.periodStart;
+
+      if (!anchor) {
+        undated.push(row);
+        continue;
+      }
+
+      const anchorDate = new Date(anchor);
+
+      // Overdue check
+      if (anchorDate < todayStart) {
+        overdue.push(row);
+      }
+
+      // Include in items if within the month range
+      if (anchorDate >= rangeStart && anchorDate <= rangeEnd) {
+        items.push(row);
+      }
+
+      // Build dot map for the displayed month
+      const dateKey = DateTime.fromJSDate(anchorDate)
+        .setZone(zone)
+        .toFormat('yyyy-MM-dd');
+      if (!dotMap[dateKey]) dotMap[dateKey] = { tasks: 0, events: 0 };
+      if (row.source === 'calendar') {
+        dotMap[dateKey].events++;
+      } else {
+        dotMap[dateKey].tasks++;
+      }
+    }
+
+    // Sort overdue by anchor date desc (most recent overdue first)
+    overdue.sort((a, b) => {
+      const aD = a.eventStartAt ?? a.dueAt ?? a.periodStart;
+      const bD = b.eventStartAt ?? b.dueAt ?? b.periodStart;
+      return (aD?.getTime() ?? 0) - (bD?.getTime() ?? 0);
+    });
+
+    return {
+      items: items.map((r) => this.serialize(r)),
+      undated: undated.map((r) => this.serialize(r)),
+      overdue: overdue.map((r) => this.serialize(r)),
+      dot_map: dotMap,
+    };
   }
 
   async listOpen(

@@ -16,7 +16,8 @@ import { useAuth } from "@clerk/expo";
 import * as Calendar from "expo-calendar";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { CalendarDays, Crown, Plus, Trash2 } from "lucide-react-native";
+import { triggerCalendarSync } from "@/lib/pemApi";
+import { CalendarDays, Crown, Plus, RefreshCw, Trash2 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet, View } from "react-native";
 
@@ -28,6 +29,7 @@ export default function CalendarSection() {
 
   const [connections, setConnections] = useState<CalendarConnection[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -139,6 +141,15 @@ export default function CalendarSection() {
     ]);
   }, [load]);
 
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await triggerCalendarSync(() => getTokenRef.current());
+      await load();
+    } catch { /* ignore */ }
+    setSyncing(false);
+  }, [load]);
+
   const googleConns = connections.filter((c) => c.provider === "google");
   const apple = connections.find((c) => c.provider === "apple");
 
@@ -172,9 +183,12 @@ export default function CalendarSection() {
               title={g.google_email ?? "Google Calendar"}
               subtitle="Google"
               isPrimary={g.is_primary}
+              lastSyncedAt={g.last_synced_at}
               colors={colors}
               onMakePrimary={() => void makePrimary(g.id)}
               onDisconnect={() => disconnectGoogle(g)}
+              onSync={handleSync}
+              syncing={syncing}
             />
           </View>
         ))}
@@ -206,6 +220,7 @@ export default function CalendarSection() {
                 title="Apple Calendar"
                 subtitle={`${apple.apple_calendar_ids?.length ?? 0} calendar${(apple.apple_calendar_ids?.length ?? 0) !== 1 ? "s" : ""}`}
                 isPrimary={apple.is_primary}
+                lastSyncedAt={apple.last_synced_at}
                 colors={colors}
                 onMakePrimary={() => void makePrimary(apple.id)}
                 onDisconnect={disconnectAppleAlert}
@@ -233,23 +248,41 @@ export default function CalendarSection() {
 
 /* ── Reusable row for a connected calendar ─────────────── */
 
+function formatRelativeTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 function ConnectionRow({
   icon,
   title,
   subtitle,
   isPrimary,
+  lastSyncedAt,
   colors,
   onMakePrimary,
   onDisconnect,
+  onSync,
+  syncing,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle: string;
   isPrimary: boolean;
+  lastSyncedAt?: string | null;
   colors: ReturnType<typeof import("@/contexts/ThemeContext").useTheme>["colors"];
   onMakePrimary: () => void;
   onDisconnect: () => void;
+  onSync?: () => void;
+  syncing?: boolean;
 }) {
+  const lastSynced = formatRelativeTime(lastSyncedAt ?? null);
+
   return (
     <View style={styles.row}>
       {icon}
@@ -258,10 +291,25 @@ function ConnectionRow({
           {title}
         </PemText>
         <PemText variant="caption" style={{ color: colors.textSecondary }}>
-          {subtitle}
+          {subtitle}{lastSynced ? ` · Synced ${lastSynced}` : ""}
         </PemText>
       </View>
       <View style={styles.rowActions}>
+        {onSync && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Sync now"
+            onPress={onSync}
+            disabled={syncing}
+            hitSlop={8}
+          >
+            <RefreshCw
+              size={16}
+              stroke={syncing ? colors.textTertiary : pemAmber}
+              strokeWidth={1.8}
+            />
+          </Pressable>
+        )}
         {isPrimary ? (
           <View style={[styles.primaryBadge, { backgroundColor: colors.brandMutedSurface }]}>
             <PemText
