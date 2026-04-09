@@ -82,7 +82,9 @@ export class ChatController {
   @Post('voice')
   @HttpCode(200)
   @UseInterceptors(FileInterceptor('audio'))
-  @ApiOperation({ summary: 'Send a voice message (audio upload + transcription)' })
+  @ApiOperation({
+    summary: 'Send a voice message (audio upload + transcription)',
+  })
   async sendVoice(
     @CurrentUser() user: UserRow,
     @UploadedFile() audio: Express.Multer.File,
@@ -93,7 +95,11 @@ export class ChatController {
     let voiceUrl: string | null = null;
     if (this.storage.enabled && audio.buffer) {
       audioKey = `chat-voice/${user.id}/${Date.now()}.m4a`;
-      await this.storage.upload(audioKey, audio.buffer, audio.mimetype || 'audio/m4a');
+      await this.storage.upload(
+        audioKey,
+        audio.buffer,
+        audio.mimetype || 'audio/m4a',
+      );
       voiceUrl = audioKey;
     }
 
@@ -116,7 +122,8 @@ export class ChatController {
 
     const serialized = this.chat.serializeMessage(msg);
     if (audioKey && this.storage.enabled) {
-      serialized.voice_url = (await this.storage.getSignedUrl(audioKey)) ?? serialized.voice_url;
+      serialized.voice_url =
+        (await this.storage.getSignedUrl(audioKey)) ?? serialized.voice_url;
     }
     return { message: serialized, status: 'received' };
   }
@@ -138,7 +145,8 @@ export class ChatController {
       messages.map(async (m) => {
         const s = this.chat.serializeMessage(m);
         if (m.audioKey && this.storage.enabled) {
-          s.voice_url = (await this.storage.getSignedUrl(m.audioKey)) ?? s.voice_url;
+          s.voice_url =
+            (await this.storage.getSignedUrl(m.audioKey)) ?? s.voice_url;
         }
         return s;
       }),

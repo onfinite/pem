@@ -126,48 +126,6 @@ export class CalendarConnectionService {
     return row ?? null;
   }
 
-  async upsertApple(
-    userId: string,
-    calendarIds: string[],
-  ): Promise<CalendarConnectionRow> {
-    const existing = await this.findByProvider(userId, 'apple');
-    const hasOtherPrimary = await this.hasPrimary(userId);
-
-    if (existing) {
-      const [updated] = await this.db
-        .update(calendarConnectionsTable)
-        .set({
-          appleCalendarIds: calendarIds,
-          updatedAt: new Date(),
-        })
-        .where(eq(calendarConnectionsTable.id, existing.id))
-        .returning();
-      await this.logCalendarUser(userId, 'Apple calendar selection updated', {
-        op: 'apple_connection_updated',
-        connection_id: updated.id,
-        calendar_id_count: calendarIds.length,
-      });
-      return updated;
-    }
-
-    const [created] = await this.db
-      .insert(calendarConnectionsTable)
-      .values({
-        userId,
-        provider: 'apple',
-        isPrimary: !hasOtherPrimary,
-        appleCalendarIds: calendarIds,
-      })
-      .returning();
-    await this.logCalendarUser(userId, 'Apple calendar connected', {
-      op: 'apple_connection_created',
-      connection_id: created.id,
-      calendar_id_count: calendarIds.length,
-      is_primary: created.isPrimary,
-    });
-    return created;
-  }
-
   async setPrimary(userId: string, connectionId: string): Promise<void> {
     await this.db
       .update(calendarConnectionsTable)

@@ -30,11 +30,17 @@ import { Check, CheckCheck, Pause, Play } from "lucide-react-native";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  Modal,
+  PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ApiMessage } from "@/lib/pemApi";
 
 const SPEED_STORAGE_KEY = "@pem/voice_playback_speed_idx";
@@ -101,7 +107,7 @@ function PlaybackWaveform({
 }
 
 const waveStyles = StyleSheet.create({
-  container: { flexDirection: "row", alignItems: "center", height: 24, gap: 1.5, flex: 1 },
+  container: { flexDirection: "row", alignItems: "center", height: 24, gap: 1.5, flex: 1, overflow: "hidden" },
   bar: { width: 2.5, borderRadius: 1.25 },
 });
 
@@ -119,7 +125,7 @@ type Props = {
 export default function VoiceBubble({ message, isUser, isSending, isFailed, onRetry }: Props) {
   const { colors } = useTheme();
   const transcript = message.transcript ?? message.content;
-  const [showTranscript, setShowTranscript] = useState(!!transcript);
+  const [showModal, setShowModal] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(0);
 
   // Load persisted speed on mount
@@ -215,7 +221,6 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
   }, [speedIdx, isLoaded, player]);
 
   const bubbleBg = isUser ? colors.userBubble : colors.cardBackground;
-  const textOnBubble = isUser ? colors.userBubbleText : colors.textPrimary;
   const activeBarColor = pemAmber;
   const inactiveBarColor = isUser ? colors.userBubbleMeta : colors.borderMuted;
   const dimText = isUser ? colors.userBubbleMeta : colors.textTertiary;
@@ -224,7 +229,6 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
   const tickColor = isUser ? colors.userBubbleMeta : colors.textTertiary;
   const chipBg = isUser ? `${colors.userBubbleText}15` : colors.secondarySurface;
   const chipText = isUser ? colors.userBubbleMeta : colors.textSecondary;
-  const toggleColor = isUser ? colors.userBubbleMeta : pemAmber;
 
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "numeric",
@@ -267,43 +271,32 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
             inactiveColor={inactiveBarColor}
           />
 
-          {showSpinner ? (
-            <View style={styles.speedChipPlaceholder} />
-          ) : (
-            <Pressable onPress={cycleSpeed} hitSlop={8} style={[styles.speedChip, { backgroundColor: chipBg }]}>
-              <Text style={[styles.speedChipText, { color: chipText }]}>
-                {SPEED_LABELS[speedIdx]}
-              </Text>
-            </Pressable>
-          )}
+          <View style={styles.controlsRight}>
+            {showSpinner ? (
+              <View style={styles.speedChipPlaceholder} />
+            ) : (
+              <Pressable onPress={cycleSpeed} hitSlop={8} style={[styles.speedChip, { backgroundColor: chipBg }]}>
+                <Text style={[styles.speedChipText, { color: chipText }]}>
+                  {SPEED_LABELS[speedIdx]}
+                </Text>
+              </Pressable>
+            )}
 
-          {/* Duration — to the right of speed chip */}
-          <Text style={[styles.smallText, { color: dimText }]}>
-            {isPlaying || currentTime > 0 ? formatDuration(currentTime) : formatDuration(duration)}
-          </Text>
+            <Text style={[styles.durationText, { color: dimText }]}>
+              {isPlaying || currentTime > 0 ? formatDuration(currentTime) : formatDuration(duration)}
+            </Text>
+          </View>
         </View>
 
-        {/* Transcribing indicator while voice is being uploaded + transcribed */}
-        {isUser && isSending && !transcript && (
-          <Text style={[styles.transcribingText, { color: dimText }]}>
-            Transcribing...
-          </Text>
-        )}
-
-        {/* Transcript */}
-        {transcript && showTranscript && (
-          <Text style={[styles.transcriptText, { color: textOnBubble }]}>
-            {transcript}
-          </Text>
-        )}
-
-        {/* Bottom row: hide/show text on left · message time + ticks on right */}
+        {/* Bottom row: left label + time/ticks */}
         <View style={styles.bottomRow}>
-          {transcript ? (
-            <Pressable onPress={() => setShowTranscript((v) => !v)} hitSlop={8}>
-              <Text style={[styles.toggleText, { color: toggleColor }]}>
-                {showTranscript ? "Hide text" : "Show text"}
-              </Text>
+          {isUser && isSending && !transcript ? (
+            <Text style={[styles.toggleText, { color: dimText, fontStyle: "italic" }]}>
+              Transcribing...
+            </Text>
+          ) : transcript ? (
+            <Pressable onPress={() => setShowModal(true)} hitSlop={8}>
+              <Text style={[styles.toggleText, { color: dimText }]}>Transcript</Text>
             </Pressable>
           ) : (
             <View />
@@ -325,9 +318,149 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
           </View>
         </View>
       </View>
+
+      {transcript && (
+        <TranscriptModal
+          visible={showModal}
+          text={transcript}
+          onClose={() => setShowModal(false)}
+        />
+      )}
     </View>
   );
 }
+
+const SHEET_H = Dimensions.get("window").height * 0.75;
+const SWIPE_CLOSE = 80;
+
+function TranscriptModal({
+  visible,
+  text,
+  onClose,
+}: {
+  visible: boolean;
+  text: string;
+  onClose: () => void;
+}) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const translateY = useRef(new Animated.Value(SHEET_H)).current;
+
+  const animateIn = useCallback(() => {
+    Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+  }, [translateY]);
+
+  const animateOut = useCallback(
+    (cb?: () => void) => {
+      Animated.timing(translateY, {
+        toValue: SHEET_H,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(cb);
+    },
+    [translateY],
+  );
+
+  const handleClose = useCallback(() => {
+    animateOut(onClose);
+  }, [animateOut, onClose]);
+
+  useEffect(() => {
+    if (visible) setTimeout(animateIn, 10);
+  }, [visible, animateIn]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 10,
+      onPanResponderMove: (_, g) => {
+        if (g.dy > 0) translateY.setValue(g.dy);
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > SWIPE_CLOSE) {
+          animateOut(onClose);
+        } else {
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    }),
+  ).current;
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={handleClose}>
+      <Pressable style={sheetStyles.backdrop} onPress={handleClose}>
+        <View />
+      </Pressable>
+      <Animated.View
+        style={[
+          sheetStyles.sheet,
+          {
+            height: SHEET_H + insets.bottom,
+            paddingBottom: insets.bottom,
+            backgroundColor: colors.pageBackground,
+            transform: [{ translateY }],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        <View style={sheetStyles.handleRow}>
+          <View style={[sheetStyles.handle, { backgroundColor: colors.textTertiary }]} />
+        </View>
+        <Text style={[sheetStyles.title, { color: colors.textPrimary }]}>Transcript</Text>
+        <ScrollView
+          contentContainerStyle={sheetStyles.body}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={[sheetStyles.text, { color: colors.textPrimary }]}>{text}</Text>
+        </ScrollView>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+const sheetStyles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  sheet: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: "hidden",
+  },
+  handleRow: {
+    alignItems: "center",
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.4,
+  },
+  title: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize.lg,
+    paddingHorizontal: space[4],
+    paddingBottom: space[3],
+  },
+  body: {
+    paddingHorizontal: space[4],
+    paddingBottom: space[10],
+  },
+  text: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.base,
+    lineHeight: 24,
+  },
+});
 
 const styles = StyleSheet.create({
   row: {
@@ -358,16 +491,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
+  controlsRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    flexShrink: 0,
+    marginLeft: space[1],
+  },
   speedChip: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    width: 34,
+    height: 22,
     borderRadius: 10,
     flexShrink: 0,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   speedChipText: {
     fontFamily: fontFamily.sans.medium,
     fontSize: 11,
     fontVariant: ["tabular-nums"],
+    textAlign: "center" as const,
   },
   speedChipPlaceholder: {
     width: 34,
@@ -389,20 +532,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontVariant: ["tabular-nums"],
   },
+  durationText: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: 11,
+    fontVariant: ["tabular-nums"],
+    width: 32,
+    textAlign: "right" as const,
+  },
   toggleText: {
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.xs,
-  },
-  transcribingText: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.xs,
-    marginTop: space[1],
-    fontStyle: "italic",
-  },
-  transcriptText: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.sm,
-    marginTop: space[2],
-    lineHeight: 18,
   },
 });

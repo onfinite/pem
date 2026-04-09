@@ -1,9 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, isNotNull, lte, or } from 'drizzle-orm';
+import { and, eq, isNotNull, lte, or, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
+  calendarConnectionsTable,
+  contactsTable,
   extractsTable,
   logsTable,
   type CalendarConnectionRow,
@@ -24,7 +26,6 @@ export class CalendarSyncService {
     private readonly google: GoogleCalendarService,
   ) {}
 
-  /** Sync all calendar connections for a user. Google connections sync immediately; Apple is device-pushed. */
   async syncAllForUser(userId: string): Promise<{ synced: boolean }> {
     const conns = await this.connections.listForUser(userId);
     for (const conn of conns) {
@@ -39,7 +40,6 @@ export class CalendarSyncService {
           );
         }
       }
-      // Apple is device-pushed — nothing to do server-side
     }
     return { synced: true };
   }
@@ -70,12 +70,30 @@ export class CalendarSyncService {
 
       for (const event of result.events) {
         await this.upsertCalendarExtract(conn, event);
+        for (const att of event.attendees) {
+          if (att.self || !att.email) continue;
+          await this.upsertContact(
+            conn.userId,
+            att.email,
+            att.name,
+            event.start,
+          );
+        }
       }
 
       await this.connections.updateSyncState(
         connectionId,
         result.nextSyncToken,
       );
+
+      await this.db
+        .update(calendarConnectionsTable)
+        .set({
+          connectionStatus: 'healthy',
+          lastError: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(calendarConnectionsTable.id, connectionId));
 
       await this.logCalendar(conn.userId, connectionId, 'sync_done', {
         eventCount: result.events.length,
@@ -84,53 +102,44 @@ export class CalendarSyncService {
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : 'Unknown calendar sync error';
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? (err as { code: number }).code
+          : 0;
+
+      if (code === 401 || code === 403) {
+        this.log.warn(
+          `OAuth failure for ${connectionId}, marking disconnected`,
+        );
+        await this.db
+          .update(calendarConnectionsTable)
+          .set({
+            connectionStatus: 'disconnected',
+            lastError: msg,
+            updatedAt: new Date(),
+          })
+          .where(eq(calendarConnectionsTable.id, connectionId));
+      } else {
+        await this.db
+          .update(calendarConnectionsTable)
+          .set({
+            connectionStatus: 'error',
+            lastError: msg,
+            updatedAt: new Date(),
+          })
+          .where(eq(calendarConnectionsTable.id, connectionId));
+      }
+
       this.log.error(`Google sync failed for ${connectionId}: ${msg}`);
       await this.logCalendar(
         conn.userId,
         connectionId,
         'sync_failed',
-        {},
+        { code },
         { message: msg },
       );
       throw err;
     }
-  }
-
-  /** Receive Apple Calendar events from the device and upsert extracts. */
-  async syncAppleEvents(
-    userId: string,
-    connectionId: string,
-    events: {
-      id: string;
-      title: string;
-      startDate: string;
-      endDate: string;
-      location?: string;
-      status?: string;
-    }[],
-  ): Promise<number> {
-    const conn = await this.connections.findById(connectionId);
-    if (!conn || conn.userId !== userId || conn.provider !== 'apple') return 0;
-
-    let count = 0;
-    for (const ev of events) {
-      const gEvent: GoogleEvent = {
-        id: ev.id,
-        summary: ev.title,
-        start: new Date(ev.startDate),
-        end: new Date(ev.endDate),
-        location: ev.location ?? null,
-        status: ev.status ?? 'confirmed',
-      };
-      await this.upsertCalendarExtract(conn, gEvent);
-      count++;
-    }
-
-    await this.connections.updateSyncState(connectionId, null);
-    await this.logCalendar(conn.userId, connectionId, 'apple_sync_done', {
-      eventCount: count,
-    });
-    return count;
   }
 
   /** Auto-done: mark past calendar extracts as done. */
@@ -307,7 +316,42 @@ export class CalendarSyncService {
         payload,
       });
     } catch (e) {
-      this.log.warn(`Log insert failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      this.log.warn(
+        `Log insert failed: ${e instanceof Error ? e.message : 'unknown'}`,
+      );
+    }
+  }
+
+  private async upsertContact(
+    userId: string,
+    email: string,
+    name: string | null,
+    eventDate: Date,
+  ): Promise<void> {
+    try {
+      await this.db
+        .insert(contactsTable)
+        .values({
+          userId,
+          email,
+          name,
+          meetingCount: 1,
+          lastMetAt: eventDate,
+          firstMetAt: eventDate,
+        })
+        .onConflictDoUpdate({
+          target: [contactsTable.userId, contactsTable.email],
+          set: {
+            meetingCount: sql`${contactsTable.meetingCount} + 1`,
+            lastMetAt: sql`GREATEST(${contactsTable.lastMetAt}, ${eventDate})`,
+            name: sql`COALESCE(${name}, ${contactsTable.name})`,
+            updatedAt: new Date(),
+          },
+        });
+    } catch (e) {
+      this.log.debug(
+        `Contact upsert failed: ${e instanceof Error ? e.message : 'unknown'}`,
+      );
     }
   }
 

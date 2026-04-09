@@ -7,6 +7,7 @@ import {
   extractsTable,
   logsTable,
   usersTable,
+  type UserPreferences,
   type UserRow,
 } from '../database/schemas';
 
@@ -133,6 +134,36 @@ export class UserService {
     await this.db
       .update(usersTable)
       .set({ onboardingCompleted: true })
+      .where(eq(usersTable.id, userId));
+  }
+
+  async setPreferences(userId: string, prefs: UserPreferences): Promise<void> {
+    await this.db
+      .update(usersTable)
+      .set({ preferences: prefs })
+      .where(eq(usersTable.id, userId));
+  }
+
+  async setFocusTime(
+    userId: string,
+    hours: number,
+    preferredTime?: 'morning' | 'afternoon',
+  ): Promise<void> {
+    const updates: Partial<typeof usersTable.$inferInsert> = {
+      focusHoursPerWeek: hours,
+    };
+    if (preferredTime) {
+      const [row] = await this.db
+        .select({ preferences: usersTable.preferences })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId))
+        .limit(1);
+      const existing = (row?.preferences as UserPreferences) ?? {};
+      updates.preferences = { ...existing, focus_time_pref: preferredTime };
+    }
+    await this.db
+      .update(usersTable)
+      .set(updates)
       .where(eq(usersTable.id, userId));
   }
 

@@ -3,23 +3,19 @@ import { pemAmber } from "@/constants/theme";
 import { fontFamily, radii, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  connectAppleCalendar,
-  disconnectCalendar,
   disconnectCalendarById,
   getCalendarConnections,
   getGoogleAuthUrl,
   setCalendarPrimary,
-  syncAppleCalendar,
   type CalendarConnection,
 } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
-import * as Calendar from "expo-calendar";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { triggerCalendarSync } from "@/lib/pemApi";
 import { CalendarDays, Crown, Plus, RefreshCw, Trash2 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 
 export default function CalendarSection() {
   const { colors } = useTheme();
@@ -61,46 +57,6 @@ export default function CalendarSection() {
     }
   }, [load]);
 
-  const connectApple = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { status } = await Calendar.requestCalendarPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Calendar access", "Pem needs calendar access to read your events.");
-        return;
-      }
-      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      const writableIds = calendars
-        .filter((c) => c.allowsModifications)
-        .map((c) => c.id);
-
-      if (writableIds.length === 0) {
-        Alert.alert("No calendars", "No writable calendars found on this device.");
-        return;
-      }
-
-      const conn = await connectAppleCalendar(() => getTokenRef.current(), writableIds);
-
-      const now = new Date();
-      const twoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-      const events = await Calendar.getEventsAsync(writableIds, now, twoWeeks);
-      const mapped = events.map((e) => ({
-        id: e.id,
-        title: e.title,
-        startDate: e.startDate instanceof Date ? e.startDate.toISOString() : String(e.startDate),
-        endDate: e.endDate instanceof Date ? e.endDate.toISOString() : String(e.endDate),
-        location: e.location ?? undefined,
-      }));
-
-      await syncAppleCalendar(() => getTokenRef.current(), conn.id, mapped);
-      await load();
-    } catch (e) {
-      Alert.alert("Could not connect", e instanceof Error ? e.message : "Try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [load]);
-
   const makePrimary = useCallback(
     async (id: string) => {
       await setCalendarPrimary(() => getTokenRef.current(), id);
@@ -127,20 +83,6 @@ export default function CalendarSection() {
     [load],
   );
 
-  const disconnectAppleAlert = useCallback(() => {
-    Alert.alert("Disconnect Apple Calendar?", "Events will stop syncing.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Disconnect",
-        style: "destructive",
-        onPress: async () => {
-          await disconnectCalendar(() => getTokenRef.current(), "apple");
-          await load();
-        },
-      },
-    ]);
-  }, [load]);
-
   const handleSync = useCallback(async () => {
     setSyncing(true);
     try {
@@ -151,7 +93,6 @@ export default function CalendarSection() {
   }, [load]);
 
   const googleConns = connections.filter((c) => c.provider === "google");
-  const apple = connections.find((c) => c.provider === "apple");
 
   return (
     <View>
@@ -210,37 +151,6 @@ export default function CalendarSection() {
           </PemText>
         </Pressable>
 
-        {/* Apple Calendar */}
-        {Platform.OS === "ios" ? (
-          <>
-            <View style={[styles.divider, { backgroundColor: colors.borderMuted }]} />
-            {apple ? (
-              <ConnectionRow
-                icon={<CalendarDays size={20} stroke={colors.textSecondary} strokeWidth={1.8} />}
-                title="Apple Calendar"
-                subtitle={`${apple.apple_calendar_ids?.length ?? 0} calendar${(apple.apple_calendar_ids?.length ?? 0) !== 1 ? "s" : ""}`}
-                isPrimary={apple.is_primary}
-                lastSyncedAt={apple.last_synced_at}
-                colors={colors}
-                onMakePrimary={() => void makePrimary(apple.id)}
-                onDisconnect={disconnectAppleAlert}
-              />
-            ) : (
-              <Pressable
-                style={styles.addRow}
-                accessibilityRole="button"
-                accessibilityLabel="Connect Apple Calendar"
-                onPress={connectApple}
-                disabled={loading}
-              >
-                <Plus size={18} stroke={pemAmber} strokeWidth={2} />
-                <PemText variant="body" style={{ color: pemAmber }}>
-                  Connect Apple Calendar
-                </PemText>
-              </Pressable>
-            )}
-          </>
-        ) : null}
       </View>
     </View>
   );

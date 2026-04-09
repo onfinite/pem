@@ -10,6 +10,7 @@ import { ProfileModule } from '../profile/profile.module';
 import { PushModule } from '../push/push.module';
 import { AgentsModule } from '../agents/agents.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { SchedulerModule } from '../scheduler/scheduler.module';
 import { TranscriptionModule } from '../transcription/transcription.module';
 import { ChatEventsModule } from './chat-events/chat-events.module';
 import { BriefCronService } from './queues/brief/brief-cron.service';
@@ -18,6 +19,7 @@ import { CalendarSyncProcessor } from './queues/calendar/calendar-sync.processor
 import { ChatOrchestratorService } from './queues/chat/chat-orchestrator.service';
 import { ChatProcessor } from './queues/chat/chat.processor';
 import { ChatQuestionService } from './queues/chat/chat-question.service';
+import { RecurrenceCronService } from './queues/scheduler/recurrence-cron.service';
 
 @Global()
 @Module({
@@ -41,7 +43,13 @@ import { ChatQuestionService } from './queues/chat/chat-question.service';
       },
       inject: [ConfigService],
     }),
-    BullModule.registerQueue({ name: 'chat' }, { name: 'calendar-sync' }),
+    BullModule.registerQueue(
+      { name: 'chat' },
+      { name: 'calendar-sync' },
+      { name: 'weekly-planning' },
+      { name: 'scheduling' },
+      { name: 'brief' },
+    ),
     CalendarModule,
     DatabaseModule,
     ProfileModule,
@@ -49,6 +57,7 @@ import { ChatQuestionService } from './queues/chat/chat-question.service';
     AgentsModule,
     ChatEventsModule,
     EmbeddingsModule,
+    SchedulerModule,
     TranscriptionModule,
     PushModule,
   ],
@@ -59,6 +68,7 @@ import { ChatQuestionService } from './queues/chat/chat-question.service';
     BriefCronService,
     CalendarSyncProcessor,
     CalendarCronService,
+    RecurrenceCronService,
   ],
   exports: [BullModule, ChatEventsModule, ChatQuestionService],
 })

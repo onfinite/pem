@@ -7,11 +7,12 @@ import {
   completeOnboarding,
   getGoogleAuthUrl,
   setNotificationTime,
+  setSchedulingPreferences,
 } from "@/lib/pemApi";
 import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
 import { useAuth } from "@clerk/expo";
 import * as WebBrowser from "expo-web-browser";
-import { CalendarDays, Bell, MessageCircle, ChevronRight } from "lucide-react-native";
+import { CalendarDays, Bell, MessageCircle, ChevronRight, Briefcase } from "lucide-react-native";
 import { useCallback, useRef, useState } from "react";
 import {
   Animated,
@@ -26,7 +27,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
 const { width: SCREEN_W } = Dimensions.get("window");
-const STEPS = 4;
+const STEPS = 5;
+
+const WORK_TYPE_OPTIONS: { value: "office" | "remote" | "hybrid"; label: string }[] = [
+  { value: "office", label: "Office" },
+  { value: "remote", label: "Remote" },
+  { value: "hybrid", label: "Hybrid" },
+];
 
 const NOTIF_PRESETS = [
   { label: "6:00 AM", value: "06:00" },
@@ -46,6 +53,7 @@ export default function OnboardingScreen() {
   const scrollX = useRef(new Animated.Value(0)).current;
   const [calConnected, setCalConnected] = useState(false);
   const [selectedTime, setSelectedTime] = useState("07:00");
+  const [workType, setWorkType] = useState<"office" | "remote" | "hybrid">("office");
   const [finishing, setFinishing] = useState(false);
 
   const goNext = useCallback(() => {
@@ -80,17 +88,29 @@ export default function OnboardingScreen() {
     [],
   );
 
+  const handleSavePrefs = useCallback(async () => {
+    try {
+      await setSchedulingPreferences(getTokenRef.current, {
+        work_type: workType,
+        personal_windows: workType === "remote" ? ["evenings", "weekends", "lunch"] : ["evenings", "weekends"],
+      });
+    } catch {
+      // non-blocking
+    }
+  }, [workType]);
+
   const handleFinish = useCallback(async () => {
     if (finishing) return;
     setFinishing(true);
     try {
+      await handleSavePrefs();
       await completeOnboarding(getTokenRef.current);
       pemNotificationSuccess();
       router.replace("/chat");
     } catch {
       setFinishing(false);
     }
-  }, [finishing]);
+  }, [finishing, handleSavePrefs]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.pageBackground, paddingTop: insets.top }]}>
@@ -204,7 +224,47 @@ export default function OnboardingScreen() {
           </View>
         </View>
 
-        {/* Step 4: First dump */}
+        {/* Step 4: Work style */}
+        <View style={[styles.page, { width: SCREEN_W }]}>
+          <View style={styles.centered}>
+            <View style={[styles.iconCircle, { backgroundColor: pemAmber + "18" }]}>
+              <Briefcase size={36} color={pemAmber} />
+            </View>
+            <PemText variant="display" style={styles.heading}>
+              How do you work?
+            </PemText>
+            <PemText variant="bodyMuted" style={styles.body}>
+              This helps Pem schedule personal tasks{"\n"}
+              around your work and find the right times.
+            </PemText>
+            <View style={styles.timeGrid}>
+              {WORK_TYPE_OPTIONS.map((o) => (
+                <Pressable
+                  key={o.value}
+                  onPress={() => setWorkType(o.value)}
+                  style={[
+                    styles.timeChip,
+                    {
+                      backgroundColor: workType === o.value ? pemAmber : colors.cardBackground,
+                      borderColor: workType === o.value ? pemAmber : colors.borderMuted,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.timeChipText,
+                      { color: workType === o.value ? "#fff" : colors.textPrimary },
+                    ]}
+                  >
+                    {o.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* Step 5: First dump */}
         <View style={[styles.page, { width: SCREEN_W }]}>
           <View style={styles.centered}>
             <View style={[styles.iconCircle, { backgroundColor: pemAmber + "18" }]}>

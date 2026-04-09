@@ -12,6 +12,7 @@ import {
   logsTable,
   usersTable,
   type ExtractRow,
+  type UserPreferences,
 } from '../../../database/schemas';
 import { TriageService } from '../../../agents/triage.service';
 import {
@@ -25,6 +26,7 @@ import { ExtractsService } from '../../../extracts/extracts.service';
 import { ProfileService } from '../../../profile/profile.service';
 import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
 import { PushService } from '../../../push/push.service';
+import { SchedulerService } from '../../../scheduler/scheduler.service';
 import { TranscriptionService } from '../../../transcription/transcription.service';
 import { ChatQuestionService } from './chat-question.service';
 
@@ -49,6 +51,7 @@ export class ChatOrchestratorService {
     private readonly profile: ProfileService,
     private readonly calendarSync: CalendarSyncService,
     private readonly push: PushService,
+    private readonly scheduler: SchedulerService,
     private readonly transcription: TranscriptionService,
     private readonly questionService: ChatQuestionService,
   ) {}
@@ -156,6 +159,33 @@ export class ChatOrchestratorService {
 
       await this.publishStatus(userId, messageId, 'Working on it...');
 
+      let schedulingContext = '';
+      let userPreferences = '';
+      try {
+        schedulingContext = await this.scheduler.buildSchedulingContext(
+          userId,
+          ctx.tz ?? 'UTC',
+        );
+        if (ctx.prefs) {
+          const p = ctx.prefs;
+          const parts: string[] = [];
+          if (p.work_hours)
+            parts.push(
+              `Work hours: ${p.work_hours.start} - ${p.work_hours.end}`,
+            );
+          if (p.work_type) parts.push(`Work type: ${p.work_type}`);
+          if (p.personal_windows?.length)
+            parts.push(`Personal tasks: ${p.personal_windows.join(', ')}`);
+          if (p.focus_time_pref) parts.push(`Focus time: ${p.focus_time_pref}`);
+          if (p.errand_window) parts.push(`Errands: ${p.errand_window}`);
+          userPreferences = parts.join('\n');
+        }
+      } catch (e) {
+        this.log.warn(
+          `Scheduling context failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        );
+      }
+
       const agentOutput = await this.pemAgent.run({
         messageContent: content,
         userTimezone: ctx.tz,
@@ -166,6 +196,8 @@ export class ChatOrchestratorService {
         ragContext,
         userName: ctx.userName,
         userSummary: ctx.userSummary,
+        schedulingContext,
+        userPreferences,
       });
 
       // Apply actions
@@ -173,16 +205,27 @@ export class ChatOrchestratorService {
 
       // Build metadata for the response message
       const meta: Record<string, unknown> = {};
-      if (agentOutput.creates.length) meta.tasks_created = agentOutput.creates.length;
-      if (agentOutput.updates.length) meta.tasks_updated = agentOutput.updates.length;
-      if (agentOutput.completions.length) meta.tasks_completed = agentOutput.completions.length;
-      if (agentOutput.calendar_writes.length) meta.calendar_written = agentOutput.calendar_writes.length;
-      if (agentOutput.calendar_updates.length) meta.calendar_updated = agentOutput.calendar_updates.length;
-      if (agentOutput.calendar_deletes.length) meta.calendar_deleted = agentOutput.calendar_deletes.length;
+      if (agentOutput.creates.length)
+        meta.tasks_created = agentOutput.creates.length;
+      if (agentOutput.updates.length)
+        meta.tasks_updated = agentOutput.updates.length;
+      if (agentOutput.completions.length)
+        meta.tasks_completed = agentOutput.completions.length;
+      if (agentOutput.calendar_writes.length)
+        meta.calendar_written = agentOutput.calendar_writes.length;
+      if (agentOutput.calendar_updates.length)
+        meta.calendar_updated = agentOutput.calendar_updates.length;
+      if (agentOutput.calendar_deletes.length)
+        meta.calendar_deleted = agentOutput.calendar_deletes.length;
       const metadata = Object.keys(meta).length > 0 ? meta : undefined;
 
       // Save response
-      await this.savePemResponse(userId, messageId, agentOutput.response_text, metadata);
+      await this.savePemResponse(
+        userId,
+        messageId,
+        agentOutput.response_text,
+        metadata,
+      );
 
       // Save polished text on user message
       if (agentOutput.polished_text) {
@@ -278,6 +321,7 @@ export class ChatOrchestratorService {
       memorySection,
       userName: userRow?.name ?? null,
       userSummary: userRow?.summary ?? null,
+      prefs: (userRow?.preferences as UserPreferences) ?? null,
     };
   }
 
@@ -287,7 +331,7 @@ export class ChatOrchestratorService {
       .from(messagesTable)
       .where(eq(messagesTable.userId, userId))
       .orderBy(sql`${messagesTable.createdAt} DESC`)
-      .limit(20);
+      .limit(15);
 
     return rows.reverse().map((m) => ({
       role: m.role,
@@ -468,7 +512,12 @@ export class ChatOrchestratorService {
         await this.db
           .update(extractsTable)
           .set(patch)
-          .where(and(eq(extractsTable.id, cu.extract_id), eq(extractsTable.userId, userId)));
+          .where(
+            and(
+              eq(extractsTable.id, cu.extract_id),
+              eq(extractsTable.userId, userId),
+            ),
+          );
 
         await this.logEntry({
           userId,
@@ -480,7 +529,9 @@ export class ChatOrchestratorService {
           payload: { op: 'calendar_update', update: cu },
         });
       } catch (e) {
-        this.log.warn(`Calendar update failed: ${e instanceof Error ? e.message : 'unknown'}`);
+        this.log.warn(
+          `Calendar update failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        );
       }
     }
 
@@ -495,7 +546,9 @@ export class ChatOrchestratorService {
           row.externalEventId,
         );
 
-        await this.extracts.dismiss(userId, cd.extract_id, { initiatedBy: 'agent' });
+        await this.extracts.dismiss(userId, cd.extract_id, {
+          initiatedBy: 'agent',
+        });
 
         await this.logEntry({
           userId,
@@ -507,7 +560,63 @@ export class ChatOrchestratorService {
           payload: { op: 'calendar_delete' },
         });
       } catch (e) {
-        this.log.warn(`Calendar delete failed: ${e instanceof Error ? e.message : 'unknown'}`);
+        this.log.warn(
+          `Calendar delete failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        );
+      }
+    }
+
+    // Apply scheduling
+    for (const sched of output.scheduling) {
+      const row = createdExtractMap.get(sched.create_index);
+      if (!row) continue;
+      await this.db
+        .update(extractsTable)
+        .set({
+          scheduledAt: parseIsoDate(sched.scheduled_at),
+          durationMinutes: sched.duration_minutes,
+          autoScheduled: true,
+          schedulingReason: sched.reasoning,
+          updatedAt: new Date(),
+        })
+        .where(eq(extractsTable.id, row.id));
+    }
+
+    // Apply recurrence rules
+    for (const rec of output.recurrence_detections) {
+      const row = createdExtractMap.get(rec.create_index);
+      if (!row) continue;
+      await this.db
+        .update(extractsTable)
+        .set({
+          recurrenceRule: {
+            ...rec.rule,
+            until: rec.rule.until ?? undefined,
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(extractsTable.id, row.id));
+    }
+
+    // Apply RSVP actions
+    for (const rsvp of output.rsvp_actions) {
+      try {
+        await this.db
+          .update(extractsTable)
+          .set({
+            rsvpStatus: rsvp.response,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(extractsTable.id, rsvp.extract_id),
+              eq(extractsTable.userId, userId),
+            ),
+          );
+      } catch (e) {
+        this.log.warn(
+          `RSVP action failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        );
       }
     }
 
@@ -676,14 +785,21 @@ Rules:
     const [{ count }] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(messagesTable)
-      .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, 'user')));
+      .where(
+        and(eq(messagesTable.userId, userId), eq(messagesTable.role, 'user')),
+      );
 
     if (Number(count) < MIN_MESSAGES) return;
 
     const recentMsgs = await this.db
-      .select({ content: messagesTable.content, transcript: messagesTable.transcript })
+      .select({
+        content: messagesTable.content,
+        transcript: messagesTable.transcript,
+      })
       .from(messagesTable)
-      .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, 'user')))
+      .where(
+        and(eq(messagesTable.userId, userId), eq(messagesTable.role, 'user')),
+      )
       .orderBy(desc(messagesTable.createdAt))
       .limit(15);
 

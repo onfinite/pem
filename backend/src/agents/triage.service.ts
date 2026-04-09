@@ -43,6 +43,7 @@ Rules:
   - Journaling, emotional dumping, venting
   - Personal goals, visions, aspirations, life context ("my goal is to become X", "I want to be Y")
   - Preferences, habits, facts about themselves ("I'm vegetarian", "I live in SF")
+  - Memory requests: "remember that...", "keep in mind...", "note that...", "add to your knowledgebase...", "don't forget that...", "FYI...", "just so you know...", "for future reference...", "save this...", "know that..."
   - Mixed content with both questions and tasks
   - ANY sentence longer than a few words that shares information about the user's life
 - When in doubt between trivial and needs_agent, choose needs_agent

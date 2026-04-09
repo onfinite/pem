@@ -3,6 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { google, type calendar_v3 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 
+export type GoogleEventAttendee = {
+  email: string;
+  name: string | null;
+  self: boolean;
+  responseStatus: string;
+};
+
 export type GoogleEvent = {
   id: string;
   summary: string | null;
@@ -10,6 +17,7 @@ export type GoogleEvent = {
   end: Date;
   location: string | null;
   status: string;
+  attendees: GoogleEventAttendee[];
 };
 
 @Injectable()
@@ -191,17 +199,37 @@ export class GoogleCalendarService {
     }
   }
 
+  private static readonly SKIP_EVENT_TYPES = new Set([
+    'workingLocation',
+    'outOfOffice',
+    'focusTime',
+  ]);
+
+  private static readonly NOISE_TITLES = new Set([
+    'home',
+    'wfh',
+    'work from home',
+    'office',
+    'remote',
+    'commute',
+  ]);
+
   private parseEventItems(items: calendar_v3.Schema$Event[]): GoogleEvent[] {
-    const SKIP_EVENT_TYPES = new Set([
-      'workingLocation',
-      'outOfOffice',
-      'focusTime',
-    ]);
     return items
       .filter((e) => {
         if (!e.id || !(e.start?.dateTime || e.start?.date)) return false;
-        if (e.eventType && SKIP_EVENT_TYPES.has(e.eventType)) return false;
+        if (
+          e.eventType &&
+          GoogleCalendarService.SKIP_EVENT_TYPES.has(e.eventType)
+        )
+          return false;
         if (!e.summary?.trim()) return false;
+        if (
+          GoogleCalendarService.NOISE_TITLES.has(e.summary.trim().toLowerCase())
+        )
+          return false;
+        const selfAttendee = e.attendees?.find((a) => a.self);
+        if (selfAttendee?.responseStatus === 'declined') return false;
         return true;
       })
       .map((e) => ({
@@ -213,6 +241,12 @@ export class GoogleCalendarService {
         ),
         location: e.location ?? null,
         status: e.status ?? 'confirmed',
+        attendees: (e.attendees ?? []).map((a) => ({
+          email: a.email ?? '',
+          name: a.displayName ?? null,
+          self: a.self ?? false,
+          responseStatus: a.responseStatus ?? 'needsAction',
+        })),
       }));
   }
 
@@ -226,6 +260,7 @@ export class GoogleCalendarService {
       end: Date;
       location?: string;
       description?: string;
+      attendees?: { email: string }[];
     },
   ): Promise<{ eventId: string; newAccessToken: string | null }> {
     const client = this.getOAuthClient();
@@ -248,6 +283,7 @@ export class GoogleCalendarService {
         end: { dateTime: event.end.toISOString() },
         location: event.location,
         description: event.description,
+        attendees: event.attendees,
       },
     });
 
@@ -289,6 +325,43 @@ export class GoogleCalendarService {
       calendarId: 'primary',
       eventId,
       requestBody: body,
+    });
+
+    return { newAccessToken };
+  }
+
+  /** Update RSVP status for the authenticated user on an event. */
+  async rsvpEvent(
+    accessToken: string,
+    refreshToken: string,
+    eventId: string,
+    response: 'accepted' | 'declined' | 'tentative',
+  ): Promise<{ newAccessToken: string | null }> {
+    const client = this.getOAuthClient();
+    client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    let newAccessToken: string | null = null;
+    client.on('tokens', (tokens) => {
+      if (tokens.access_token) newAccessToken = tokens.access_token;
+    });
+
+    const cal = google.calendar({ version: 'v3', auth: client });
+    const { data: event } = await cal.events.get({
+      calendarId: 'primary',
+      eventId,
+    });
+
+    const attendees = (event.attendees ?? []).map((a) =>
+      a.self ? { ...a, responseStatus: response } : a,
+    );
+
+    await cal.events.patch({
+      calendarId: 'primary',
+      eventId,
+      requestBody: { attendees },
     });
 
     return { newAccessToken };

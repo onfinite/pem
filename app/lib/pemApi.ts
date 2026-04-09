@@ -653,14 +653,45 @@ export async function createVoiceAsk(
   return (await res.json()) as VoiceAskResponse;
 }
 
+// ── Scheduling Preferences ──────────────────────────────────
+
+export async function setSchedulingPreferences(
+  getToken: () => Promise<string | null>,
+  prefs: {
+    work_hours?: { start: string; end: string };
+    work_days?: number[];
+    work_type?: "office" | "remote" | "hybrid";
+    personal_windows?: ("evenings" | "weekends" | "lunch" | "mornings")[];
+    focus_time_pref?: "morning" | "afternoon";
+    errand_window?: "weekend_morning" | "lunch" | "after_work";
+  },
+) {
+  return apiFetch<{ ok: boolean }>("/users/me/preferences", {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify(prefs),
+  });
+}
+
+export async function setFocusTime(
+  getToken: () => Promise<string | null>,
+  hours: number,
+  preferredTime?: "morning" | "afternoon",
+) {
+  return apiFetch<{ ok: boolean }>("/users/me/focus-time", {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ hours, preferred_time: preferredTime }),
+  });
+}
+
 // ── Calendar ──────────────────────────────────────────────
 
 export type CalendarConnection = {
   id: string;
-  provider: "google" | "apple";
+  provider: "google";
   is_primary: boolean;
   google_email: string | null;
-  apple_calendar_ids: string[] | null;
   last_synced_at: string | null;
 };
 
@@ -685,34 +716,6 @@ export async function getGoogleAuthUrl(
   });
 }
 
-export async function connectAppleCalendar(
-  getToken: () => Promise<string | null>,
-  calendarIds: string[],
-) {
-  return apiFetch<{ id: string; provider: string; is_primary: boolean }>(
-    "/calendar/apple/connect",
-    { method: "POST", getToken, body: JSON.stringify({ calendarIds }) },
-  );
-}
-
-export async function syncAppleCalendar(
-  getToken: () => Promise<string | null>,
-  connectionId: string,
-  events: {
-    id: string;
-    title: string;
-    startDate: string;
-    endDate: string;
-    location?: string;
-  }[],
-) {
-  return apiFetch<{ synced: number }>("/calendar/apple/sync", {
-    method: "POST",
-    getToken,
-    body: JSON.stringify({ connectionId, events }),
-  });
-}
-
 export async function setCalendarPrimary(
   getToken: () => Promise<string | null>,
   connectionId: string,
@@ -721,16 +724,6 @@ export async function setCalendarPrimary(
     `/calendar/connections/${connectionId}/primary`,
     { method: "PATCH", getToken },
   );
-}
-
-export async function disconnectCalendar(
-  getToken: () => Promise<string | null>,
-  provider: "google" | "apple",
-) {
-  return apiFetch<{ ok: boolean }>(`/calendar/connections/${provider}`, {
-    method: "DELETE",
-    getToken,
-  });
 }
 
 export async function disconnectCalendarById(

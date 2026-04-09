@@ -1,4 +1,5 @@
 export * from './calendar-connections.schema';
+export * from './contacts.schema';
 export * from './extracts.schema';
 export * from './follow-ups.schema';
 export * from './logs.schema';

@@ -354,10 +354,7 @@ PATCH  /users/me/timezone
 GET    /calendar/connections
 GET    /calendar/google/auth-url
 GET    /calendar/google/callback
-POST   /calendar/apple/connect
-POST   /calendar/apple/sync
 PATCH  /calendar/connections/:id/primary
-DELETE /calendar/connections/apple
 DELETE /calendar/connections/:id
 ```
 

@@ -1173,19 +1173,18 @@ const TaskDrawer = forwardRef<
             transform: [{ translateY }],
           },
         ]}
-        {...panResponder.panHandlers}
       >
-        {/* Handle */}
-        <View style={styles.handleRow}>
-          <View
-            style={[styles.handle, { backgroundColor: colors.textTertiary }]}
-          />
-        </View>
+        {/* Swipeable header: handle + tabs */}
+        <View {...panResponder.panHandlers}>
+          <View style={styles.handleRow}>
+            <View
+              style={[styles.handle, { backgroundColor: colors.textTertiary }]}
+            />
+          </View>
 
-        {/* Tabs */}
-        <View
-          style={[styles.tabRow, { borderBottomColor: colors.borderMuted }]}
-        >
+          <View
+            style={[styles.tabRow, { borderBottomColor: colors.borderMuted }]}
+          >
           {tabDef.map(({ key, label, icon: Icon }) => {
             const active = tab === key;
             return (
@@ -1229,6 +1228,7 @@ const TaskDrawer = forwardRef<
                 ? `${dayItems.length} today`
                 : ""}
           </Text>
+        </View>
         </View>
 
         {/* ── Calendar tab ── */}

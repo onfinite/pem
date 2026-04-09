@@ -1,7 +1,6 @@
 import {
   boolean,
   index,
-  jsonb,
   pgTable,
   text,
   timestamp,
@@ -10,7 +9,7 @@ import {
 
 import { usersTable } from './users.schema';
 
-export const CALENDAR_PROVIDERS = ['google', 'apple'] as const;
+export const CALENDAR_PROVIDERS = ['google'] as const;
 export type CalendarProvider = (typeof CALENDAR_PROVIDERS)[number];
 
 export const calendarConnectionsTable = pgTable(
@@ -31,13 +30,12 @@ export const calendarConnectionsTable = pgTable(
     }),
     googleEmail: text('google_email'),
 
-    /** Which on-device Apple calendars the user selected to sync. */
-    appleCalendarIds: jsonb('apple_calendar_ids').$type<string[] | null>(),
-
+    connectionStatus: text('connection_status').notNull().default('healthy'),
     lastSyncedAt: timestamp('last_synced_at', {
       withTimezone: true,
       mode: 'date',
     }),
+    lastError: text('last_error'),
     /** Google incremental sync token; null = full sync next time. */
     syncCursor: text('sync_cursor'),
 

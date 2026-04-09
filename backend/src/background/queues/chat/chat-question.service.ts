@@ -6,10 +6,7 @@ import { and, eq, inArray, desc } from 'drizzle-orm';
 
 import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
-import {
-  extractsTable,
-  type ExtractRow,
-} from '../../../database/schemas';
+import { extractsTable, type ExtractRow } from '../../../database/schemas';
 import { EmbeddingsService } from '../../../embeddings/embeddings.service';
 import {
   ExtractsService,
@@ -45,7 +42,8 @@ function formatAllOpen(rows: ExtractRow[]): string {
     .map((r) => {
       const parts = [r.extractText];
       if (r.batchKey) parts.push(`[${r.batchKey}]`);
-      if (r.urgency && r.urgency !== 'none') parts.push(`urgency: ${r.urgency}`);
+      if (r.urgency && r.urgency !== 'none')
+        parts.push(`urgency: ${r.urgency}`);
       if (r.tone) parts.push(`tone: ${r.tone}`);
       if (r.dueAt) parts.push(`due: ${r.dueAt.toISOString()}`);
       if (r.eventStartAt) parts.push(`event: ${r.eventStartAt.toISOString()}`);
@@ -67,7 +65,12 @@ export class ChatQuestionService {
     private readonly profile: ProfileService,
   ) {}
 
-  async answer(userId: string, question: string, userName?: string | null, userSummary?: string | null): Promise<string> {
+  async answer(
+    userId: string,
+    question: string,
+    userName?: string | null,
+    userSummary?: string | null,
+  ): Promise<string> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) {
       return "I can't look that up right now — try again in a moment.";
@@ -105,7 +108,9 @@ export class ChatQuestionService {
       const openai = createOpenAI({ apiKey });
 
       const nameNote = userName ? ` The user's name is ${userName}.` : '';
-      const summaryBlock = userSummary ? `\nAbout the user:\n${userSummary}\n\n` : '';
+      const summaryBlock = userSummary
+        ? `\nAbout the user:\n${userSummary}\n\n`
+        : '';
 
       const { text } = await generateText({
         model: openai('gpt-4o'),

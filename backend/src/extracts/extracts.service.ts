@@ -9,10 +9,8 @@ import {
   asc,
   desc,
   eq,
-  gte,
   inArray,
   isNotNull,
-  isNull,
   lt,
   lte,
   ne,
@@ -168,6 +166,16 @@ export class ExtractsService {
       event_end_at: a.eventEndAt?.toISOString() ?? null,
       event_location: a.eventLocation,
       external_event_id: a.externalEventId ?? null,
+      scheduled_at: a.scheduledAt?.toISOString() ?? null,
+      duration_minutes: a.durationMinutes ?? null,
+      auto_scheduled: a.autoScheduled ?? false,
+      scheduling_reason: a.schedulingReason ?? null,
+      recurrence_rule: a.recurrenceRule ?? null,
+      recurrence_parent_id: a.recurrenceParentId ?? null,
+      rsvp_status: a.rsvpStatus ?? null,
+      is_all_day: a.isAllDay ?? false,
+      is_deadline: a.isDeadline ?? false,
+      energy_level: a.energyLevel ?? null,
       created_at: a.createdAt.toISOString(),
       updated_at: a.updatedAt.toISOString(),
     };
@@ -646,9 +654,7 @@ export class ExtractsService {
     });
   }
 
-  async getTaskCounts(
-    userId: string,
-  ): Promise<{
+  async getTaskCounts(userId: string): Promise<{
     today: number;
     overdue: number;
     total_open: number;
@@ -949,6 +955,7 @@ export class ExtractsService {
     const tomorrow: ExtractRow[] = [];
     const thisWeek: ExtractRow[] = [];
     const nextWeek: ExtractRow[] = [];
+    const later: ExtractRow[] = [];
 
     for (const row of rows) {
       if (row.tone === 'idea') continue;
@@ -956,7 +963,13 @@ export class ExtractsService {
       const anchor =
         row.status === 'snoozed' && row.snoozedUntil
           ? row.snoozedUntil
-          : (row.eventStartAt ?? row.dueAt ?? row.periodStart ?? null);
+          : (row.scheduledAt ??
+            row.eventStartAt ??
+            row.dueAt ??
+            row.periodStart ??
+            null);
+
+      const bucketEnd = row.periodEnd ?? anchor;
 
       const isDueOverdue = row.dueAt && row.dueAt < now;
       const isEventOverdue =
@@ -973,33 +986,33 @@ export class ExtractsService {
         tomorrow.push(row);
       } else if (
         row.urgency === 'this_week' ||
-        (anchor && anchor <= thisWeekEnd)
+        (bucketEnd && bucketEnd <= thisWeekEnd)
       ) {
         thisWeek.push(row);
-      } else if (anchor && anchor <= nextWeekEnd) {
+      } else if (bucketEnd && bucketEnd <= nextWeekEnd) {
         nextWeek.push(row);
       } else if (anchor) {
-        nextWeek.push(row);
+        later.push(row);
       } else if (row.urgency !== 'someday' && row.urgency !== 'none') {
         thisWeek.push(row);
       }
     }
 
     const sortByAnchor = (a: ExtractRow, b: ExtractRow) => {
-      const aT =
-        a.status === 'snoozed' && a.snoozedUntil
-          ? a.snoozedUntil.getTime()
-          : (a.eventStartAt?.getTime() ?? a.dueAt?.getTime() ?? Infinity);
-      const bT =
-        b.status === 'snoozed' && b.snoozedUntil
-          ? b.snoozedUntil.getTime()
-          : (b.eventStartAt?.getTime() ?? b.dueAt?.getTime() ?? Infinity);
-      return aT - bT;
+      const getTime = (r: ExtractRow) =>
+        r.status === 'snoozed' && r.snoozedUntil
+          ? r.snoozedUntil.getTime()
+          : (r.scheduledAt?.getTime() ??
+            r.eventStartAt?.getTime() ??
+            r.dueAt?.getTime() ??
+            Infinity);
+      return getTime(a) - getTime(b);
     };
     today.sort(sortByAnchor);
     tomorrow.sort(sortByAnchor);
     thisWeek.sort(sortByAnchor);
     nextWeek.sort(sortByAnchor);
+    later.sort(sortByAnchor);
 
     const batchKeys = ['shopping', 'errands', 'follow_ups'] as const;
     const batch_counts = batchKeys.map((bk) => ({
@@ -1013,7 +1026,7 @@ export class ExtractsService {
       tomorrow,
       this_week: thisWeek,
       next_week: nextWeek,
-      later: [],
+      later,
       batch_counts,
     };
   }

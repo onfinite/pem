@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -19,7 +18,6 @@ import type { UserRow } from '../database/schemas';
 import { CalendarConnectionService } from './calendar-connection.service';
 import { CalendarSyncService } from './calendar-sync.service';
 import { GoogleCalendarService } from './google-calendar.service';
-import { AppleConnectDto, AppleSyncDto } from './dto/apple-sync.dto';
 
 @ApiTags('calendar')
 @Controller('calendar')
@@ -44,7 +42,6 @@ export class CalendarController {
         provider: c.provider,
         is_primary: c.isPrimary,
         google_email: c.googleEmail,
-        apple_calendar_ids: c.appleCalendarIds,
         last_synced_at: c.lastSyncedAt?.toISOString() ?? null,
       })),
     };
@@ -56,15 +53,6 @@ export class CalendarController {
   @ApiOperation({ summary: 'Set a calendar connection as primary' })
   async setPrimary(@CurrentUser() user: UserRow, @Param('id') id: string) {
     await this.connections.setPrimary(user.id, id);
-    return { ok: true };
-  }
-
-  @Delete('connections/apple')
-  @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Disconnect Apple Calendar' })
-  async disconnectApple(@CurrentUser() user: UserRow) {
-    await this.connections.disconnect(user.id, 'apple');
     return { ok: true };
   }
 
@@ -143,38 +131,5 @@ export class CalendarController {
           );
       }
     }
-  }
-
-  // ── Apple Calendar ────────────────────────────────────────
-
-  @Post('apple/connect')
-  @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({
-    summary: 'Register Apple Calendar connection with selected calendar IDs',
-  })
-  async connectApple(
-    @CurrentUser() user: UserRow,
-    @Body() body: AppleConnectDto,
-  ) {
-    const conn = await this.connections.upsertApple(user.id, body.calendarIds);
-    return {
-      id: conn.id,
-      provider: conn.provider,
-      is_primary: conn.isPrimary,
-    };
-  }
-
-  @Post('apple/sync')
-  @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Sync Apple Calendar events from device' })
-  async syncApple(@CurrentUser() user: UserRow, @Body() body: AppleSyncDto) {
-    const count = await this.sync.syncAppleEvents(
-      user.id,
-      body.connectionId,
-      body.events,
-    );
-    return { synced: count };
   }
 }

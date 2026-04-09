@@ -1,6 +1,8 @@
 import {
   boolean,
   index,
+  integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -11,6 +13,15 @@ import {
 import { calendarConnectionsTable } from './calendar-connections.schema';
 import { messagesTable } from './messages.schema';
 import { usersTable } from './users.schema';
+
+export type RecurrenceRule = {
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval: number;
+  by_day?: number[];
+  by_month_day?: number;
+  until?: string;
+  count?: number;
+};
 
 export const EXTRACT_SOURCES = ['dump', 'calendar'] as const;
 export type ExtractSource = (typeof EXTRACT_SOURCES)[number];
@@ -97,6 +108,20 @@ export const extractsTable = pgTable(
       mode: 'date',
     }),
     eventLocation: text('event_location'),
+
+    scheduledAt: timestamp('scheduled_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    durationMinutes: integer('duration_minutes'),
+    autoScheduled: boolean('auto_scheduled').default(false),
+    schedulingReason: text('scheduling_reason'),
+    recurrenceRule: jsonb('recurrence_rule').$type<RecurrenceRule>(),
+    recurrenceParentId: uuid('recurrence_parent_id'),
+    rsvpStatus: text('rsvp_status'),
+    isAllDay: boolean('is_all_day').default(false),
+    isDeadline: boolean('is_deadline').default(false),
+    energyLevel: text('energy_level'),
 
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()

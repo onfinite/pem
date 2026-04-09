@@ -28,7 +28,7 @@ globs: backend/**
 
 **Morning brief:** `BriefCronService` — hourly cron checks user timezones, generates brief at midnight (user local), saves as `kind: 'brief'` Pem message, delayed push at user's `notification_time`.
 
-**Calendar integration:** Google Calendar (server-side OAuth + API via `googleapis`) and Apple Calendar (on-device). Unchanged from before. Agent can emit `calendar_writes` to create events.
+**Calendar integration:** Google Calendar only (server-side OAuth + API via `googleapis`). Agent can emit `calendar_writes` to create events.
 
 **AI models:** `gpt-4o-mini` for triage. `gpt-4o` for PemAgent, question answering, morning brief. `text-embedding-3-small` for pgvector embeddings. `whisper-1` for voice.
 
@@ -48,9 +48,8 @@ PATCH /users/me/timezone
 GET  /calendar/connections
 GET  /calendar/google/auth-url
 GET  /calendar/google/callback
-POST /calendar/apple/connect|sync
 PATCH /calendar/connections/:id/primary
-DELETE /calendar/connections/:id|/apple
+DELETE /calendar/connections/:id
 ```
 
 **Layout:**

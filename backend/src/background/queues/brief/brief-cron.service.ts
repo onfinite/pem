@@ -62,7 +62,12 @@ export class BriefCronService {
             )
             .limit(1);
           if (existingBrief.length === 0) {
-            await this.generateBrief(user.id, user.timezone, user.name, user.summary);
+            await this.generateBrief(
+              user.id,
+              user.timezone,
+              user.name,
+              user.summary,
+            );
           }
         }
 
@@ -95,7 +100,12 @@ export class BriefCronService {
     }
   }
 
-  async generateBrief(userId: string, timezone: string, userName?: string | null, userSummary?: string | null): Promise<void> {
+  async generateBrief(
+    userId: string,
+    timezone: string,
+    userName?: string | null,
+    userSummary?: string | null,
+  ): Promise<void> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) return;
 
@@ -161,8 +171,12 @@ Errands: ${errands.length} items`;
     const openai = createOpenAI({ apiKey });
     const agentModel = this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
 
-    const nameNote = userName ? `\nThe user's name is ${userName}. Use it occasionally.` : '';
-    const summaryBlock = userSummary ? `\nAbout the user:\n${userSummary}\n` : '';
+    const nameNote = userName
+      ? `\nThe user's name is ${userName}. Use it occasionally.`
+      : '';
+    const summaryBlock = userSummary
+      ? `\nAbout the user:\n${userSummary}\n`
+      : '';
 
     try {
       const result = await generateText({

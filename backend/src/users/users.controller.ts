@@ -51,6 +51,9 @@ export class UsersController {
       notification_time: user.notificationTime,
       summary: user.summary ?? null,
       onboarding_completed: user.onboardingCompleted,
+      preferences: user.preferences ?? null,
+      focus_hours_per_week: user.focusHoursPerWeek ?? null,
+      scheduling_confidence: user.schedulingConfidence ?? null,
     };
   }
 
@@ -105,6 +108,38 @@ export class UsersController {
     @Body() body: PushTokenDto,
   ): Promise<{ ok: true }> {
     await this.users.setPushToken(user.id, body.token ?? null);
+    return { ok: true };
+  }
+
+  @Patch('me/preferences')
+  @UseGuards(ClerkAuthGuard)
+  @ApiBearerAuth('clerk')
+  @ApiOperation({ summary: 'Set scheduling preferences' })
+  async setPreferences(
+    @CurrentUser() user: UserRow,
+    @Body()
+    body: {
+      work_hours?: { start: string; end: string };
+      work_days?: number[];
+      work_type?: 'office' | 'remote' | 'hybrid';
+      personal_windows?: ('evenings' | 'weekends' | 'lunch' | 'mornings')[];
+      focus_time_pref?: 'morning' | 'afternoon';
+      errand_window?: 'weekend_morning' | 'lunch' | 'after_work';
+    },
+  ) {
+    await this.users.setPreferences(user.id, body);
+    return { ok: true };
+  }
+
+  @Patch('me/focus-time')
+  @UseGuards(ClerkAuthGuard)
+  @ApiBearerAuth('clerk')
+  @ApiOperation({ summary: 'Set focus hours per week and preferred time' })
+  async setFocusTime(
+    @CurrentUser() user: UserRow,
+    @Body() body: { hours: number; preferred_time?: 'morning' | 'afternoon' },
+  ) {
+    await this.users.setFocusTime(user.id, body.hours, body.preferred_time);
     return { ok: true };
   }
 

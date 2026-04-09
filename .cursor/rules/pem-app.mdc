@@ -28,7 +28,7 @@ alwaysApply: false
 - **PemResponseSheet:** Slide-up sheet showing Pem's answer when user asks a question via the voice bar. Dismissible. Appears automatically from `onPemResponse` callback.
 - **Daily Brief (InboxHomeScreen):** Time-based sections — overdue (red), today (amber timeline), tomorrow (expanded), this_week (collapsed), next_week (collapsed), later (collapsed), batch chips, someday tease. "All clear" empty state. Powered by `GET /inbox/brief`.
 - **ExtractDetailModal:** Shows item detail + change history (from `GET /extracts/:id/history`), draft generation (for `follow_ups` items), copy + share buttons, snooze sheet (later today, tomorrow, weekend, next week, someday), calendar event info.
-- **Calendar:** Settings → Calendar section. Google via `expo-web-browser` OAuth flow; Apple via `expo-calendar` on-device. Multiple Google accounts supported. `CalendarSection` component in `components/settings/`.
+- **Calendar:** Settings → Calendar section. Google only via `expo-web-browser` OAuth flow. Multiple Google accounts supported. `CalendarSection` component in `components/settings/`.
 - **Real-time:** **`hooks/useDumpInboxStream.ts`** after dump → refresh inbox.
 - **Timezone:** **`TimezoneRegistrar`** — PATCH **`/users/me/timezone`**.
 - **Push:** **`PushNotificationRegistrar`** — **`inbox_updated`** → **`/inbox`**.

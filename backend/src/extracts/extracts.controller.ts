@@ -34,7 +34,9 @@ export class ExtractsController {
   ) {}
 
   @Get('counts')
-  @ApiOperation({ summary: 'Task counts for the pill — today, overdue, total open' })
+  @ApiOperation({
+    summary: 'Task counts for the pill — today, overdue, total open',
+  })
   async getCounts(@CurrentUser() user: UserRow) {
     return this.extracts.getTaskCounts(user.id);
   }
