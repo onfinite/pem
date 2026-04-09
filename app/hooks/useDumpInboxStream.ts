@@ -4,22 +4,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import EventSource from "react-native-sse";
 
 export type DumpInboxStreamOptions = {
-  /** Called when worker publishes item.created / inbox.updated so the list can refresh mid-run. */
   onInboxProgress?: () => void;
 };
 
-/**
- * SSE after dump: listens until `stream.done` in payload JSON.
- * Nest sends named SSE events (`event: stream.done`, etc.); react-native-sse only runs
- * handlers registered for that event name — not only `message`.
- */
+type DumpSseEvents = "stream.done" | "item.created" | "inbox.updated";
+
+/** @deprecated Use useChatStream instead. Kept for reference only. */
 export function useDumpInboxStream(
   dumpId: string | null,
   options?: DumpInboxStreamOptions,
 ) {
   const { getToken } = useAuth();
   const [done, setDone] = useState(false);
-  const esRef = useRef<InstanceType<typeof EventSource> | null>(null);
+  const esRef = useRef<EventSource<DumpSseEvents> | null>(null);
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   const onInboxProgressRef = useRef(options?.onInboxProgress);
@@ -40,7 +37,7 @@ export function useDumpInboxStream(
       if (!token || cancelled) return;
 
       const url = `${getApiBaseUrl()}/inbox/stream?dumpId=${encodeURIComponent(dumpId)}`;
-      const es = new EventSource(url, {
+      const es = new EventSource<DumpSseEvents>(url, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "text/event-stream",
@@ -48,7 +45,7 @@ export function useDumpInboxStream(
       });
       esRef.current = es;
 
-      const listener: (event: { data?: string | null }) => void = (event) => {
+      const listener = (event: { data?: string | null }) => {
         const ev = event.data;
         if (typeof ev !== "string" || ev.length === 0) return;
         try {

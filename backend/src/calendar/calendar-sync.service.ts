@@ -131,6 +131,19 @@ export class CalendarSyncService {
 
     if (rows.length > 0) {
       this.log.log(`Auto-done ${rows.length} past calendar events`);
+      for (const row of rows) {
+        await this.db.insert(logsTable).values({
+          userId: row.userId,
+          type: 'calendar',
+          extractId: row.id,
+          isAgent: true,
+          pemNote: 'auto_done_past_calendar_event',
+          payload: {
+            op: 'auto_done_calendar',
+            source: 'cron',
+          },
+        });
+      }
     }
     return rows.length;
   }
@@ -203,7 +216,7 @@ export class CalendarSyncService {
     event: GoogleEvent,
   ): Promise<void> {
     if (event.status === 'cancelled') {
-      await this.db
+      const cancelled = await this.db
         .update(extractsTable)
         .set({
           status: 'dismissed',
@@ -215,7 +228,19 @@ export class CalendarSyncService {
             eq(extractsTable.calendarConnectionId, conn.id),
             eq(extractsTable.externalEventId, event.id),
           ),
+        )
+        .returning({ id: extractsTable.id });
+      for (const row of cancelled) {
+        await this.logCalendarExtract(
+          conn.userId,
+          conn.id,
+          row.id,
+          'calendar_sync_event_cancelled',
+          {
+            external_event_id: event.id,
+          },
         );
+      }
       return;
     }
 
@@ -258,23 +283,54 @@ export class CalendarSyncService {
           updatedAt: now,
         })
         .where(eq(extractsTable.id, existing.id));
+      await this.logCalendarExtract(
+        conn.userId,
+        conn.id,
+        existing.id,
+        'calendar_sync_event_updated',
+        {
+          external_event_id: event.id,
+          summary: event.summary ?? null,
+          is_past: isPast,
+          event_start_at: event.start.toISOString(),
+          event_end_at: event.end.toISOString(),
+        },
+      );
     } else {
-      await this.db.insert(extractsTable).values({
-        userId: conn.userId,
-        source: 'calendar',
-        extractText: event.summary ?? 'Calendar event',
-        originalText: event.summary ?? '',
-        status: isPast ? 'done' : 'inbox',
-        tone: 'confident',
-        urgency: this.classifyEventUrgency(event.start),
-        externalEventId: event.id,
-        calendarConnectionId: conn.id,
-        eventStartAt: event.start,
-        eventEndAt: event.end,
-        eventLocation: event.location,
-        doneAt: isPast ? now : null,
-        updatedAt: now,
-      });
+      const [inserted] = await this.db
+        .insert(extractsTable)
+        .values({
+          userId: conn.userId,
+          source: 'calendar',
+          extractText: event.summary ?? 'Calendar event',
+          originalText: event.summary ?? '',
+          status: isPast ? 'done' : 'inbox',
+          tone: 'confident',
+          urgency: this.classifyEventUrgency(event.start),
+          externalEventId: event.id,
+          calendarConnectionId: conn.id,
+          eventStartAt: event.start,
+          eventEndAt: event.end,
+          eventLocation: event.location,
+          doneAt: isPast ? now : null,
+          updatedAt: now,
+        })
+        .returning({ id: extractsTable.id });
+      if (inserted) {
+        await this.logCalendarExtract(
+          conn.userId,
+          conn.id,
+          inserted.id,
+          'calendar_sync_event_created',
+          {
+            external_event_id: event.id,
+            summary: event.summary ?? null,
+            is_past: isPast,
+            event_start_at: event.start.toISOString(),
+            event_end_at: event.end.toISOString(),
+          },
+        );
+      }
     }
   }
 
@@ -303,6 +359,24 @@ export class CalendarSyncService {
       pemNote: note,
       payload: { ...payload, connectionId },
       error: error ?? null,
+    });
+  }
+
+  /** Per-extract audit for sync upserts (shows on item history). */
+  private async logCalendarExtract(
+    userId: string,
+    connectionId: string,
+    extractId: string,
+    op: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.db.insert(logsTable).values({
+      userId,
+      type: 'calendar',
+      extractId,
+      isAgent: true,
+      pemNote: op,
+      payload: { op, connectionId, ...payload },
     });
   }
 }

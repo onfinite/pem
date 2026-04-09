@@ -5,43 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1775598314429,
-      "tag": "0000_kind_quentin_quire",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1775601172721,
-      "tag": "0001_yellow_swordsman",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1775608736656,
-      "tag": "0002_classy_machine_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1775614672826,
-      "tag": "0003_empty_shatterstar",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1775626373418,
-      "tag": "0004_sour_bruce_banner",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1775630380000,
-      "tag": "0005_loud_emma_frost",
+      "when": 1775724420866,
+      "tag": "0000_sloppy_morlun",
       "breakpoints": true
     }
   ]

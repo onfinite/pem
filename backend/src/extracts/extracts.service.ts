@@ -23,9 +23,9 @@ import { DateTime } from 'luxon';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
-  dumpsTable,
   extractsTable,
   logsTable,
+  messagesTable,
   reportedIssuesTable,
   usersTable,
   type ExtractRow,
@@ -46,6 +46,9 @@ export type ExtractQueryFilters = {
   urgency?: string;
 };
 
+/** When `'agent'`, skip user audit row — caller must log (e.g. dump pipeline `logEntry`). */
+export type ExtractMutationAudit = { initiatedBy?: 'user' | 'agent' };
+
 export type BriefBuckets = {
   overdue: ExtractRow[];
   today: ExtractRow[];
@@ -60,20 +63,42 @@ export type BriefBuckets = {
 export class ExtractsService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
+  /** Compact row shape for activity / audit (GET …/history, debugging). */
+  private extractStateSnapshot(r: ExtractRow): Record<string, unknown> {
+    return {
+      status: r.status,
+      urgency: r.urgency,
+      due_at: r.dueAt?.toISOString() ?? null,
+      snoozed_until: r.snoozedUntil?.toISOString() ?? null,
+      done_at: r.doneAt?.toISOString() ?? null,
+      dismissed_at: r.dismissedAt?.toISOString() ?? null,
+      batch_key: r.batchKey ?? null,
+    };
+  }
+
   private async logUserChange(args: {
     userId: string;
     extractId: string;
+    messageId?: string | null;
     op: string;
     payload?: Record<string, unknown>;
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
   }): Promise<void> {
+    const payload: Record<string, unknown> = {
+      op: args.op,
+      ...(args.payload ?? {}),
+    };
+    if (args.before) payload.before = args.before;
+    if (args.after) payload.after = args.after;
     await this.db.insert(logsTable).values({
       userId: args.userId,
       type: 'extract',
       extractId: args.extractId,
-      dumpId: null,
+      messageId: args.messageId ?? null,
       pemNote: null,
       isAgent: false,
-      payload: { op: args.op, ...(args.payload ?? {}) },
+      payload,
     });
   }
 
@@ -106,7 +131,7 @@ export class ExtractsService {
   serialize(a: ExtractRow) {
     return {
       id: a.id,
-      dump_id: a.dumpId,
+      message_id: a.messageId,
       source: a.source ?? 'dump',
       text: a.extractText,
       original_text: a.originalText,
@@ -310,7 +335,11 @@ export class ExtractsService {
     };
   }
 
-  async markDone(userId: string, id: string): Promise<ExtractRow> {
+  async markDone(
+    userId: string,
+    id: string,
+    audit?: ExtractMutationAudit,
+  ): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
@@ -327,11 +356,24 @@ export class ExtractsService {
       .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
-    await this.logUserChange({ userId, extractId: id, op: 'mark_done' });
+    if (audit?.initiatedBy !== 'agent') {
+      await this.logUserChange({
+        userId,
+        extractId: id,
+        messageId: row.messageId,
+        op: 'mark_done',
+        before: this.extractStateSnapshot(row),
+        after: this.extractStateSnapshot(u),
+      });
+    }
     return u;
   }
 
-  async dismiss(userId: string, id: string): Promise<ExtractRow> {
+  async dismiss(
+    userId: string,
+    id: string,
+    audit?: ExtractMutationAudit,
+  ): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
@@ -349,12 +391,23 @@ export class ExtractsService {
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
 
-    await this.logUserChange({ userId, extractId: id, op: 'dismiss' });
+    if (audit?.initiatedBy !== 'agent') {
+      await this.logUserChange({
+        userId,
+        extractId: id,
+        messageId: row.messageId,
+        op: 'dismiss',
+        before: this.extractStateSnapshot(row),
+        after: this.extractStateSnapshot(u),
+      });
+    }
     return u;
   }
 
   async undone(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
+    const row = await this.findForUser(userId, id);
+    if (!row) throw new NotFoundException('Extract not found');
     const now = new Date();
     const [u] = await this.db
       .update(extractsTable)
@@ -362,12 +415,21 @@ export class ExtractsService {
       .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
-    await this.logUserChange({ userId, extractId: id, op: 'undone' });
+    await this.logUserChange({
+      userId,
+      extractId: id,
+      messageId: row.messageId,
+      op: 'undone',
+      before: this.extractStateSnapshot(row),
+      after: this.extractStateSnapshot(u),
+    });
     return u;
   }
 
   async undismiss(userId: string, id: string): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
+    const row = await this.findForUser(userId, id);
+    if (!row) throw new NotFoundException('Extract not found');
     const now = new Date();
     const [u] = await this.db
       .update(extractsTable)
@@ -375,7 +437,14 @@ export class ExtractsService {
       .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
-    await this.logUserChange({ userId, extractId: id, op: 'undismiss' });
+    await this.logUserChange({
+      userId,
+      extractId: id,
+      messageId: row.messageId,
+      op: 'undismiss',
+      before: this.extractStateSnapshot(row),
+      after: this.extractStateSnapshot(u),
+    });
     return u;
   }
 
@@ -384,6 +453,7 @@ export class ExtractsService {
     id: string,
     until: SnoozeUntil,
     isoOverride?: string,
+    audit?: ExtractMutationAudit,
   ): Promise<ExtractRow> {
     await this.wakeSnoozed(userId);
     const row = await this.findForUser(userId, id);
@@ -436,17 +506,20 @@ export class ExtractsService {
       .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
-    await this.logUserChange({
-      userId,
-      extractId: id,
-      op: 'snooze',
-      payload: {
-        until,
-        iso_override: isoOverride ?? null,
-        snoozed_until: u.snoozedUntil?.toISOString() ?? null,
-        status: u.status,
-      },
-    });
+    if (audit?.initiatedBy !== 'agent') {
+      await this.logUserChange({
+        userId,
+        extractId: id,
+        messageId: row.messageId,
+        op: 'snooze',
+        before: this.extractStateSnapshot(row),
+        after: this.extractStateSnapshot(u),
+        payload: {
+          until,
+          iso_override: isoOverride ?? null,
+        },
+      });
+    }
     return u;
   }
 
@@ -494,13 +567,11 @@ export class ExtractsService {
     await this.logUserChange({
       userId,
       extractId: id,
+      messageId: row.messageId,
       op: 'reschedule',
-      payload: {
-        target,
-        new_urgency: u.urgency,
-        new_status: u.status,
-        new_due_at: u.dueAt?.toISOString() ?? null,
-      },
+      before: this.extractStateSnapshot(row),
+      after: this.extractStateSnapshot(u),
+      payload: { target },
     });
     return u;
   }
@@ -514,34 +585,24 @@ export class ExtractsService {
       calendar_connection_id: row.calendarConnectionId,
     };
 
-    let dumpSnapshot: Record<string, unknown> | null = null;
-    if (row.dumpId) {
-      const [d] = await this.db
-        .select({
-          id: dumpsTable.id,
-          text: dumpsTable.dumpText,
-          polishedText: dumpsTable.polishedText,
-          status: dumpsTable.status,
-          createdAt: dumpsTable.createdAt,
-          additionalContext: dumpsTable.additionalContext,
-          agentAssumptions: dumpsTable.agentAssumptions,
-          audioKey: dumpsTable.audioKey,
-        })
-        .from(dumpsTable)
+    let messageSnapshot: Record<string, unknown> | null = null;
+    if (row.messageId) {
+      const [m] = await this.db
+        .select()
+        .from(messagesTable)
         .where(
-          and(eq(dumpsTable.id, row.dumpId), eq(dumpsTable.userId, userId)),
+          and(
+            eq(messagesTable.id, row.messageId),
+            eq(messagesTable.userId, userId),
+          ),
         )
         .limit(1);
-      if (d) {
-        dumpSnapshot = {
-          id: d.id,
-          text: d.text,
-          polished_text: d.polishedText,
-          status: d.status,
-          created_at: d.createdAt.toISOString(),
-          additional_context: d.additionalContext,
-          agent_assumptions: d.agentAssumptions,
-          has_audio: d.audioKey != null && d.audioKey.length > 0,
+      if (m) {
+        messageSnapshot = {
+          id: m.id,
+          content: m.content,
+          kind: m.kind,
+          created_at: m.createdAt.toISOString(),
         };
       }
     }
@@ -551,17 +612,19 @@ export class ExtractsService {
       .values({
         userId,
         extractId: id,
-        dumpId: row.dumpId,
+        messageId: row.messageId,
         reason,
         extractSnapshot,
-        dumpSnapshot,
+        messageSnapshot,
       })
       .returning({ id: reportedIssuesTable.id });
 
     await this.logUserChange({
       userId,
       extractId: id,
+      messageId: row.messageId,
       op: 'report',
+      before: this.extractStateSnapshot(row),
       payload: {
         reason,
         reported_issue_id: created?.id ?? null,

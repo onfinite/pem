@@ -1,12 +1,11 @@
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { dumpsTable } from './dumps.schema';
+import { messagesTable } from './messages.schema';
 import { usersTable } from './users.schema';
 
 export const MEMORY_STATUSES = ['active', 'historical'] as const;
 export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
 
-/** Natural-language memory rows: append-only history; supersede via status. */
 export const memoryFactsTable = pgTable(
   'memory_facts',
   {
@@ -19,9 +18,10 @@ export const memoryFactsTable = pgTable(
     learnedAt: timestamp('learned_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
-    sourceDumpId: uuid('source_dump_id').references(() => dumpsTable.id, {
-      onDelete: 'set null',
-    }),
+    sourceMessageId: uuid('source_message_id').references(
+      () => messagesTable.id,
+      { onDelete: 'set null' },
+    ),
     status: text('status').notNull(),
     provenance: text('provenance'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })

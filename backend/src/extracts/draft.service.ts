@@ -54,20 +54,28 @@ Write a message the user can copy and send.`;
 
     const draft = result.text.trim();
 
-    await this.db
+    const beforeDraft = extract.draftText ?? null;
+    const [updated] = await this.db
       .update(extractsTable)
       .set({ draftText: draft, updatedAt: new Date() })
       .where(
         and(eq(extractsTable.id, extract.id), eq(extractsTable.userId, userId)),
-      );
+      )
+      .returning();
 
     await this.db.insert(logsTable).values({
       userId,
       type: 'extract',
       extractId: extract.id,
-      isAgent: true,
+      messageId: extract.messageId,
+      isAgent: false,
       pemNote: 'Draft generated',
-      payload: { op: 'draft_generated', draft_length: draft.length },
+      payload: {
+        op: 'draft_generated',
+        before: { draft_text: beforeDraft },
+        after: { draft_text: updated?.draftText ?? draft },
+        draft_length: draft.length,
+      },
     });
 
     return draft;

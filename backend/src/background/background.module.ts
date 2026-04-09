@@ -8,12 +8,16 @@ import { ExtractsModule } from '../extracts/extracts.module';
 import { DatabaseModule } from '../database/database.module';
 import { ProfileModule } from '../profile/profile.module';
 import { PushModule } from '../push/push.module';
-import { ExtractionModule } from './agents/extraction/extraction.module';
-import { InboxEventsModule } from './inbox-events/inbox-events.module';
+import { AgentsModule } from '../agents/agents.module';
+import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { TranscriptionModule } from '../transcription/transcription.module';
+import { ChatEventsModule } from './chat-events/chat-events.module';
+import { BriefCronService } from './queues/brief/brief-cron.service';
 import { CalendarCronService } from './queues/calendar/calendar-cron.service';
 import { CalendarSyncProcessor } from './queues/calendar/calendar-sync.processor';
-import { DumpExtractService } from './queues/dump/dump-extract.service';
-import { DumpProcessor } from './queues/dump/dump.processor';
+import { ChatOrchestratorService } from './queues/chat/chat-orchestrator.service';
+import { ChatProcessor } from './queues/chat/chat.processor';
+import { ChatQuestionService } from './queues/chat/chat-question.service';
 
 @Global()
 @Module({
@@ -37,21 +41,25 @@ import { DumpProcessor } from './queues/dump/dump.processor';
       },
       inject: [ConfigService],
     }),
-    BullModule.registerQueue({ name: 'dump' }, { name: 'calendar-sync' }),
+    BullModule.registerQueue({ name: 'chat' }, { name: 'calendar-sync' }),
     CalendarModule,
     DatabaseModule,
     ProfileModule,
     ExtractsModule,
-    ExtractionModule,
-    InboxEventsModule,
+    AgentsModule,
+    ChatEventsModule,
+    EmbeddingsModule,
+    TranscriptionModule,
     PushModule,
   ],
   providers: [
-    DumpProcessor,
-    DumpExtractService,
+    ChatProcessor,
+    ChatOrchestratorService,
+    ChatQuestionService,
+    BriefCronService,
     CalendarSyncProcessor,
     CalendarCronService,
   ],
-  exports: [BullModule, InboxEventsModule],
+  exports: [BullModule, ChatEventsModule, ChatQuestionService],
 })
 export class BackgroundModule {}

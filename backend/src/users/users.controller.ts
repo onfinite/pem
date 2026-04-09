@@ -178,7 +178,7 @@ export class UsersController {
       note: r.note,
       status: r.status,
       learned_at: r.learnedAt?.toISOString?.() ?? r.learnedAt,
-      source_dump_id: r.sourceDumpId,
+      source_message_id: r.sourceMessageId,
       provenance: r.provenance,
     };
   }

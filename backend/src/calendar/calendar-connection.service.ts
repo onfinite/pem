@@ -5,6 +5,7 @@ import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
   calendarConnectionsTable,
+  logsTable,
   type CalendarConnectionRow,
   type CalendarProvider,
 } from '../database/schemas';
@@ -76,6 +77,11 @@ export class CalendarConnectionService {
           })
           .where(eq(calendarConnectionsTable.id, existing.id))
           .returning();
+        await this.logCalendarUser(userId, 'Google calendar tokens updated', {
+          op: 'google_connection_updated',
+          connection_id: updated.id,
+          google_email: tokens.email,
+        });
         return updated;
       }
     }
@@ -93,6 +99,12 @@ export class CalendarConnectionService {
         googleEmail: tokens.email,
       })
       .returning();
+    await this.logCalendarUser(userId, 'Google calendar connected', {
+      op: 'google_connection_created',
+      connection_id: created.id,
+      google_email: tokens.email,
+      is_primary: created.isPrimary,
+    });
     return created;
   }
 
@@ -130,6 +142,11 @@ export class CalendarConnectionService {
         })
         .where(eq(calendarConnectionsTable.id, existing.id))
         .returning();
+      await this.logCalendarUser(userId, 'Apple calendar selection updated', {
+        op: 'apple_connection_updated',
+        connection_id: updated.id,
+        calendar_id_count: calendarIds.length,
+      });
       return updated;
     }
 
@@ -142,6 +159,12 @@ export class CalendarConnectionService {
         appleCalendarIds: calendarIds,
       })
       .returning();
+    await this.logCalendarUser(userId, 'Apple calendar connected', {
+      op: 'apple_connection_created',
+      connection_id: created.id,
+      calendar_id_count: calendarIds.length,
+      is_primary: created.isPrimary,
+    });
     return created;
   }
 
@@ -160,9 +183,26 @@ export class CalendarConnectionService {
           eq(calendarConnectionsTable.userId, userId),
         ),
       );
+    await this.logCalendarUser(userId, 'Primary calendar set', {
+      op: 'calendar_set_primary',
+      connection_id: connectionId,
+    });
   }
 
   async disconnect(userId: string, provider: CalendarProvider): Promise<void> {
+    const rows = await this.db
+      .select({
+        id: calendarConnectionsTable.id,
+        provider: calendarConnectionsTable.provider,
+      })
+      .from(calendarConnectionsTable)
+      .where(
+        and(
+          eq(calendarConnectionsTable.userId, userId),
+          eq(calendarConnectionsTable.provider, provider),
+        ),
+      );
+    if (rows.length === 0) return;
     await this.db
       .delete(calendarConnectionsTable)
       .where(
@@ -171,18 +211,43 @@ export class CalendarConnectionService {
           eq(calendarConnectionsTable.provider, provider),
         ),
       );
+    for (const r of rows) {
+      await this.logCalendarUser(userId, 'Calendar disconnected', {
+        op: 'calendar_disconnected',
+        connection_id: r.id,
+        provider: r.provider,
+      });
+    }
   }
 
   /** Disconnect a specific connection by ID (for multi-Google support). */
   async disconnectById(userId: string, connectionId: string): Promise<void> {
-    await this.db
+    const [row] = await this.db
+      .select({ provider: calendarConnectionsTable.provider })
+      .from(calendarConnectionsTable)
+      .where(
+        and(
+          eq(calendarConnectionsTable.id, connectionId),
+          eq(calendarConnectionsTable.userId, userId),
+        ),
+      )
+      .limit(1);
+    const [removed] = await this.db
       .delete(calendarConnectionsTable)
       .where(
         and(
           eq(calendarConnectionsTable.id, connectionId),
           eq(calendarConnectionsTable.userId, userId),
         ),
-      );
+      )
+      .returning({ id: calendarConnectionsTable.id });
+    if (removed) {
+      await this.logCalendarUser(userId, 'Calendar disconnected', {
+        op: 'calendar_disconnected',
+        connection_id: removed.id,
+        provider: row?.provider ?? null,
+      });
+    }
   }
 
   async getPrimary(userId: string): Promise<CalendarConnectionRow | null> {
@@ -227,6 +292,20 @@ export class CalendarConnectionService {
         updatedAt: new Date(),
       })
       .where(eq(calendarConnectionsTable.id, connectionId));
+  }
+
+  private async logCalendarUser(
+    userId: string,
+    pemNote: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.db.insert(logsTable).values({
+      userId,
+      type: 'calendar',
+      isAgent: false,
+      pemNote,
+      payload,
+    });
   }
 
   private async hasPrimary(userId: string): Promise<boolean> {

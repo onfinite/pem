@@ -7,14 +7,10 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { dumpsTable } from './dumps.schema';
 import { extractsTable } from './extracts.schema';
+import { messagesTable } from './messages.schema';
 import { usersTable } from './users.schema';
 
-/**
- * User-reported problems with an extract — full snapshots for reproducing
- * extraction / classification issues without relying on live rows.
- */
 export const reportedIssuesTable = pgTable(
   'reported_issues',
   {
@@ -25,20 +21,14 @@ export const reportedIssuesTable = pgTable(
     extractId: uuid('extract_id').references(() => extractsTable.id, {
       onDelete: 'set null',
     }),
-    dumpId: uuid('dump_id').references(() => dumpsTable.id, {
+    messageId: uuid('message_id').references(() => messagesTable.id, {
       onDelete: 'set null',
     }),
-    /** User explanation (what was wrong). */
     reason: text('reason').notNull(),
-    /** API-shaped extract fields at report time + internal ids for calendar linkage. */
     extractSnapshot: jsonb('extract_snapshot')
       .notNull()
       .$type<Record<string, unknown>>(),
-    /**
-     * Source dump fields at report time (raw text, polish, pipeline context).
-     * Null when the extract came from calendar only.
-     */
-    dumpSnapshot: jsonb('dump_snapshot').$type<Record<
+    messageSnapshot: jsonb('message_snapshot').$type<Record<
       string,
       unknown
     > | null>(),
@@ -49,7 +39,7 @@ export const reportedIssuesTable = pgTable(
   (t) => [
     index('ix_reported_issues_user_id').on(t.userId),
     index('ix_reported_issues_extract_id').on(t.extractId),
-    index('ix_reported_issues_dump_id').on(t.dumpId),
+    index('ix_reported_issues_message_id').on(t.messageId),
     index('ix_reported_issues_created_at').on(t.createdAt),
   ],
 );

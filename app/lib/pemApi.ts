@@ -43,9 +43,77 @@ export async function createDump(
   });
 }
 
+// ── Chat API ──
+
+export type ApiMessage = {
+  id: string;
+  role: "user" | "pem";
+  kind: "text" | "voice" | "brief";
+  content: string | null;
+  voice_url: string | null;
+  transcript: string | null;
+  triage_category: string | null;
+  processing_status: string | null;
+  polished_text: string | null;
+  parent_message_id: string | null;
+  created_at: string;
+};
+
+export async function sendChatMessage(
+  getToken: () => Promise<string | null>,
+  params: { kind: "text" | "voice"; content?: string; voice_url?: string; audio_key?: string },
+): Promise<{ message: ApiMessage; status: string }> {
+  return apiFetch("/chat/messages", {
+    method: "POST",
+    getToken,
+    body: JSON.stringify(params),
+  });
+}
+
+export async function sendVoiceMessage(
+  getToken: () => Promise<string | null>,
+  audioUri: string,
+  mimeType = "audio/m4a",
+): Promise<{ message: ApiMessage; status: string }> {
+  const token = await getToken();
+  const formData = new FormData();
+  formData.append("audio", {
+    uri: audioUri,
+    name: "recording.m4a",
+    type: mimeType,
+  } as any);
+  const res = await fetch(`${getApiBaseUrl()}/chat/voice`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(body || `Voice upload failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getChatMessages(
+  getToken: () => Promise<string | null>,
+  opts?: { before?: string; limit?: number },
+): Promise<{ messages: ApiMessage[]; has_more: boolean }> {
+  const params = new URLSearchParams();
+  if (opts?.before) params.set("before", opts.before);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return apiFetch(`/chat/messages${qs ? `?${qs}` : ""}`, {
+    method: "GET",
+    getToken,
+  });
+}
+
 export type ApiExtract = {
   id: string;
-  dump_id: string;
+  message_id: string | null;
   source: "dump" | "calendar";
   text: string;
   original_text: string;

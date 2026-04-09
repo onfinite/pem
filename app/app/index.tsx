@@ -18,7 +18,7 @@ export default function Index() {
   }
 
   if (isSignedIn) {
-    return <Redirect href="/inbox" />;
+    return <Redirect href="/chat" />;
   }
 
   return <Redirect href="/welcome" />;

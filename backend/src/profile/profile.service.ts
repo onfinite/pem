@@ -107,7 +107,7 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
     userId: string,
     memoryKeyRaw: string,
     note: string,
-    sourceDumpId: string,
+    sourceMessageId: string,
   ): Promise<void> {
     const memoryKey = normalizeProfileKey(memoryKeyRaw);
     if (!memoryKey) {
@@ -122,7 +122,7 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
       userId,
       memoryKey,
       note: trimmed,
-      sourceDumpId,
+      sourceMessageId,
       status: 'active',
       provenance: 'agent',
     });
@@ -157,7 +157,7 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
       userId,
       memoryKey,
       note,
-      sourceDumpId: null,
+      sourceMessageId: null,
       status: 'active',
       provenance: 'user',
     });

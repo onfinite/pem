@@ -1,6 +1,5 @@
 import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-/** Pem users — synced from Clerk; `push_token` for Expo; `timezone` IANA (e.g. America/Los_Angeles). */
 export const usersTable = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   clerkId: text('clerk_id').notNull().unique(),
@@ -8,6 +7,7 @@ export const usersTable = pgTable('users', {
   name: text('name'),
   pushToken: text('push_token'),
   timezone: text('timezone'),
+  notificationTime: text('notification_time').default('07:00'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

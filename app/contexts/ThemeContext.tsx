@@ -36,6 +36,12 @@ export type ThemeSemantic = {
   secondarySurface: string;
   /** Subtle brand-tinted control surface */
   brandMutedSurface: string;
+  /** User chat bubble background */
+  userBubble: string;
+  /** Text on user chat bubble */
+  userBubbleText: string;
+  /** Dim/meta text on user chat bubble (timestamps, ticks) */
+  userBubbleMeta: string;
 };
 
 /** Light: white canvas, clear grays, solid ink (Apple/Google clarity). */
@@ -54,6 +60,9 @@ const lightSemantic: ThemeSemantic = {
   placeholder: "#8e8e93",
   secondarySurface: "#f2f2f7",
   brandMutedSurface: "#fff4ed",
+  userBubble: "#e2ddd5",
+  userBubbleText: "#1c1a16",
+  userBubbleMeta: "#8a847d",
 };
 
 /** Dark: true black base, elevated surfaces, light gray text (not muddy brown-gray). */
@@ -72,6 +81,9 @@ const darkSemantic: ThemeSemantic = {
   placeholder: "#8e8e93",
   secondarySurface: "#1c1c1e",
   brandMutedSurface: "#3a2e26",
+  userBubble: "#3b3330",
+  userBubbleText: "#f5f2ef",
+  userBubbleMeta: "#a09891",
 };
 
 function resolveScheme(

@@ -1,10 +1,9 @@
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { extractsTable } from './extracts.schema';
-import { dumpsTable } from './dumps.schema';
+import { messagesTable } from './messages.schema';
 import { usersTable } from './users.schema';
 
-/** At most one row per extract (unique extract_id). */
 export const followUpsTable = pgTable(
   'follow_ups',
   {
@@ -21,9 +20,10 @@ export const followUpsTable = pgTable(
       withTimezone: true,
       mode: 'date',
     }),
-    sourceDumpId: uuid('source_dump_id').references(() => dumpsTable.id, {
-      onDelete: 'set null',
-    }),
+    sourceMessageId: uuid('source_message_id').references(
+      () => messagesTable.id,
+      { onDelete: 'set null' },
+    ),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

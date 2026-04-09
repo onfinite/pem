@@ -108,7 +108,7 @@ export default function PushNotificationRegistrar() {
     function openFromNotification(notification: Notifications.Notification) {
       const kind = kindFromNotification(notification);
       if (kind === "inbox_updated") {
-        router.push("/inbox");
+        router.push("/chat");
       }
     }
 

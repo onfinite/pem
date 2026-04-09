@@ -65,7 +65,7 @@ export default function SettingsScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/inbox");
+      router.replace("/chat");
     }
   }, []);
 

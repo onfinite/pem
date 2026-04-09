@@ -9,7 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { calendarConnectionsTable } from './calendar-connections.schema';
-import { dumpsTable } from './dumps.schema';
+import { messagesTable } from './messages.schema';
 import { usersTable } from './users.schema';
 
 export const EXTRACT_SOURCES = ['dump', 'calendar'] as const;
@@ -49,10 +49,9 @@ export const extractsTable = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => usersTable.id, { onDelete: 'cascade' }),
-    dumpId: uuid('dump_id').references(() => dumpsTable.id, {
+    messageId: uuid('message_id').references(() => messagesTable.id, {
       onDelete: 'cascade',
     }),
-    /** 'dump' (default) or 'calendar'. */
     source: text('source').notNull().default('dump'),
     extractText: text('text').notNull(),
     originalText: text('original_text').notNull(),
@@ -78,14 +77,12 @@ export const extractsTable = pgTable(
       mode: 'date',
     }),
     pemNote: text('pem_note'),
-    /** Soft LLM suggestion for when to revisit; optional. */
     recommendedAt: timestamp('recommended_at', {
       withTimezone: true,
       mode: 'date',
     }),
     draftText: text('draft_text'),
 
-    /** External calendar event ID (Google eventId or Apple eventIdentifier). */
     externalEventId: text('external_event_id'),
     calendarConnectionId: uuid('calendar_connection_id').references(
       () => calendarConnectionsTable.id,
@@ -110,7 +107,7 @@ export const extractsTable = pgTable(
   },
   (t) => [
     index('ix_extracts_user_id').on(t.userId),
-    index('ix_extracts_dump_id').on(t.dumpId),
+    index('ix_extracts_message_id').on(t.messageId),
     index('ix_extracts_user_status_urgency').on(t.userId, t.status, t.urgency),
     index('ix_extracts_batch').on(t.userId, t.batchKey),
     uniqueIndex('uq_extracts_calendar').on(

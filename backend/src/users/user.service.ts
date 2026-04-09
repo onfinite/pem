@@ -1,9 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
-import { extractsTable, usersTable, type UserRow } from '../database/schemas';
+import {
+  extractsTable,
+  logsTable,
+  usersTable,
+  type UserRow,
+} from '../database/schemas';
 
 @Injectable()
 export class UserService {
@@ -97,9 +102,37 @@ export class UserService {
       .update(usersTable)
       .set({ pushToken: token })
       .where(eq(usersTable.id, userId));
+    await this.db.insert(logsTable).values({
+      userId,
+      type: 'user',
+      isAgent: false,
+      pemNote: token ? 'Push token set' : 'Push token cleared',
+      payload: {
+        op: 'push_token',
+        action: token ? 'set' : 'cleared',
+        token_length: token?.length ?? 0,
+      },
+    });
   }
 
   async setTimezone(userId: string, timezone: string): Promise<void> {
+    const [prev] = await this.db
+      .select({ tz: usersTable.timezone })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    const [{ n }] = await this.db
+      .select({
+        n: sql<number>`count(*)::int`,
+      })
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.timezonePending, true),
+        ),
+      );
+    const pendingBefore = Number(n) || 0;
     const now = new Date();
     await this.db
       .update(usersTable)
@@ -109,5 +142,17 @@ export class UserService {
       .update(extractsTable)
       .set({ timezonePending: false, updatedAt: now })
       .where(eq(extractsTable.userId, userId));
+    await this.db.insert(logsTable).values({
+      userId,
+      type: 'user',
+      isAgent: false,
+      pemNote: 'Timezone updated',
+      payload: {
+        op: 'timezone_updated',
+        from: prev?.tz ?? null,
+        to: timezone,
+        extracts_had_timezone_pending: pendingBefore,
+      },
+    });
   }
 }
