@@ -32,7 +32,7 @@ export type ClientMessage = ApiMessage & {
 type DisplayItem =
   | { type: "message"; message: ClientMessage }
   | { type: "date"; date: string }
-  | { type: "status"; text: string; id: string };
+  | { type: "typing" };
 
 export default function ChatScreen() {
   const { colors } = useTheme();
@@ -192,8 +192,9 @@ export default function ChatScreen() {
     deduped.push(msg);
   }
 
-  for (const [msgId, text] of Object.entries(statusMap)) {
-    displayItems.push({ type: "status", text, id: msgId });
+  const pemIsTyping = Object.keys(statusMap).length > 0;
+  if (pemIsTyping) {
+    displayItems.push({ type: "typing" });
   }
 
   for (let i = deduped.length - 1; i >= 0; i--) {
@@ -212,14 +213,14 @@ export default function ChatScreen() {
 
   const renderItem = ({ item }: { item: DisplayItem }) => {
     if (item.type === "date") return <ChatDateHeader date={item.date} />;
-    if (item.type === "status") return <ChatStatusBubble text={item.text} />;
+    if (item.type === "typing") return <ChatStatusBubble />;
     return <ChatBubble message={item.message} />;
   };
 
   const keyExtractor = (item: DisplayItem, index: number) => {
     if (item.type === "message") return item.message.id;
     if (item.type === "date") return `date-${item.date}`;
-    return `status-${item.id}`;
+    return "typing-indicator";
   };
 
   return (

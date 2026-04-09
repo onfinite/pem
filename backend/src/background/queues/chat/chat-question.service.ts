@@ -47,6 +47,9 @@ function formatAllOpen(rows: ExtractRow[]): string {
       if (r.batchKey) parts.push(`[${r.batchKey}]`);
       if (r.urgency && r.urgency !== 'none') parts.push(`urgency: ${r.urgency}`);
       if (r.tone) parts.push(`tone: ${r.tone}`);
+      if (r.dueAt) parts.push(`due: ${r.dueAt.toISOString()}`);
+      if (r.eventStartAt) parts.push(`event: ${r.eventStartAt.toISOString()}`);
+      if (r.periodLabel) parts.push(`period: ${r.periodLabel}`);
       return `- ${parts.join(' | ')}`;
     })
     .join('\n');

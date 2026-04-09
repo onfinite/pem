@@ -48,7 +48,7 @@ export type ThemeSemantic = {
 const lightSemantic: ThemeSemantic = {
   pageBackground: "#ffffff",
   surfacePage: "#f2f2f7",
-  cardBackground: "#ffffff",
+  cardBackground: "#f0f0f0",
   textPrimary: "#000000",
   textSecondary: "#3a3a3c",
   textTertiary: "#6e6e73",

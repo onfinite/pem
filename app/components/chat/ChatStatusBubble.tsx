@@ -1,49 +1,65 @@
 import { useTheme } from "@/contexts/ThemeContext";
-import { fontFamily, fontSize, space, radii } from "@/constants/typography";
+import { space, radii } from "@/constants/typography";
 import { useEffect, useRef } from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, StyleSheet, View } from "react-native";
 
-type Props = {
-  text: string;
-};
+const DOT_SIZE = 7;
+const DOT_GAP = 5;
 
-export default function ChatStatusBubble({ text }: Props) {
-  const { colors } = useTheme();
-  const opacity = useRef(new Animated.Value(0.4)).current;
+function BouncingDot({ delay, color }: { delay: number; color: string }) {
+  const translateY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 600,
-          easing: Easing.inOut(Easing.ease),
+        Animated.delay(delay),
+        Animated.timing(translateY, {
+          toValue: -5,
+          duration: 280,
+          easing: Easing.out(Easing.ease),
           useNativeDriver: true,
         }),
-        Animated.timing(opacity, {
-          toValue: 0.4,
-          duration: 600,
-          easing: Easing.inOut(Easing.ease),
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 280,
+          easing: Easing.in(Easing.ease),
           useNativeDriver: true,
         }),
+        Animated.delay(400 - delay),
       ]),
     );
     anim.start();
     return () => anim.stop();
-  }, [opacity]);
+  }, [delay, translateY]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.dot,
+        {
+          backgroundColor: color,
+          transform: [{ translateY }],
+        },
+      ]}
+    />
+  );
+}
+
+export default function ChatStatusBubble() {
+  const { colors } = useTheme();
+  const dotColor = colors.textTertiary;
 
   return (
     <View style={styles.row}>
-      <Animated.View
-        style={[
-          styles.bubble,
-          { backgroundColor: colors.surfacePage, opacity },
-        ]}
+      <View
+        style={[styles.bubble, { backgroundColor: colors.cardBackground }]}
       >
-        <Text style={[styles.text, { color: colors.textSecondary }]}>
-          {text}
-        </Text>
-      </Animated.View>
+        <View style={styles.dotsRow}>
+          <BouncingDot delay={0} color={dotColor} />
+          <BouncingDot delay={140} color={dotColor} />
+          <BouncingDot delay={280} color={dotColor} />
+        </View>
+      </View>
     </View>
   );
 }
@@ -55,14 +71,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[3],
   },
   bubble: {
-    maxWidth: "70%",
     paddingHorizontal: space[3],
-    paddingVertical: space[2],
+    paddingVertical: 10,
     borderRadius: radii.lg,
     borderBottomLeftRadius: radii.sm,
   },
-  text: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
+  dotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: DOT_GAP,
+    height: 16,
+  },
+  dot: {
+    width: DOT_SIZE,
+    height: DOT_SIZE,
+    borderRadius: DOT_SIZE / 2,
   },
 });
