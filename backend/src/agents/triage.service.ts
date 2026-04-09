@@ -32,14 +32,23 @@ export class TriageService {
       const { output } = await generateText({
         model: openai(model),
         output: Output.object({ schema: triageCategorySchema }),
-        system: `You classify messages sent to Pem, an AI life assistant that manages tasks, calendar, and thoughts.
+        system: `You classify messages sent to Pem, an AI life assistant that manages tasks, calendar, thoughts, and personal context.
 
 Rules:
-- If the message is just "ok", "thanks", "got it", "hi", emoji-only, or similar small talk → trivial
+- If the message is ONLY "ok", "thanks", "got it", "hi", "hey", emoji-only, or similar 1-3 word small talk with ZERO informational content → trivial
 - If the message is purely asking a question (what's on my calendar, what did I say about X, how many tasks do I have) → question_only
-- If the message contains ANY actionable content (things to do, reminders, plans, journaling, emotional dumping, commands like "cancel X" or "add Y to calendar", or mixed content with both questions and tasks) → needs_agent
+- If the message contains ANY of the following → needs_agent:
+  - Things to do, buy, grab, pick up, handle, or remember ("I need to grab diapers", "don't forget milk")
+  - Reminders, plans, scheduling, commands ("cancel X", "add Y to calendar")
+  - Journaling, emotional dumping, venting
+  - Personal goals, visions, aspirations, life context ("my goal is to become X", "I want to be Y")
+  - Preferences, habits, facts about themselves ("I'm vegetarian", "I live in SF")
+  - Mixed content with both questions and tasks
+  - ANY sentence longer than a few words that shares information about the user's life
+- When in doubt between trivial and needs_agent, choose needs_agent
 - When in doubt between question_only and needs_agent, choose needs_agent
-- People sometimes ask rhetorical questions while dumping thoughts — that is needs_agent, not question_only`,
+- People sometimes ask rhetorical questions while dumping thoughts — that is needs_agent, not question_only
+- IMPORTANT: "trivial" is ONLY for pure greetings and acknowledgments with zero content. If the user shares ANYTHING about their life, plans, feelings, or goals, that is needs_agent.`,
         prompt: `Classify this message:\n"""${content.slice(0, 2000)}"""`,
         providerOptions: { openai: { strictJsonSchema: false } },
       });

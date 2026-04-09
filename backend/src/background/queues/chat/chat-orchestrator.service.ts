@@ -521,12 +521,19 @@ export class ChatOrchestratorService {
       );
     }
 
-    // Summary update
+    // Summary update — merge new info into existing summary incrementally
     if (output.summary_update) {
-      await this.db
-        .update(usersTable)
-        .set({ summary: output.summary_update })
-        .where(eq(usersTable.id, userId));
+      const existingSummary = ctx.userSummary;
+      const merged = await this.mergeSummary(
+        existingSummary,
+        output.summary_update,
+      );
+      if (merged) {
+        await this.db
+          .update(usersTable)
+          .set({ summary: merged })
+          .where(eq(usersTable.id, userId));
+      }
     }
   }
 
@@ -620,6 +627,47 @@ export class ChatOrchestratorService {
     )
       return "Hey! What's on your mind?";
     return 'Got it!';
+  }
+
+  /**
+   * Merge new info into the existing user summary without losing old facts.
+   * If no existing summary, the new info becomes the seed.
+   */
+  private async mergeSummary(
+    existing: string | null,
+    newInfo: string,
+  ): Promise<string | null> {
+    const trimmed = newInfo.trim();
+    if (!trimmed) return null;
+
+    if (!existing?.trim()) return trimmed;
+
+    try {
+      const openai = createOpenAI({
+        apiKey: this.config.get('openai.apiKey'),
+      });
+      const { text } = await generateText({
+        model: openai('gpt-4o-mini'),
+        system: `You maintain a concise profile summary of a person for their AI assistant.
+
+Rules:
+- Merge the NEW information into the EXISTING summary.
+- KEEP all existing facts — goals, habits, preferences, relationships, worries, life situation.
+- ADD the new information naturally alongside what already exists.
+- If new info CONFLICTS with old info, keep both with context (e.g. "Previously focused on X, now shifting toward Y").
+- If new info REINFORCES existing facts, strengthen the language.
+- Write in third person, warm and accurate tone.
+- Keep under 300 words. Be concise but complete.
+- Output ONLY the merged summary text, no preamble.`,
+        prompt: `EXISTING SUMMARY:\n${existing}\n\nNEW INFORMATION:\n${trimmed}`,
+      });
+      return text.trim() || existing;
+    } catch (e) {
+      this.log.warn(
+        `Summary merge failed: ${e instanceof Error ? e.message : 'unknown'}`,
+      );
+      return existing;
+    }
   }
 
   private async seedSummaryIfReady(userId: string): Promise<void> {

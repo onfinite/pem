@@ -99,7 +99,7 @@ export const pemAgentOutputSchema = z.object({
   calendar_updates: z.array(calendarUpdateSchema).default([]),
   calendar_deletes: z.array(calendarDeleteSchema).default([]),
   summary_update: z.string().nullish().transform((v) => v ?? null).describe(
-    'If the user revealed important life context (goals, relationships, preferences, worries, life situation) that should update their profile summary, provide the FULL updated summary here. Keep under 500 tokens. Only update when genuinely new info is shared.',
+    'If the user revealed important life context (goals, visions, relationships, preferences, worries, habits, life situation), provide ONLY the new information learned from this message. Do NOT repeat the existing summary — just the new facts. Keep under 200 tokens. The system merges this into the existing profile automatically.',
   ),
   polished_text: nullStr.describe(
     'Cleaned up version of the user message for the thought log',
@@ -129,6 +129,7 @@ Rules for task extraction:
 - Dates: "tomorrow" means the next day. "this weekend" means Saturday AND Sunday. "next week" starts Monday.
 - Be smart about deduplication. If "buy milk" already exists, don't create it again.
 - Default to the most common-sense interpretation. People buy groceries to eat, pick up prescriptions to take, etc.
+- IMPORTANT: "I need to grab X", "I need to buy X", "I should get X", "don't forget X" are ALL actionable. ALWAYS create a task for these. NEVER just acknowledge without creating a task when the user mentions something they need to do, buy, or handle.
 
 CRITICAL — Meetings and calendar events:
 - EVERY meeting or appointment MUST also be created as a task in "creates" with due_at set.
@@ -136,10 +137,17 @@ CRITICAL — Meetings and calendar events:
 - Example: "Meet Hasib at 10:45 AM tomorrow" → creates: [{text: "Meet Hasib", due_at: "...", ...}] AND calendar_writes: [{summary: "Meet Hasib", start_at: "...", linked_new_item_index: 0}].
 - This way the meeting shows up both in the calendar AND as a visible task.
 
+CRITICAL — Visions, aspirations, and goals are NOT tasks:
+- Statements like "my goal is to become X", "I want to be Y", "my dream is Z", "I aspire to", "I hope to someday" are personal visions and aspirations. They are NOT actionable tasks.
+- NEVER create a task (in "creates") for a vision, aspiration, life goal, or identity statement.
+- Instead, store these in memory_writes (with a key like "life_goals", "aspirations", "vision") AND set summary_update with the new info.
+- Acknowledge warmly ("That's a powerful vision" / "I love that goal") and tell the user you've noted it.
+- Only create a task if there is a SPECIFIC, CONCRETE action to take (e.g. "I want to start a business — register an LLC" → the registration is a task, the vision is memory).
+
 Rules for your response:
 - Keep it conversational. 1-4 sentences usually.
 - Summarize what you did: "Got it — added milk to your shopping list and scheduled the dentist for Thursday at 2pm."
-- If nothing actionable was found, just acknowledge warmly.
+- If you created tasks, say so explicitly ("Added to your shopping list", "Created a task for that").
 - If the user is journaling or venting, acknowledge their feelings. Don't try to extract tasks from emotional content unless there's a clear action item.
 - NEVER use markdown, bold, asterisks, or bullet lists. Plain text only.
 
@@ -157,9 +165,11 @@ Rules for calendar management:
 - "next week" starts Monday.
 
 Rules for summary_update:
-- Only propose a summary_update when the user shares genuinely new life context: goals, family, relationships, preferences, worries, habits, life situation.
-- Include ALL existing facts plus the new info in the update (it replaces the old summary).
-- Do NOT update the summary for routine task dumps or questions.`;
+- When the user shares life context (goals, visions, relationships, preferences, worries, habits, life situation), output ONLY the new information in summary_update.
+- Do NOT repeat the existing summary. Just the new facts learned from THIS message.
+- The system will merge your new info into the existing summary automatically.
+- Do NOT update the summary for routine task dumps or questions.
+- Even small personal facts are worth capturing — they compound over time.`;
 
 @Injectable()
 export class PemAgentService {

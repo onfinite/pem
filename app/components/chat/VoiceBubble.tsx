@@ -85,7 +85,7 @@ function PlaybackWaveform({
   return (
     <View style={waveStyles.container}>
       {heights.map((h, i) => {
-        const filled = i / BAR_COUNT <= progress;
+        const filled = progress > 0 && i / BAR_COUNT < progress;
         return (
           <View
             key={i}
@@ -216,11 +216,11 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
 
   const bubbleBg = isUser ? colors.userBubble : colors.cardBackground;
   const textOnBubble = isUser ? colors.userBubbleText : colors.textPrimary;
-  const activeBarColor = isUser ? colors.userBubbleText : pemAmber;
+  const activeBarColor = pemAmber;
   const inactiveBarColor = isUser ? colors.userBubbleMeta : colors.borderMuted;
   const dimText = isUser ? colors.userBubbleMeta : colors.textTertiary;
-  const playBtnBg = isUser ? `${colors.userBubbleText}18` : colors.secondarySurface;
-  const playIcon = isUser ? colors.userBubbleText : colors.textPrimary;
+  const playBtnBg = pemAmber;
+  const playIcon = "#ffffff";
   const tickColor = isUser ? colors.userBubbleMeta : colors.textTertiary;
   const chipBg = isUser ? `${colors.userBubbleText}15` : colors.secondarySurface;
   const chipText = isUser ? colors.userBubbleMeta : colors.textSecondary;
@@ -282,6 +282,13 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
             {isPlaying || currentTime > 0 ? formatDuration(currentTime) : formatDuration(duration)}
           </Text>
         </View>
+
+        {/* Transcribing indicator while voice is being uploaded + transcribed */}
+        {isUser && isSending && !transcript && (
+          <Text style={[styles.transcribingText, { color: dimText }]}>
+            Transcribing...
+          </Text>
+        )}
 
         {/* Transcript */}
         {transcript && showTranscript && (
@@ -385,6 +392,12 @@ const styles = StyleSheet.create({
   toggleText: {
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.xs,
+  },
+  transcribingText: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.xs,
+    marginTop: space[1],
+    fontStyle: "italic",
   },
   transcriptText: {
     fontFamily: fontFamily.sans.regular,

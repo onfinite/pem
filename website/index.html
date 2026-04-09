@@ -3,203 +3,117 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pem — Get it out of your head.</title>
-  <meta name="description" content="Dump your thoughts. Pem extracts what matters, organizes your inbox, connects to your calendar, and answers questions with Ask. iOS coming soon.">
+  <title>Pem — Your mind, organized.</title>
+  <meta name="description" content="Chat with Pem like a trusted friend. Dump your thoughts — voice or text. Pem extracts tasks, manages your calendar, and keeps your life organized. iOS coming soon.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;1,9..144,200;1,9..144,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;0,9..144,400;1,9..144,200;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
       --cream: #faf8f4;
+      --cream-dark: #111110;
       --border: #e8e2d8;
-      --border2: #d8d0c4;
+      --border-dark: #2a2826;
       --text: #1c1a16;
+      --text-dark: #eae7e2;
       --text2: #6b6560;
+      --text2-dark: #9a938c;
       --muted: #b8b0a4;
+      --muted-dark: #5a5450;
       --amber: #e8763a;
       --amber-dark: #c45e22;
       --amber-bg: #fdf2ea;
+      --amber-bg-dark: #2a1e14;
       --amber-b: #fce0c4;
+      --card: #ffffff;
+      --card-dark: #1c1b19;
+      --pem-bubble: #f0f0f0;
+      --pem-bubble-dark: #1e1d1b;
+      --user-bubble: #3a3632;
+      --user-bubble-dark: #3a3632;
     }
+
     body {
       background: var(--cream);
       color: var(--text);
       font-family: 'DM Sans', sans-serif;
-      font-weight: 300;
+      font-weight: 400;
       -webkit-font-smoothing: antialiased;
       line-height: 1.6;
+      overflow-x: hidden;
     }
 
+    /* ─── Hero ─── */
     .hero {
       min-height: 100vh;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      align-items: center;
-    }
-    .hero-left {
-      padding: 72px 56px 72px 72px;
       display: flex;
-      flex-direction: column;
+      align-items: center;
       justify-content: center;
-      align-items: flex-start;
+      padding: 60px 40px 80px;
+      gap: 80px;
+    }
+    .hero-content {
+      max-width: 480px;
+      flex-shrink: 0;
     }
     .kicker {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 500;
-      letter-spacing: 0.2em;
-      color: var(--muted);
+      letter-spacing: 0.15em;
+      color: var(--amber);
       text-transform: uppercase;
-      margin-bottom: 22px;
+      margin-bottom: 20px;
     }
     h1 {
       font-family: 'Fraunces', serif;
       font-weight: 200;
-      font-size: clamp(36px, 4vw, 54px);
+      font-size: clamp(34px, 4.2vw, 52px);
       line-height: 1.08;
       letter-spacing: -0.02em;
-      margin-bottom: 14px;
-      max-width: 440px;
+      margin-bottom: 18px;
     }
     h1 em { font-style: italic; color: var(--amber); }
     .lead {
-      font-family: 'Fraunces', serif;
-      font-style: italic;
-      font-weight: 200;
-      font-size: clamp(16px, 1.9vw, 20px);
+      font-size: 17px;
       color: var(--text2);
-      margin-bottom: 22px;
-      max-width: 440px;
-    }
-    .sub {
-      font-size: 15px;
-      color: var(--text2);
-      max-width: 420px;
-      margin-bottom: 16px;
-      line-height: 1.72;
-    }
-    .sub:last-of-type { margin-bottom: 22px; }
-
-    .signal-icons {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      gap: 18px 22px;
-      margin-bottom: 26px;
+      line-height: 1.65;
+      margin-bottom: 32px;
       max-width: 420px;
     }
-    .signal {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      text-align: center;
-    }
-    .signal-ic {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      background: var(--amber-bg);
-      border: 1px solid var(--amber-b);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--amber-dark);
-    }
-    .signal-ic svg { width: 22px; height: 22px; }
-    .signal-lbl {
-      font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .steps {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0;
-      margin-bottom: 24px;
-    }
-    .step {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 14px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background .2s;
-    }
-    .step:hover, .step.active { background: var(--amber-bg); }
-    .step-num {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      border: 1.5px solid var(--border2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      font-weight: 500;
-      color: var(--muted);
-    }
-    .step.active .step-num {
-      background: var(--amber);
-      border-color: var(--amber);
-      color: #fff;
-    }
-    .step-lbl { font-size: 12px; color: var(--muted); }
-    .step.active .step-lbl { color: var(--text); font-weight: 500; }
-    .step-sep { width: 20px; height: 1px; background: var(--border2); flex-shrink: 0; }
-
-    .progress {
-      height: 2px;
-      background: var(--border);
-      border-radius: 2px;
-      max-width: 380px;
-      width: 100%;
-      margin-bottom: 28px;
-      overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%;
-      background: var(--amber);
-      width: 0%;
-      transition: width linear;
-    }
-
-    .cta-btn {
+    .hero-cta {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: fit-content;
-      max-width: 100%;
-      align-self: flex-start;
+      gap: 8px;
       background: var(--amber);
       color: #fff;
       border: none;
-      padding: 16px 28px;
-      border-radius: 12px;
+      padding: 16px 32px;
+      border-radius: 14px;
       font-family: 'DM Sans', sans-serif;
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 500;
       cursor: pointer;
       transition: background .2s, transform .15s;
-      box-shadow: 0 8px 28px rgba(232,118,58,.26);
-      margin-bottom: 10px;
+      box-shadow: 0 8px 32px rgba(232,118,58,.22);
     }
-    .cta-btn:hover { background: var(--amber-dark); transform: translateY(-1px); }
-    .cta-note { font-size: 11px; color: var(--muted); width: 100%; max-width: 380px; }
+    .hero-cta:hover { background: var(--amber-dark); transform: translateY(-2px); }
+    .hero-cta svg { width: 18px; height: 18px; }
+    .hero-sub {
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
 
-    .ef { display: none; max-width: 380px; width: 100%; align-self: flex-start; }
+    /* ─── Email form ─── */
+    .ef { display: none; max-width: 400px; }
     .ef.open { display: block; }
     .ef-row {
       display: flex;
       border: 1.5px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       overflow: hidden;
-      background: #fff;
+      background: var(--card);
       margin-bottom: 8px;
     }
     .ef-row:focus-within { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
@@ -211,13 +125,14 @@
       padding: 14px 16px;
       font-family: 'DM Sans', sans-serif;
       font-size: 14px;
+      background: transparent;
     }
     .ef-row button {
       flex-shrink: 0;
       background: var(--amber);
       border: none;
-      padding: 14px 20px;
-      font-size: 13px;
+      padding: 14px 22px;
+      font-size: 14px;
       font-weight: 500;
       color: #fff;
       cursor: pointer;
@@ -227,50 +142,43 @@
       display: none;
       font-family: 'Fraunces', serif;
       font-style: italic;
-      font-size: 17px;
+      font-size: 18px;
       color: var(--amber);
-      margin-top: 8px;
-      align-self: flex-start;
+      margin-top: 10px;
     }
 
-    .hero-right {
-      border-left: 1px solid var(--border);
-      min-height: 100vh;
+    /* ─── Phone mockup ─── */
+    .phone-wrap {
+      flex-shrink: 0;
+      animation: float 7s ease-in-out infinite;
+    }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+    .iphone {
+      width: 280px;
+      height: 606px;
+      background: #1c1a16;
+      border-radius: 52px;
+      position: relative;
+      box-shadow: 0 50px 100px rgba(0,0,0,.2), 0 0 0 1px rgba(255,255,255,.06) inset;
+    }
+    .iphone-screen {
+      position: absolute;
+      inset: 4px;
+      background: var(--cream);
+      border-radius: 48px;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 48px 32px;
-    }
-    .phone-wrap { animation: float 7s ease-in-out infinite; }
-    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-
-    .iphone {
-      width: 260px;
-      height: 564px;
-      background: #d0ceca;
-      border-radius: 48px;
-      position: relative;
-      box-shadow:
-        inset 0 0 0 1.5px #e4e0da,
-        0 40px 80px rgba(0,0,0,.18);
-    }
-    .iphone-front {
-      position: absolute;
-      inset: 3px;
-      background: #f7f5f2;
-      border-radius: 46px;
-      overflow: hidden;
     }
     .dyn-island {
       position: absolute;
       top: 12px;
       left: 50%;
       transform: translateX(-50%);
-      width: 90px;
-      height: 28px;
+      width: 100px;
+      height: 30px;
       background: #1c1a16;
-      border-radius: 16px;
+      border-radius: 18px;
       z-index: 20;
     }
     .home-bar {
@@ -278,422 +186,626 @@
       bottom: 8px;
       left: 50%;
       transform: translateX(-50%);
-      width: 84px;
+      width: 90px;
       height: 4px;
       background: rgba(0,0,0,.12);
       border-radius: 3px;
       z-index: 20;
     }
-    .screens { position: absolute; inset: 3px; border-radius: 46px; overflow: hidden; }
-    .screen {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      opacity: 0;
-      transition: opacity .5s ease;
-      pointer-events: none;
-    }
-    .screen.active { opacity: 1; pointer-events: auto; }
 
-    .sb {
-      height: 48px;
-      flex-shrink: 0;
+    /* ─── Chat inside phone ─── */
+    .chat-header {
+      padding: 52px 16px 10px;
       display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      padding: 0 18px 6px;
-    }
-    .sb-t { font-size: 13px; font-weight: 600; font-family: -apple-system, sans-serif; }
-    .sb-i { display: flex; align-items: center; gap: 5px; }
-
-    /* Screen 1 — recording */
-    .s-dump { background: #f7f5f2; }
-    .dump-top {
-      padding: 0 18px 10px;
-      border-bottom: 1px solid rgba(0,0,0,.07);
-      flex-shrink: 0;
-    }
-    .dump-top-title {
-      font-family: 'Fraunces', serif;
-      font-size: 11px;
-      font-weight: 300;
-      letter-spacing: 0.2em;
-      color: var(--amber);
-      text-transform: uppercase;
-    }
-    .dump-top-sub {
-      font-size: 9px;
-      color: #8a8078;
-      font-family: -apple-system, sans-serif;
-      margin-top: 2px;
-    }
-    .dump-body {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 0 22px 36px;
-      gap: 18px;
+      gap: 8px;
+      border-bottom: 1px solid rgba(0,0,0,.06);
+      flex-shrink: 0;
     }
-    .rec-label {
+    .chat-header-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--text2);
+    }
+    .chat-header-name {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text);
+    }
+    .chat-header-count {
+      font-size: 11px;
+      color: var(--text2);
+      margin-left: auto;
+    }
+    .chat-header-gear {
+      width: 16px;
+      height: 16px;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+
+    .chat-body {
+      flex: 1;
+      overflow: hidden;
+      padding: 12px 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .chat-date {
+      text-align: center;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--muted);
+      padding: 4px 0;
+    }
+
+    /* Bubbles */
+    .bubble {
+      max-width: 82%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 12px;
+      line-height: 1.5;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      position: relative;
+    }
+    .bubble-user {
+      align-self: flex-end;
+      background: var(--user-bubble);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble-pem {
+      align-self: flex-start;
+      background: var(--pem-bubble);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+    .bubble-time {
+      font-size: 9px;
+      color: rgba(0,0,0,.35);
+      margin-top: 3px;
+      text-align: right;
+    }
+    .bubble-user .bubble-time { color: rgba(255,255,255,.5); }
+    .bubble-ticks {
+      font-size: 9px;
+      color: rgba(255,255,255,.5);
+      margin-left: 4px;
+    }
+
+    /* Voice bubble */
+    .voice-bubble {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 10px;
-      color: #8a7060;
-      font-family: -apple-system, sans-serif;
-      letter-spacing: .1em;
-      text-transform: uppercase;
     }
-    .rec-dot {
-      width: 6px;
-      height: 6px;
+    .voice-play {
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
-      background: #ff453a;
-      animation: recdot 1s ease-in-out infinite;
-    }
-    @keyframes recdot { 0%,100%{opacity:1} 50%{opacity:.35} }
-    .mic-circle {
-      width: 78px;
-      height: 78px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--amber), var(--amber-dark));
+      background: var(--amber);
       display: flex;
       align-items: center;
       justify-content: center;
-      animation: micpulse 2s ease-out infinite;
+      flex-shrink: 0;
     }
-    @keyframes micpulse {
-      0% { box-shadow: 0 0 0 0 rgba(232,118,58,.45); }
-      70% { box-shadow: 0 0 0 20px rgba(232,118,58,0); }
-      100% { box-shadow: 0 0 0 0 rgba(232,118,58,0); }
-    }
-    .mic-circle svg { width: 30px; height: 30px; fill: #fff; }
-    .waveform { display: flex; align-items: center; gap: 3px; height: 28px; }
-    .wb {
-      width: 3px;
-      border-radius: 3px;
-      background: var(--amber);
-      opacity: .65;
-    }
-    .wb:nth-child(1)  { height: 5px;  animation: wv 1s ease-in-out 0s infinite; }
-    .wb:nth-child(2)  { height: 14px; animation: wv 1s ease-in-out .07s infinite; }
-    .wb:nth-child(3)  { height: 22px; animation: wv 1s ease-in-out .14s infinite; }
-    .wb:nth-child(4)  { height: 10px; animation: wv 1s ease-in-out .21s infinite; }
-    .wb:nth-child(5)  { height: 24px; animation: wv 1s ease-in-out .28s infinite; }
-    .wb:nth-child(6)  { height: 8px;  animation: wv 1s ease-in-out .35s infinite; }
-    .wb:nth-child(7)  { height: 18px; animation: wv 1s ease-in-out .42s infinite; }
-    .wb:nth-child(8)  { height: 6px;  animation: wv 1s ease-in-out .49s infinite; }
-    .wb:nth-child(9)  { height: 15px; animation: wv 1s ease-in-out .56s infinite; }
-    .wb:nth-child(10) { height: 5px;  animation: wv 1s ease-in-out .63s infinite; }
-    .wb:nth-child(11) { height: 20px; animation: wv 1s ease-in-out .7s infinite; }
-    .wb:nth-child(12) { height: 4px;  animation: wv 1s ease-in-out .77s infinite; }
-    @keyframes wv { 0%,100%{ transform: scaleY(1); opacity: .5; } 50%{ transform: scaleY(1.55); opacity: 1; } }
-    .transcript-text {
-      font-size: 11.5px;
-      color: #8a7060;
-      font-family: -apple-system, sans-serif;
-      text-align: center;
-      line-height: 1.55;
-      max-width: 178px;
-    }
-    .transcript-text strong { color: #2a1a0e; font-weight: 450; }
-
-    /* Screen 2 */
-    .s-work { background: #f7f5f2; }
-    .work-mid {
+    .voice-play svg { width: 10px; height: 10px; fill: #fff; }
+    .voice-wave {
       flex: 1;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 20px;
-      text-align: center;
-      gap: 10px;
+      gap: 1.5px;
+      height: 20px;
+      overflow: hidden;
+      min-width: 0;
     }
-    .work-mid h3 {
-      font-family: 'Fraunces', serif;
-      font-style: italic;
-      font-weight: 200;
-      font-size: 17px;
-      color: #1c1a16;
+    .vb {
+      width: 2px;
+      border-radius: 1.5px;
+      background: var(--amber);
+      opacity: .5;
+      flex-shrink: 0;
     }
-    .work-mid p { font-size: 10px; color: #8a8078; max-width: 172px; line-height: 1.55; }
-    .pill {
-      font-size: 9px;
-      font-weight: 600;
-      color: var(--amber);
-      background: var(--amber-bg);
-      padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--amber-b);
+    .bubble-user .vb { background: #fff; opacity: .6; }
+    .voice-dur {
+      font-size: 10px;
+      color: var(--text2);
+      flex-shrink: 0;
+      min-width: 28px;
+      text-align: right;
     }
+    .bubble-user .voice-dur { color: rgba(255,255,255,.6); }
+    .voice-transcript {
+      font-size: 10.5px;
+      color: var(--text2);
+      margin-top: 6px;
+      line-height: 1.45;
+      padding-top: 6px;
+      border-top: 1px solid rgba(0,0,0,.06);
+    }
+    .bubble-user .voice-transcript { color: rgba(255,255,255,.55); border-top-color: rgba(255,255,255,.1); }
 
-    /* Screen 3 — Daily Brief */
-    .s-ready { background: #f7f5f2; }
-    .brief-h {
-      padding: 10px 14px 10px;
-      border-bottom: 1px solid rgba(0,0,0,.06);
+    /* Brief bubble */
+    .bubble-brief {
+      align-self: flex-start;
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-b);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+      max-width: 88%;
     }
-    .brief-kicker {
-      font-family: 'Fraunces', serif;
-      font-size: 11px;
-      letter-spacing: .2em;
-      color: var(--amber);
-      text-transform: uppercase;
-    }
-    .brief-h em {
-      font-family: 'Fraunces', serif;
-      font-style: italic;
-      font-weight: 200;
-      font-size: 11px;
-      color: #6b6560;
-      display: block;
-      margin-top: 5px;
-      line-height: 1.35;
-    }
-    .rows { flex: 1; padding: 10px 11px; display: flex; flex-direction: column; gap: 7px; overflow: hidden; }
-    .row {
-      background: #fff;
-      border: 1px solid rgba(0,0,0,.07);
-      border-radius: 10px;
-      padding: 9px 11px;
-      font-size: 11px;
-      font-weight: 600;
-      font-family: -apple-system, sans-serif;
-      color: #1c1a16;
-    }
-    .row small {
-      display: block;
-      font-size: 8px;
+    .brief-label {
+      font-size: 9px;
       font-weight: 600;
       color: var(--amber);
       text-transform: uppercase;
       letter-spacing: .08em;
-      margin-bottom: 3px;
+      margin-bottom: 6px;
     }
-    .row small.cal { color: #5a7ab8; }
-    .row small.draft { color: #2d8a5e; }
-    .row .hint {
-      display: block;
-      font-size: 9px;
-      font-weight: 400;
-      color: #8a7060;
-      margin-top: 3px;
-    }
-    .row.dim { opacity: .58; }
 
-    @media (max-width: 900px) {
-      .hero { grid-template-columns: 1fr; min-height: auto; }
-      .hero-right {
-        min-height: auto;
-        border-left: none;
-        border-bottom: 1px solid var(--border);
-        padding: 40px 20px;
-      }
-      .phone-wrap { animation: none; }
-      .iphone { width: 220px; height: 476px; }
-      .hero-left {
-        padding: 36px 24px 56px;
-        align-items: center;
-        text-align: center;
-      }
-      h1, .lead, .sub, .signal-icons { margin-left: auto; margin-right: auto; }
-      .signal-icons { justify-content: center; }
-      .steps { justify-content: center; }
-      .progress { margin-left: auto; margin-right: auto; }
-      .cta-btn, .ef, .ef-ok { align-self: center; }
+    /* Typing indicator */
+    .typing {
+      align-self: flex-start;
+      background: var(--pem-bubble);
+      border-radius: 16px;
+      border-bottom-left-radius: 4px;
+      padding: 12px 18px;
+      display: flex;
+      gap: 5px;
+      align-items: center;
     }
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      animation: typing 1.4s ease-in-out infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: .2s; }
+    .typing-dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes typing { 0%,60%,100%{transform:translateY(0);opacity:.4} 30%{transform:translateY(-5px);opacity:1} }
+
+    /* Chat input */
+    .chat-input {
+      padding: 8px 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-top: 1px solid rgba(0,0,0,.06);
+      flex-shrink: 0;
+    }
+    .chat-input-mic {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--amber);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .chat-input-mic svg { width: 16px; height: 16px; fill: #fff; }
+    .chat-input-field {
+      flex: 1;
+      background: var(--pem-bubble);
+      border-radius: 20px;
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      font-family: -apple-system, sans-serif;
+    }
+
+    /* ─── Steps section ─── */
+    .steps-section {
+      padding: 100px 40px;
+      text-align: center;
+    }
+    .steps-section h2 {
+      font-family: 'Fraunces', serif;
+      font-weight: 200;
+      font-size: clamp(28px, 3.5vw, 42px);
+      margin-bottom: 12px;
+    }
+    .steps-section h2 em { font-style: italic; color: var(--amber); }
+    .steps-subtitle {
+      font-size: 16px;
+      color: var(--text2);
+      margin-bottom: 64px;
+      max-width: 520px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .step-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px 28px;
+      text-align: center;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .step-card:hover { transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,.08); }
+    .step-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-b);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      color: var(--amber);
+    }
+    .step-icon svg { width: 26px; height: 26px; }
+    .step-num {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--amber);
+      text-transform: uppercase;
+      letter-spacing: .15em;
+      margin-bottom: 10px;
+    }
+    .step-card h3 {
+      font-family: 'Fraunces', serif;
+      font-weight: 300;
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+    .step-card p {
+      font-size: 14px;
+      color: var(--text2);
+      line-height: 1.65;
+    }
+
+    /* ─── Features ─── */
+    .features {
+      padding: 80px 40px 100px;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .feat {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 24px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .feat-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-b);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--amber);
+      flex-shrink: 0;
+    }
+    .feat-icon svg { width: 20px; height: 20px; }
+    .feat h4 {
+      font-weight: 600;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    .feat p {
+      font-size: 13px;
+      color: var(--text2);
+      line-height: 1.55;
+    }
+
+    /* ─── CTA ─── */
+    .bottom-cta {
+      text-align: center;
+      padding: 80px 40px 100px;
+    }
+    .bottom-cta h2 {
+      font-family: 'Fraunces', serif;
+      font-weight: 200;
+      font-size: clamp(26px, 3.2vw, 40px);
+      margin-bottom: 12px;
+    }
+    .bottom-cta h2 em { font-style: italic; color: var(--amber); }
+    .bottom-cta .lead { margin: 0 auto 32px; text-align: center; }
+
+    /* ─── Footer ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    footer a { color: var(--amber); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 900px) {
+      nav { padding: 14px 20px; }
+      .hero {
+        flex-direction: column-reverse;
+        padding: 100px 24px 60px;
+        gap: 48px;
+        min-height: auto;
+      }
+      .hero-content { text-align: center; max-width: 100%; }
+      .hero-content .lead { margin-left: auto; margin-right: auto; }
+      .phone-wrap { animation: none; }
+      .iphone { width: 240px; height: 520px; }
+      .steps-section { padding: 60px 24px; }
+      .steps-grid { grid-template-columns: 1fr; gap: 20px; max-width: 400px; }
+      .features { padding: 40px 24px 60px; }
+      .features-grid { grid-template-columns: 1fr; max-width: 400px; }
+      .bottom-cta { padding: 60px 24px; }
+      footer { flex-direction: column; gap: 12px; text-align: center; padding: 24px 20px; }
+    }
+
+    /* ─── Chat animation states ─── */
+    .chat-msg { opacity: 0; transform: translateY(8px); }
+    .chat-msg.show { opacity: 1; transform: translateY(0); transition: opacity .4s ease, transform .4s ease; }
   </style>
 </head>
 <body>
 
-<div class="hero">
-  <div class="hero-left">
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-content">
     <div class="kicker">iOS · Coming soon</div>
-    <h1>Get it out of<br>your head —<br><em>Pem organizes it.</em></h1>
-    <p class="lead">Dump your thoughts. Come back to clarity.</p>
-    <p class="sub">
-      Tell Pem what's spinning in your head — voice or text, anytime, no structure needed. Pem extracts what matters, organizes it, and builds your inbox while you sleep, drive, or live.
+    <h1>Chat with your<br>most reliable <em>friend.</em></h1>
+    <p class="lead">
+      Dump whatever is on your mind — voice or text, messy, no structure needed.
+      Pem extracts tasks, manages your calendar, and sends you a morning brief. Like texting a friend who actually gets things done.
     </p>
-
-    <div class="signal-icons" aria-label="What Pem helps with">
-      <div class="signal">
-        <span class="signal-ic" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        </span>
-        <span class="signal-lbl">Calendar</span>
-      </div>
-      <div class="signal">
-        <span class="signal-ic" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5c.5-1 1.6-1.6 2.9-1.3 1 .2 1.7 1.1 1.7 2.1 0 1.5-1.2 2-2.2 2.8-.4.3-.7.6-.9 1.1M12 17h.01"/></svg>
-        </span>
-        <span class="signal-lbl">Ask</span>
-      </div>
-      <div class="signal">
-        <span class="signal-ic" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 14l2 2 4-4"/></svg>
-        </span>
-        <span class="signal-lbl">Prep</span>
-      </div>
-    </div>
-
-    <div class="steps">
-      <div class="step active" id="ind-0" onclick="goToStep(0)">
-        <span class="step-num">1</span>
-        <span class="step-lbl">You dump</span>
-      </div>
-      <span class="step-sep"></span>
-      <div class="step" id="ind-1" onclick="goToStep(1)">
-        <span class="step-num">2</span>
-        <span class="step-lbl">Pem organizes</span>
-      </div>
-      <span class="step-sep"></span>
-      <div class="step" id="ind-2" onclick="goToStep(2)">
-        <span class="step-num">3</span>
-        <span class="step-lbl">Daily Brief</span>
-      </div>
-    </div>
-    <div class="progress"><div class="progress-fill" id="progress"></div></div>
-
-    <button type="button" class="cta-btn" id="hero-btn" onclick="openForm()">Get early access — it's free</button>
-    <p class="cta-note" id="hero-note">No spam · One email when we're ready</p>
+    <button class="hero-cta" id="hero-btn" onclick="openForm()">
+      Get early access
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </button>
+    <p class="hero-sub" id="hero-note">Free · No spam · One email when we launch</p>
 
     <div class="ef" id="ef">
       <div class="ef-row">
         <input type="email" placeholder="your@email.com" id="ei" autocomplete="email">
         <button type="button" onclick="go()">Notify me</button>
       </div>
-      <p class="cta-note">We'll only write when Pem launches.</p>
+      <p class="hero-sub">We'll only write when Pem launches.</p>
     </div>
     <p class="ef-ok" id="ok">You're on the list.</p>
   </div>
 
-  <div class="hero-right">
-    <div class="phone-wrap">
-      <div class="iphone">
-        <div class="iphone-front">
-          <div class="dyn-island"></div>
-          <div class="home-bar"></div>
-          <div class="screens">
+  <!-- Phone -->
+  <div class="phone-wrap">
+    <div class="iphone">
+      <div class="iphone-screen">
+        <div class="dyn-island"></div>
+        <div class="home-bar"></div>
 
-            <div class="screen s-dump active" id="screen-0">
-              <div class="sb">
-                <span class="sb-t">9:41</span>
-                <div class="sb-i">
-                  <svg width="15" height="11" viewBox="0 0 17 12" fill="#1c1a16" aria-hidden="true"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0.5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
-                  <svg width="22" height="11" viewBox="0 0 25 12" fill="none" aria-hidden="true"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#1c1a16" stroke-opacity=".25"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#1c1a16"/></svg>
-                </div>
-              </div>
-              <div class="dump-top">
-                <div class="dump-top-title">pem</div>
-                <div class="dump-top-sub">Listening…</div>
-              </div>
-              <div class="dump-body">
-                <div class="rec-label"><span class="rec-dot"></span> Recording</div>
-                <div class="mic-circle">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4zm6.5 9a1 1 0 012 0 8.5 8.5 0 01-7.5 8.45V21h3a1 1 0 010 2h-8a1 1 0 010-2h3v-2.55A8.5 8.5 0 013.5 10a1 1 0 012 0 6.5 6.5 0 0013 0z"/></svg>
-                </div>
-                <div class="waveform" aria-hidden="true">
-                  <span class="wb"></span><span class="wb"></span><span class="wb"></span><span class="wb"></span>
-                  <span class="wb"></span><span class="wb"></span><span class="wb"></span><span class="wb"></span>
-                  <span class="wb"></span><span class="wb"></span><span class="wb"></span><span class="wb"></span>
-                </div>
-                <p class="transcript-text">
-                  <strong>"Birthday next week, cancel gym, random idea for work…"</strong>
-                </p>
-              </div>
-            </div>
+        <div class="chat-header">
+          <svg class="chat-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          <span class="chat-header-name">Pem</span>
+          <span class="chat-header-count">3 today</span>
+          <svg class="chat-header-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2m-9.7-3.3 1.4-1.4M19.3 4.7l1.4-1.4M1 12h2m18 0h2M4.7 4.7 3.3 3.3m17.4 17.4-1.4-1.4"/></svg>
+        </div>
 
-            <div class="screen s-work" id="screen-1">
-              <div class="sb"><span class="sb-t">9:41</span></div>
-              <div class="work-mid">
-                <div class="pill">Working</div>
-                <h3>Got it.</h3>
-                <p>Pem is extracting items, checking dates, and updating your brief.</p>
-              </div>
-            </div>
+        <div class="chat-body" id="chat-body">
+          <div class="chat-date">Today</div>
 
-            <div class="screen s-ready" id="screen-2">
-              <div class="sb"><span class="sb-t">7:30</span></div>
-              <div class="brief-h">
-                <div class="brief-kicker">Daily Brief</div>
-                <em>Two things need you soon — one’s on your calendar.</em>
-              </div>
-              <div class="rows">
-                <div class="row">
-                  <small>Today</small>
-                  Cancel gym membership
-                  <span class="hint">Overdue · tap when ready</span>
-                </div>
-                <div class="row">
-                  <small class="cal">Calendar</small>
-                  Mom's birthday lunch — Sat 12:30
-                  <span class="hint">Synced from Pem</span>
-                </div>
-                <div class="row">
-                  <small class="draft">Follow-up</small>
-                  Email landlord about leak
-                  <span class="hint">Draft ready · your send</span>
-                </div>
-                <div class="row dim">
-                  <small>Idea</small>
-                  Work app concept — saved
-                  <span class="hint">No rush</span>
-                </div>
-              </div>
-            </div>
-
+          <!-- Brief -->
+          <div class="bubble bubble-brief chat-msg" data-delay="300">
+            <div class="brief-label">Morning brief</div>
+            Good morning. You have a dentist at 2pm and three overdue tasks. Your shopping list has 4 items — maybe this weekend?
+            <div class="bubble-time">7:30 AM</div>
           </div>
+
+          <!-- User voice -->
+          <div class="bubble bubble-user chat-msg" data-delay="1400">
+            <div class="voice-bubble">
+              <div class="voice-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+              <div class="voice-wave" id="wave-1"></div>
+              <span class="voice-dur">0:23</span>
+            </div>
+            <div class="voice-transcript">"Cancel gym, groceries tonight, meeting with James Friday 3pm"</div>
+            <div class="bubble-time">9:12 AM <span class="bubble-ticks">✓✓</span></div>
+          </div>
+
+          <!-- Typing -->
+          <div class="typing chat-msg" id="typing" data-delay="2600">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+
+          <!-- Pem response -->
+          <div class="bubble bubble-pem chat-msg" id="pem-reply" data-delay="3800" style="display:none">
+            Got it. Created 3 tasks — cancel gym is marked urgent, groceries added to your shopping list for tonight, and James meeting is on your calendar for Friday 3–4pm.
+            <div class="bubble-time">9:12 AM</div>
+          </div>
+
+          <!-- User text -->
+          <div class="bubble bubble-user chat-msg" data-delay="5200">
+            What's on my day?
+            <div class="bubble-time">9:15 AM <span class="bubble-ticks">✓✓</span></div>
+          </div>
+
+          <!-- Pem answer -->
+          <div class="bubble bubble-pem chat-msg" data-delay="6200">
+            You have dentist at 2pm — leave by 1:30. Three things need attention: gym cancellation is 3 weeks overdue, groceries for tonight, and text John back — he's been waiting since Friday.
+            <div class="bubble-time">9:15 AM</div>
+          </div>
+        </div>
+
+        <div class="chat-input">
+          <div class="chat-input-mic">
+            <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4zm6.5 9a1 1 0 012 0 8.5 8.5 0 01-7.5 8.45V21h3a1 1 0 010 2h-8a1 1 0 010-2h3v-2.55A8.5 8.5 0 013.5 10a1 1 0 012 0 6.5 6.5 0 0013 0z"/></svg>
+          </div>
+          <div class="chat-input-field">Type anything...</div>
         </div>
       </div>
     </div>
   </div>
-</div>
+</section>
+
+<!-- Steps -->
+<section class="steps-section">
+  <h2>How <em>Pem</em> works</h2>
+  <p class="steps-subtitle">Three steps. Zero effort. Your mind stays clear.</p>
+  <div class="steps-grid">
+    <div class="step-card">
+      <div class="step-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4z"/><path d="M19 10a7 7 0 01-14 0"/><path d="M12 19v4m-4 0h8"/></svg>
+      </div>
+      <div class="step-num">Step 1</div>
+      <h3>You dump</h3>
+      <p>Voice or text, anytime. No structure needed. Just say what's on your mind — errands, ideas, meetings, worries. Everything.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      </div>
+      <div class="step-num">Step 2</div>
+      <h3>Pem organizes</h3>
+      <p>Tasks extracted, calendar updated, shopping lists built, follow-ups drafted. Pem understands context and gets it right.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+      <div class="step-num">Step 3</div>
+      <h3>Morning brief</h3>
+      <p>Every morning, Pem texts you a summary. Today's focus, overdue tasks, calendar. Like getting a brief from your EA at 7am.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features">
+  <div class="features-grid">
+    <div class="feat">
+      <div class="feat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      </div>
+      <div>
+        <h4>Calendar sync</h4>
+        <p>Google and Apple. Pem reads your schedule and writes events — so you never double-book.</p>
+      </div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      </div>
+      <div>
+        <h4>Ask anything</h4>
+        <p>"What did I say about Denver?" — Pem remembers everything and answers instantly.</p>
+      </div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4z"/><path d="M19 10a7 7 0 01-14 0"/></svg>
+      </div>
+      <div>
+        <h4>Voice first</h4>
+        <p>Tap and talk. Pem transcribes, understands, and acts. No typing required.</p>
+      </div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      </div>
+      <div>
+        <h4>Smart tasks</h4>
+        <p>Shopping lists, errands, follow-ups — batched and prioritized. Swipe to done when handled.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="bottom-cta">
+  <h2>Your mind, <em>organized.</em></h2>
+  <p class="lead">Join the waitlist. One email when Pem is ready.</p>
+  <div style="max-width:400px;margin:0 auto;">
+    <div class="ef open" id="ef2">
+      <div class="ef-row">
+        <input type="email" placeholder="your@email.com" id="ei2" autocomplete="email">
+        <button type="button" onclick="go2()">Notify me</button>
+      </div>
+    </div>
+    <p class="ef-ok" id="ok2">You're on the list.</p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <span>&copy; 2026 Pem</span>
+  <span>Built with care in the Bay Area</span>
+</footer>
 
 <script>
-  const DURATIONS = [4500, 4000, 5200];
-  let stepTimer = null;
-  let progressTimer = null;
-  let progressStart = null;
-
-  function goToStep(step) {
-    clearTimeout(stepTimer);
-    cancelAnimationFrame(progressTimer);
-    for (let i = 0; i < 3; i++) {
-      const s = document.getElementById('screen-' + i);
-      const ind = document.getElementById('ind-' + i);
-      if (s) s.classList.remove('active');
-      if (ind) ind.classList.remove('active');
-    }
-    const screen = document.getElementById('screen-' + step);
-    const ind = document.getElementById('ind-' + step);
-    if (screen) screen.classList.add('active');
-    if (ind) ind.classList.add('active');
-    startProgress(step);
-    stepTimer = setTimeout(() => goToStep((step + 1) % 3), DURATIONS[step]);
+  // ─── Chat animation ───
+  function animateChat() {
+    const msgs = document.querySelectorAll('.chat-msg');
+    msgs.forEach(msg => {
+      const delay = parseInt(msg.dataset.delay || '0', 10);
+      setTimeout(() => {
+        // Hide typing when pem reply appears
+        if (msg.id === 'pem-reply') {
+          const typing = document.getElementById('typing');
+          if (typing) typing.style.display = 'none';
+          msg.style.display = '';
+        }
+        msg.classList.add('show');
+      }, delay);
+    });
   }
 
-  function startProgress(step) {
-    const fill = document.getElementById('progress');
-    if (!fill) return;
-    fill.style.transition = 'none';
-    fill.style.width = '0%';
-    const dur = DURATIONS[step];
-    progressStart = performance.now();
-    function tick(now) {
-      const elapsed = now - progressStart;
-      const pct = Math.min(100, (elapsed / dur) * 100);
-      fill.style.width = pct + '%';
-      if (pct < 100) progressTimer = requestAnimationFrame(tick);
+  // Generate random waveform bars
+  function buildWave(id, count) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    for (let i = 0; i < count; i++) {
+      const bar = document.createElement('span');
+      bar.className = 'vb';
+      const h = Math.floor(Math.random() * 16) + 4;
+      bar.style.height = h + 'px';
+      el.appendChild(bar);
     }
-    requestAnimationFrame(tick);
   }
 
-  window.addEventListener('load', () => goToStep(0));
+  window.addEventListener('load', () => {
+    buildWave('wave-1', 20);
+    animateChat();
+    // Loop the animation
+    setInterval(() => {
+      const msgs = document.querySelectorAll('.chat-msg');
+      msgs.forEach(m => { m.classList.remove('show'); });
+      const typing = document.getElementById('typing');
+      if (typing) typing.style.display = '';
+      const reply = document.getElementById('pem-reply');
+      if (reply) reply.style.display = 'none';
+      setTimeout(animateChat, 400);
+    }, 14000);
+  });
 
+  // ─── Email form ───
   function openForm() {
     const btn = document.getElementById('hero-btn');
     const note = document.getElementById('hero-note');
@@ -727,7 +839,22 @@
     document.getElementById('ok').style.display = 'block';
   }
 
+  function go2() {
+    const el = document.getElementById('ei2');
+    const email = el.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      el.style.outline = '2px solid #ff453a';
+      el.focus();
+      setTimeout(() => { el.style.outline = ''; }, 1500);
+      return;
+    }
+    submitOnce(email);
+    document.getElementById('ef2').style.display = 'none';
+    document.getElementById('ok2').style.display = 'block';
+  }
+
   document.getElementById('ei').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  document.getElementById('ei2').addEventListener('keydown', (e) => { if (e.key === 'Enter') go2(); });
 </script>
 </body>
 </html>
