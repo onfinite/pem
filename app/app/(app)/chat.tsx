@@ -12,6 +12,7 @@ import {
   sendVoiceMessage,
   type ApiMessage,
 } from "@/lib/pemApi";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
 import { Settings } from "lucide-react-native";
 import { useRouter } from "expo-router";
@@ -25,8 +26,34 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+const CACHE_KEY = "@pem/chat_messages_v1";
+const CACHE_LIMIT = 50;
+
+async function readCache(): Promise<ClientMessage[]> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as ClientMessage[];
+  } catch {
+    return [];
+  }
+}
+
+async function writeCache(messages: ClientMessage[]) {
+  try {
+    // Only cache confirmed, non-optimistic messages
+    const cacheable = messages
+      .filter((m) => m._clientStatus === "sent" && !m._localUri)
+      .slice(-CACHE_LIMIT);
+    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cacheable));
+  } catch {
+    // Non-critical — ignore cache write errors
+  }
+}
+
 export type ClientMessage = ApiMessage & {
   _clientStatus?: "sending" | "sent";
+  _localUri?: string; // local file URI for freshly recorded voice — use for playback
 };
 
 type DisplayItem =
@@ -63,6 +90,8 @@ export default function ChatScreen() {
           });
         } else {
           setMessages(withStatus);
+          // Persist latest messages for instant next-open display
+          writeCache(withStatus);
         }
         setHasMore(res.has_more);
       } catch (e) {
@@ -75,7 +104,14 @@ export default function ChatScreen() {
   );
 
   useEffect(() => {
-    loadMessages();
+    // Show cached messages instantly, then fetch fresh ones in background
+    readCache().then((cached) => {
+      if (cached.length > 0) {
+        setMessages(cached);
+        setLoading(false); // Hide spinner — cached content is visible
+      }
+      loadMessages(); // Always fetch fresh regardless
+    });
   }, [loadMessages]);
 
   useChatStream({
@@ -157,6 +193,7 @@ export default function ChatScreen() {
         parent_message_id: null,
         created_at: new Date().toISOString(),
         _clientStatus: "sending",
+        _localUri: audioUri,
       };
       setMessages((prev) => [...prev, optimistic]);
 
@@ -165,7 +202,13 @@ export default function ChatScreen() {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId
-              ? { ...res.message, _clientStatus: "sent" as const }
+              ? {
+                  ...res.message,
+                  // Prefer local file URI for immediate playback; fall back to signed URL
+                  voice_url: audioUri,
+                  _localUri: audioUri,
+                  _clientStatus: "sent" as const,
+                }
               : m,
           ),
         );

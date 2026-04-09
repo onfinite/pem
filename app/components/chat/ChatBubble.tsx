@@ -19,6 +19,7 @@ export default function ChatBubble({ message }: Props) {
   if (message.kind === "voice") {
     return (
       <VoiceBubble
+        key={message.id}
         message={message}
         isUser={isUser}
         isSending={isSending}

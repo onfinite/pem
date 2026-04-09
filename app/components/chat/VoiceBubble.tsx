@@ -6,8 +6,28 @@ import {
   useAudioPlayerStatus,
   setAudioModeAsync,
 } from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
+
+// Configure audio session once for the entire app lifecycle.
+setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+
+/**
+ * Download a remote audio URL to a stable local path keyed by messageId.
+ * Returns the local URI immediately if already cached or if a local file is provided.
+ */
+async function ensureLocalAudio(
+  messageId: string,
+  remoteUrl: string,
+): Promise<string> {
+  const localPath = `${FileSystem.cacheDirectory}pem_voice_${messageId}.m4a`;
+  const info = await FileSystem.getInfoAsync(localPath);
+  if (info.exists) return localPath;
+  const result = await FileSystem.downloadAsync(remoteUrl, localPath);
+  return result.uri;
+}
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Check, CheckCheck, Pause, Play } from "lucide-react-native";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react"; // useEffect still needed for speed load
 import {
   ActivityIndicator,
   Pressable,
@@ -17,6 +37,11 @@ import {
 } from "react-native";
 import type { ApiMessage } from "@/lib/pemApi";
 
+const SPEED_STORAGE_KEY = "@pem/voice_playback_speed_idx";
+const SPEEDS = [1, 1.5, 2] as const;
+const SPEED_LABELS = ["1×", "1.5×", "2×"] as const;
+const BAR_COUNT = 32;
+
 function formatDuration(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const m = Math.floor(seconds / 60);
@@ -24,8 +49,25 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const BAR_COUNT = 32;
-const SPEEDS = [1, 1.5, 2] as const;
+// Module-level cache so all bubbles share the same speed preference in-session
+let cachedSpeedIdx: number | null = null;
+
+async function loadSpeedIdx(): Promise<number> {
+  if (cachedSpeedIdx !== null) return cachedSpeedIdx;
+  try {
+    const val = await AsyncStorage.getItem(SPEED_STORAGE_KEY);
+    const parsed = val !== null ? parseInt(val, 10) : 0;
+    cachedSpeedIdx = Number.isFinite(parsed) && parsed >= 0 && parsed < SPEEDS.length ? parsed : 0;
+  } catch {
+    cachedSpeedIdx = 0;
+  }
+  return cachedSpeedIdx!;
+}
+
+async function saveSpeedIdx(idx: number) {
+  cachedSpeedIdx = idx;
+  AsyncStorage.setItem(SPEED_STORAGE_KEY, String(idx)).catch(() => {});
+}
 
 function PlaybackWaveform({
   progress,
@@ -49,10 +91,7 @@ function PlaybackWaveform({
             key={i}
             style={[
               waveStyles.bar,
-              {
-                height: h,
-                backgroundColor: filled ? activeColor : inactiveColor,
-              },
+              { height: h, backgroundColor: filled ? activeColor : inactiveColor },
             ]}
           />
         );
@@ -62,74 +101,107 @@ function PlaybackWaveform({
 }
 
 const waveStyles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 24,
-    gap: 1.5,
-    flex: 1,
-  },
+  container: { flexDirection: "row", alignItems: "center", height: 24, gap: 1.5, flex: 1 },
   bar: { width: 2.5, borderRadius: 1.25 },
 });
 
 type Props = {
-  message: ApiMessage & { _clientStatus?: "sending" | "sent" };
+  message: ApiMessage & {
+    _clientStatus?: "sending" | "sent";
+    _localUri?: string;
+  };
   isUser: boolean;
   isSending?: boolean;
 };
 
 export default function VoiceBubble({ message, isUser, isSending }: Props) {
   const { colors } = useTheme();
-  const [showTranscript, setShowTranscript] = useState(false);
+  const transcript = message.transcript ?? message.content;
+  const [showTranscript, setShowTranscript] = useState(!!transcript);
   const [speedIdx, setSpeedIdx] = useState(0);
 
-  const hasAudio = !!message.voice_url && !isSending;
-  const player = useAudioPlayer(hasAudio ? message.voice_url! : undefined);
+  // Load persisted speed on mount
+  useEffect(() => {
+    loadSpeedIdx().then(setSpeedIdx);
+  }, []);
+
+  // Resolve to a stable local file URI before handing to the player.
+  // - Freshly recorded: _localUri is already on-device, use directly.
+  // - Historical / R2 URL: download once to cacheDirectory keyed by message ID,
+  //   so the player always plays from disk with no streaming surprises.
+  const [localUri, setLocalUri] = useState<string | null>(
+    message._localUri ?? null,
+  );
+  const isDownloading = !isSending && !localUri && !!message.voice_url;
+
+  useEffect(() => {
+    if (isSending || message._localUri) return; // already have a local file
+    if (!message.voice_url) return;
+    let cancelled = false;
+    ensureLocalAudio(message.id, message.voice_url)
+      .then((uri) => { if (!cancelled) setLocalUri(uri); })
+      .catch((e) => {
+        console.warn("[VoiceBubble] download error:", e);
+        // Fall back to remote URL if download fails
+        if (!cancelled) setLocalUri(message.voice_url!);
+      });
+    return () => { cancelled = true; };
+  }, [message.id, message.voice_url, message._localUri, isSending]);
+
+  const player = useAudioPlayer(localUri ?? undefined, { keepAudioSessionActive: true });
   const status = useAudioPlayerStatus(player);
 
-  const bubbleBg = isUser ? colors.userBubble : colors.cardBackground;
-  const textOnBubble = isUser ? colors.userBubbleText : colors.textPrimary;
-  const activeBarColor = isUser ? colors.userBubbleText : pemAmber;
-  const inactiveBarColor = isUser ? colors.userBubbleMeta : colors.borderMuted;
-  const dimText = isUser ? colors.userBubbleMeta : colors.textTertiary;
-  const playBtnBg = isUser ? `${colors.userBubbleText}15` : colors.secondarySurface;
-  const playIcon = isUser ? colors.userBubbleText : colors.textPrimary;
-  const tickColor = isUser ? colors.userBubbleMeta : colors.textTertiary;
 
   const duration = status.duration || 0;
   const currentTime = status.currentTime || 0;
   const progress = duration > 0 ? currentTime / duration : 0;
   const isPlaying = status.playing;
   const isLoaded = status.isLoaded;
+  // Show spinner while: uploading, downloading remote audio, or player still loading local file
+  const showSpinner = isSending || isDownloading || (!!localUri && !isLoaded);
 
   const togglePlay = useCallback(async () => {
-    if (isPlaying) {
-      player.pause();
-    } else {
-      await setAudioModeAsync({
-        allowsRecording: false,
-        playsInSilentMode: true,
-      });
-      player.setPlaybackRate(SPEEDS[speedIdx]);
-      player.play();
+    if (!isLoaded) return;
+    try {
+      if (isPlaying) {
+        player.pause();
+      } else {
+        // Seek to start if already played to end
+        if (duration > 0 && currentTime >= duration - 0.1) {
+          await player.seekTo(0);
+        }
+        player.play();
+      }
+    } catch (e) {
+      console.error("[VoiceBubble] play error:", e);
     }
-  }, [isPlaying, player, speedIdx]);
+  }, [isLoaded, isPlaying, player, duration, currentTime]);
 
   const cycleSpeed = useCallback(() => {
     const next = (speedIdx + 1) % SPEEDS.length;
     setSpeedIdx(next);
-    if (player) {
-      player.setPlaybackRate(SPEEDS[next]);
+    saveSpeedIdx(next);
+    if (isLoaded) {
+      try { player.setPlaybackRate(SPEEDS[next]); } catch {}
     }
-  }, [speedIdx, player]);
+  }, [speedIdx, isLoaded, player]);
+
+  const bubbleBg = isUser ? colors.userBubble : colors.cardBackground;
+  const textOnBubble = isUser ? colors.userBubbleText : colors.textPrimary;
+  const activeBarColor = isUser ? colors.userBubbleText : pemAmber;
+  const inactiveBarColor = isUser ? colors.userBubbleMeta : colors.borderMuted;
+  const dimText = isUser ? colors.userBubbleMeta : colors.textTertiary;
+  const playBtnBg = isUser ? `${colors.userBubbleText}18` : colors.secondarySurface;
+  const playIcon = isUser ? colors.userBubbleText : colors.textPrimary;
+  const tickColor = isUser ? colors.userBubbleMeta : colors.textTertiary;
+  const chipBg = isUser ? `${colors.userBubbleText}15` : colors.secondarySurface;
+  const chipText = isUser ? colors.userBubbleMeta : colors.textSecondary;
+  const toggleColor = isUser ? colors.userBubbleMeta : pemAmber;
 
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
-
-  const transcript = message.transcript ?? message.content;
-  const showSpinner = isSending || (!isLoaded && hasAudio);
 
   return (
     <View style={[styles.row, isUser && styles.rowRight]}>
@@ -141,6 +213,7 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
           isSending && { opacity: 0.7 },
         ]}
       >
+        {/* Row 1: play · waveform · speed chip */}
         <View style={styles.voiceRow}>
           {showSpinner ? (
             <View style={[styles.playBtn, { backgroundColor: playBtnBg }]}>
@@ -154,67 +227,56 @@ export default function VoiceBubble({ message, isUser, isSending }: Props) {
               {isPlaying ? (
                 <Pause size={18} color={playIcon} strokeWidth={2.5} />
               ) : (
-                <Play
-                  size={18}
-                  color={playIcon}
-                  strokeWidth={2.5}
-                  style={{ marginLeft: 2 }}
-                />
+                <Play size={18} color={playIcon} strokeWidth={2.5} style={{ marginLeft: 2 }} />
               )}
             </Pressable>
           )}
 
-          <View style={styles.waveCol}>
-            <PlaybackWaveform
-              progress={progress}
-              activeColor={activeBarColor}
-              inactiveColor={inactiveBarColor}
-            />
-            <View style={styles.metaRow}>
-              <Text style={[styles.duration, { color: dimText }]}>
-                {isPlaying || currentTime > 0
-                  ? formatDuration(currentTime)
-                  : formatDuration(duration)}
+          <PlaybackWaveform
+            progress={progress}
+            activeColor={activeBarColor}
+            inactiveColor={inactiveBarColor}
+          />
+
+          {/* Speed chip — only when ready to play */}
+          {showSpinner ? (
+            <View style={styles.speedChipPlaceholder} />
+          ) : (
+            <Pressable onPress={cycleSpeed} hitSlop={8} style={[styles.speedChip, { backgroundColor: chipBg }]}>
+              <Text style={[styles.speedChipText, { color: chipText }]}>
+                {SPEED_LABELS[speedIdx]}
               </Text>
-              {hasAudio && !showSpinner && (
-                <Pressable onPress={cycleSpeed} hitSlop={6}>
-                  <Text style={[styles.speedLabel, { color: dimText }]}>
-                    {SPEEDS[speedIdx]}x
-                  </Text>
-                </Pressable>
-              )}
-              <View style={styles.timeTickRow}>
-                <Text style={[styles.duration, { color: dimText }]}>
-                  {time}
+            </Pressable>
+          )}
+        </View>
+
+        {/* Row 2: duration on left · [hide/show text] + message time + ticks on right */}
+        <View style={styles.bottomRow}>
+          <Text style={[styles.smallText, { color: dimText }]}>
+            {isPlaying || currentTime > 0 ? formatDuration(currentTime) : formatDuration(duration)}
+          </Text>
+
+          <View style={styles.bottomRight}>
+            {transcript && (
+              <Pressable onPress={() => setShowTranscript((v) => !v)} hitSlop={8}>
+                <Text style={[styles.toggleText, { color: toggleColor }]}>
+                  {showTranscript ? "Hide text" : "Show text"}
                 </Text>
-                {isUser &&
-                  (isSending ? (
-                    <Check size={13} color={tickColor} strokeWidth={2} />
-                  ) : (
-                    <CheckCheck size={13} color={tickColor} strokeWidth={2} />
-                  ))}
-              </View>
+              </Pressable>
+            )}
+            <View style={styles.timeTickRow}>
+              <Text style={[styles.smallText, { color: dimText }]}>{time}</Text>
+              {isUser && (
+                isSending
+                  ? <Check size={13} color={tickColor} strokeWidth={2} />
+                  : <CheckCheck size={13} color={tickColor} strokeWidth={2} />
+              )}
             </View>
           </View>
         </View>
 
-        {transcript && (
-          <Pressable
-            onPress={() => setShowTranscript((v) => !v)}
-            hitSlop={6}
-          >
-            <Text
-              style={[
-                styles.transcriptToggle,
-                { color: isUser ? colors.userBubbleMeta : pemAmber },
-              ]}
-            >
-              {showTranscript ? "Hide text" : "Show text"}
-            </Text>
-          </Pressable>
-        )}
-
-        {showTranscript && transcript && (
+        {/* Transcript */}
+        {transcript && showTranscript && (
           <Text style={[styles.transcriptText, { color: textOnBubble }]}>
             {transcript}
           </Text>
@@ -251,38 +313,52 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
-  waveCol: { flex: 1 },
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 3,
+  speedChip: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    flexShrink: 0,
   },
-  duration: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: 11,
-    fontVariant: ["tabular-nums"],
-  },
-  speedLabel: {
+  speedChipText: {
     fontFamily: fontFamily.sans.medium,
     fontSize: 11,
     fontVariant: ["tabular-nums"],
+  },
+  speedChipPlaceholder: {
+    width: 34,
+    flexShrink: 0,
+  },
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 5,
+  },
+  bottomRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   timeTickRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
   },
-  transcriptToggle: {
+  smallText: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: 11,
+    fontVariant: ["tabular-nums"],
+  },
+  toggleText: {
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.xs,
-    marginTop: space[1],
   },
   transcriptText: {
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.sm,
-    marginTop: space[1],
+    marginTop: space[2],
     lineHeight: 18,
   },
 });

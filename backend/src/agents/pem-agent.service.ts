@@ -7,91 +7,82 @@ import { z } from 'zod';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 
+const nullStr = z.string().nullish().transform((v) => v ?? null);
+const toneEnum = z
+  .enum(['confident', 'tentative', 'idea', 'someday'])
+  .catch('confident');
+const urgencyEnum = z
+  .enum(['today', 'this_week', 'someday', 'none'])
+  .catch('none');
+const batchEnum = z
+  .enum(['shopping', 'errands', 'follow_ups'])
+  .nullish()
+  .transform((v) => v ?? null);
+
 const extractActionSchema = z.object({
-  text: z.string().describe('Clean, concise task text'),
-  original_text: z.string().describe('Raw fragment from the message'),
-  tone: z.enum(['confident', 'tentative', 'idea', 'someday']),
-  urgency: z.enum(['today', 'this_week', 'someday', 'none']),
-  batch_key: z.enum(['shopping', 'errands', 'follow_ups']).nullable(),
-  due_at: z.string().nullable().describe('ISO datetime if detected'),
-  period_start: z.string().nullable(),
-  period_end: z.string().nullable(),
-  period_label: z.string().nullable(),
-  pem_note: z.string().nullable().describe('Brief context note from Pem'),
-  draft_text: z
-    .string()
-    .nullable()
-    .describe('Draft message if follow_ups batch'),
+  text: z.string().min(1).describe('Clean, concise task text'),
+  original_text: z.string().default('').describe('Raw fragment from the message'),
+  tone: toneEnum,
+  urgency: urgencyEnum,
+  batch_key: batchEnum,
+  due_at: nullStr.describe('ISO datetime if detected'),
+  period_start: nullStr,
+  period_end: nullStr,
+  period_label: nullStr,
+  pem_note: nullStr.describe('Brief context note from Pem'),
+  draft_text: nullStr.describe('Draft message if follow_ups batch'),
 });
 
 const updateActionSchema = z.object({
   extract_id: z.string().describe('ID of existing extract to update'),
   patch: z.object({
     text: z.string().optional(),
-    tone: z.enum(['confident', 'tentative', 'idea', 'someday']).optional(),
-    urgency: z.enum(['today', 'this_week', 'someday', 'none']).optional(),
-    batch_key: z
-      .enum(['shopping', 'errands', 'follow_ups'])
-      .nullable()
-      .optional(),
-    due_at: z.string().nullable().optional(),
-    period_start: z.string().nullable().optional(),
-    period_end: z.string().nullable().optional(),
-    period_label: z.string().nullable().optional(),
-    pem_note: z.string().nullable().optional(),
-    draft_text: z.string().nullable().optional(),
+    tone: toneEnum.optional(),
+    urgency: urgencyEnum.optional(),
+    batch_key: batchEnum.optional(),
+    due_at: nullStr.optional(),
+    period_start: nullStr.optional(),
+    period_end: nullStr.optional(),
+    period_label: nullStr.optional(),
+    pem_note: nullStr.optional(),
+    draft_text: nullStr.optional(),
   }),
-  reason: z.string().describe('Why this update is being made'),
+  reason: z.string().default(''),
 });
 
 const completeActionSchema = z.object({
   extract_id: z.string(),
-  command: z.enum(['mark_done', 'dismiss', 'snooze']),
-  snooze_until_iso: z.string().nullable().optional(),
-  reason: z.string(),
+  command: z.enum(['mark_done', 'dismiss', 'snooze']).catch('mark_done'),
+  snooze_until_iso: nullStr.optional(),
+  reason: z.string().default(''),
 });
 
 const calendarWriteSchema = z.object({
-  summary: z.string(),
+  summary: z.string().min(1),
   start_at: z.string().describe('ISO datetime'),
   end_at: z.string().describe('ISO datetime'),
-  location: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
-  linked_new_item_index: z
-    .number()
-    .nullable()
-    .optional()
-    .describe('Index into creates array if linking to a new extract'),
+  location: nullStr.optional(),
+  description: nullStr.optional(),
+  linked_new_item_index: z.number().nullish().transform((v) => v ?? null),
 });
 
 const memoryWriteSchema = z.object({
-  memory_key: z
-    .string()
-    .describe('Category key like "preferences", "family", "work"'),
-  note: z.string().describe('The fact to remember'),
+  memory_key: z.string().default('general'),
+  note: z.string().min(1),
 });
 
 export const pemAgentOutputSchema = z.object({
-  response_text: z
-    .string()
-    .describe(
-      "Pem's conversational response to the user. Natural, warm, concise. No markdown.",
-    ),
-  creates: z.array(extractActionSchema).describe('New tasks/items to create'),
-  updates: z.array(updateActionSchema).describe('Existing tasks to modify'),
-  completions: z
-    .array(completeActionSchema)
-    .describe('Tasks to mark done/dismiss/snooze'),
-  calendar_writes: z
-    .array(calendarWriteSchema)
-    .describe('Calendar events to create'),
-  memory_writes: z
-    .array(memoryWriteSchema)
-    .describe('Facts to remember about the user'),
-  polished_text: z
-    .string()
-    .nullable()
-    .describe('Cleaned up version of the user message for the thought log'),
+  response_text: z.string().min(1).describe(
+    "Pem's conversational response to the user. Natural, warm, concise. No markdown.",
+  ),
+  creates: z.array(extractActionSchema).default([]),
+  updates: z.array(updateActionSchema).default([]),
+  completions: z.array(completeActionSchema).default([]),
+  calendar_writes: z.array(calendarWriteSchema).default([]),
+  memory_writes: z.array(memoryWriteSchema).default([]),
+  polished_text: nullStr.describe(
+    'Cleaned up version of the user message for the thought log',
+  ),
 });
 
 export type PemAgentOutput = z.infer<typeof pemAgentOutputSchema>;
@@ -228,32 +219,34 @@ ${params.ragContext ? `## Related past context\n${params.ragContext}\n` : ''}
 ## User message
 "${params.messageContent}"`;
 
+    const fallback: PemAgentOutput = {
+      response_text: "Got it. I'll keep that in mind.",
+      creates: [],
+      updates: [],
+      completions: [],
+      calendar_writes: [],
+      memory_writes: [],
+      polished_text: null,
+    };
+
     try {
       const { output } = await generateText({
         model: openai(agentModel),
         output: Output.object({ schema: pemAgentOutputSchema }),
         system: SYSTEM,
         prompt,
+        maxRetries: 2,
         providerOptions: { openai: { strictJsonSchema: false } },
       });
 
-      if (!output) {
-        return {
-          response_text: "Got it. I'll keep that in mind.",
-          creates: [],
-          updates: [],
-          completions: [],
-          calendar_writes: [],
-          memory_writes: [],
-          polished_text: null,
-        };
-      }
-
-      return output;
+      return output ?? fallback;
     } catch (e) {
-      this.log.error(
-        `PemAgent failed: ${e instanceof Error ? e.message : String(e)}`,
-      );
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log.error(`PemAgent failed: ${msg}`);
+      // On schema mismatch, return a safe fallback instead of crashing the pipeline
+      if (msg.includes('did not match schema') || msg.includes('parse')) {
+        return fallback;
+      }
       throw e;
     }
   }
