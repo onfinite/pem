@@ -15,7 +15,7 @@ import * as WebBrowser from "expo-web-browser";
 import { triggerCalendarSync } from "@/lib/pemApi";
 import { CalendarDays, Crown, Plus, RefreshCw, Trash2 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Animated, Easing, Pressable, StyleSheet, View } from "react-native";
 
 export default function CalendarSection() {
   const { colors } = useTheme();
@@ -192,6 +192,20 @@ function ConnectionRow({
   syncing?: boolean;
 }) {
   const lastSynced = formatRelativeTime(lastSyncedAt ?? null);
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (syncing) {
+      spin.setValue(0);
+      Animated.loop(
+        Animated.timing(spin, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true }),
+      ).start();
+    } else {
+      spin.stopAnimation();
+    }
+  }, [syncing, spin]);
+
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 
   return (
     <View style={styles.row}>
@@ -213,11 +227,13 @@ function ConnectionRow({
             disabled={syncing}
             hitSlop={8}
           >
-            <RefreshCw
-              size={16}
-              stroke={syncing ? colors.textTertiary : pemAmber}
-              strokeWidth={1.8}
-            />
+            <Animated.View style={{ transform: [{ rotate }] }}>
+              <RefreshCw
+                size={16}
+                stroke={syncing ? colors.textTertiary : pemAmber}
+                strokeWidth={1.8}
+              />
+            </Animated.View>
           </Pressable>
         )}
         {isPrimary ? (

@@ -13,7 +13,6 @@ export type UserPreferences = {
   work_days?: number[];
   work_type?: 'office' | 'remote' | 'hybrid';
   personal_windows?: ('evenings' | 'weekends' | 'lunch' | 'mornings')[];
-  focus_time_pref?: 'morning' | 'afternoon';
   errand_window?: 'weekend_morning' | 'lunch' | 'after_work';
 };
 
@@ -30,6 +29,8 @@ export const usersTable = pgTable('users', {
   preferences: jsonb('preferences').$type<UserPreferences>(),
   focusHoursPerWeek: integer('focus_hours_per_week'),
   schedulingConfidence: text('scheduling_confidence'),
+  lastBriefDate: timestamp('last_brief_date', { withTimezone: true, mode: 'date' }),
+  lastBriefPushDate: timestamp('last_brief_push_date', { withTimezone: true, mode: 'date' }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

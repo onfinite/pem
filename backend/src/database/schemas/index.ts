@@ -2,6 +2,7 @@ export * from './calendar-connections.schema';
 export * from './contacts.schema';
 export * from './extracts.schema';
 export * from './follow-ups.schema';
+export * from './lists.schema';
 export * from './logs.schema';
 export * from './memory-facts.schema';
 export * from './message-embeddings.schema';

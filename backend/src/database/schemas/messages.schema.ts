@@ -4,8 +4,10 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 import { usersTable } from './users.schema';
 
@@ -18,6 +20,7 @@ export type MessageKind = (typeof MESSAGE_KINDS)[number];
 export const TRIAGE_CATEGORIES = [
   'trivial',
   'question_only',
+  'off_topic',
   'needs_agent',
 ] as const;
 export type TriageCategory = (typeof TRIAGE_CATEGORIES)[number];
@@ -48,6 +51,8 @@ export const messagesTable = pgTable(
     polishedText: text('polished_text'),
     parentMessageId: uuid('parent_message_id'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    /** Client-supplied key for safe retries (unique per user when set). */
+    idempotencyKey: text('idempotency_key'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -56,6 +61,9 @@ export const messagesTable = pgTable(
     index('ix_messages_user_created').on(t.userId, t.createdAt),
     index('ix_messages_user_role').on(t.userId, t.role),
     index('ix_messages_parent').on(t.parentMessageId),
+    uniqueIndex('ix_messages_user_idempotency')
+      .on(t.userId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} IS NOT NULL`),
   ],
 );
 

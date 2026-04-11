@@ -22,6 +22,34 @@
       "when": 1775773848542,
       "tag": "0002_minor_slayback",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775787841403,
+      "tag": "0003_yielding_norman_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775801524190,
+      "tag": "0004_lucky_aaron_stack",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775871491534,
+      "tag": "0005_eminent_khan",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775882010167,
+      "tag": "0006_brown_the_enforcers",
+      "breakpoints": true
     }
   ]
 }

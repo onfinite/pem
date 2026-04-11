@@ -13,7 +13,7 @@ import {
 const BATCH = ['shopping', 'follow_ups', 'errands'] as const;
 const STATUS = ['open', 'inbox', 'snoozed', 'dismissed', 'done'] as const;
 const TONE = ['confident', 'tentative', 'idea', 'someday'] as const;
-const URGENCY = ['today', 'this_week', 'someday', 'none'] as const;
+const URGENCY = ['someday', 'none'] as const;
 
 /** Query params for `GET /extracts/query` — composable filters. */
 export class ExtractsQueryDto {

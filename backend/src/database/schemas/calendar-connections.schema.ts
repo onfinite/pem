@@ -39,6 +39,13 @@ export const calendarConnectionsTable = pgTable(
     /** Google incremental sync token; null = full sync next time. */
     syncCursor: text('sync_cursor'),
 
+    watchChannelId: text('watch_channel_id'),
+    watchResourceId: text('watch_resource_id'),
+    watchExpiration: timestamp('watch_expiration', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -49,6 +56,7 @@ export const calendarConnectionsTable = pgTable(
   (t) => [
     index('ix_cal_conn_user').on(t.userId),
     index('ix_cal_conn_user_provider').on(t.userId, t.provider),
+    index('ix_cal_conn_watch_channel').on(t.watchChannelId),
   ],
 );
 

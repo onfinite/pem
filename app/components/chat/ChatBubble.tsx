@@ -1,23 +1,39 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
+import { pemImpactLight } from "@/lib/pemHaptics";
 import type { ClientMessage } from "@/app/(app)/chat";
 import { AlertCircle, Check, CheckCheck, ListTodo } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { useEffect, useRef } from "react";
+import { Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { MarkdownText } from "./MarkdownText";
 import VoiceBubble from "./VoiceBubble";
 
 type Props = {
   message: ClientMessage;
+  isHighlighted?: boolean;
   onRetry?: (message: ClientMessage) => void;
   onViewTasks?: () => void;
 };
 
-export default function ChatBubble({ message, onRetry, onViewTasks }: Props) {
+export default function ChatBubble({ message, isHighlighted, onRetry, onViewTasks }: Props) {
   const { colors } = useTheme();
   const isUser = message.role === "user";
   const isBrief = message.kind === "brief";
   const isSending = message._clientStatus === "sending";
   const isFailed = message._clientStatus === "failed";
+
+  const flashOpacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isHighlighted) return;
+    flashOpacity.setValue(1);
+    Animated.timing(flashOpacity, {
+      toValue: 0,
+      duration: 1200,
+      useNativeDriver: true,
+    }).start();
+  }, [isHighlighted, flashOpacity]);
 
   if (message.kind === "voice") {
     return (
@@ -54,9 +70,31 @@ export default function ChatBubble({ message, onRetry, onViewTasks }: Props) {
       (meta.tasks_completed ?? 0) > 0 ||
       (meta.calendar_written ?? 0) > 0);
 
+  const handleLongPress = () => {
+    if (!content) return;
+    pemImpactLight();
+    Alert.alert("Message", undefined, [
+      {
+        text: "Copy",
+        onPress: () => Clipboard.setStringAsync(content),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
   return (
     <View style={[styles.row, isUser && styles.rowRight]}>
-      <View
+      {isHighlighted && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: pemAmber, opacity: flashOpacity, borderRadius: radii.lg },
+          ]}
+        />
+      )}
+      <Pressable
+        onLongPress={handleLongPress}
         style={[
           styles.bubble,
           { backgroundColor: bubbleBg },
@@ -68,10 +106,16 @@ export default function ChatBubble({ message, onRetry, onViewTasks }: Props) {
       >
         {isBrief && (
           <Text style={[styles.briefLabel, { color: pemAmber }]}>
-            Morning Brief
+            Daily Brief
           </Text>
         )}
-        <Text style={[styles.text, { color: textColor }]}>{content}</Text>
+        {isUser ? (
+          <Text style={[styles.text, { color: textColor }]}>{content}</Text>
+        ) : (
+          <MarkdownText style={[styles.text, { color: textColor }]}>
+            {content}
+          </MarkdownText>
+        )}
 
         {isFailed && (
           <Pressable
@@ -108,7 +152,7 @@ export default function ChatBubble({ message, onRetry, onViewTasks }: Props) {
               <CheckCheck size={14} color={tickColor} strokeWidth={2} />
             ))}
         </View>
-      </View>
+      </Pressable>
     </View>
   );
 }

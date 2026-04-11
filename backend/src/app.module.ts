@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CalendarModule } from './calendar/calendar.module';
 import { ChatModule } from './chat/chat.module';
 import { ExtractsModule } from './extracts/extracts.module';
+import { ListsModule } from './lists/lists.module';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { BackgroundModule } from './background/background.module';
@@ -13,6 +14,8 @@ import { HealthController } from './health/health.controller';
 import { StorageModule } from './storage/storage.module';
 import { UsersModule } from './users/users.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+
+const isDev = (process.env.ENV ?? process.env.NODE_ENV ?? 'dev') === 'dev';
 
 @Module({
   imports: [
@@ -23,7 +26,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 100,
+        limit: isDev ? 10_000 : 200,
       },
     ]),
     BackgroundModule,
@@ -31,6 +34,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     ChatModule,
     DatabaseModule,
     ExtractsModule,
+    ListsModule,
     StorageModule,
     UsersModule,
     WebhooksModule,

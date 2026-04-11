@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, merge, interval } from 'rxjs';
+import { finalize, map } from 'rxjs/operators';
 
 import { ChatEventsService } from '../background/chat-events/chat-events.service';
+
+const HEARTBEAT_MS = 30_000;
 
 export interface SseEvent {
   data: string;
@@ -15,8 +18,8 @@ export class ChatStreamService {
   constructor(private readonly chatEvents: ChatEventsService) {}
 
   createStream(userId: string): Observable<SseEvent> {
-    const sub = this.chatEvents.createSubscriber();
-    if (!sub) {
+    const redis = this.chatEvents.createSubscriber();
+    if (!redis) {
       return new Observable((observer) => {
         observer.next({ data: JSON.stringify({ error: 'SSE not available' }) });
         observer.complete();
@@ -26,12 +29,12 @@ export class ChatStreamService {
     const channel = this.chatEvents.channelForUser(userId);
     const subject = new Subject<SseEvent>();
 
-    sub.subscribe(channel).catch((err) => {
+    redis.subscribe(channel).catch((err) => {
       this.log.error(`Subscribe failed: ${err}`);
       subject.complete();
     });
 
-    sub.on('message', (_ch: string, raw: string) => {
+    redis.on('message', (_ch: string, raw: string) => {
       try {
         const parsed = JSON.parse(raw) as { event: string; data: unknown };
         subject.next({
@@ -43,12 +46,19 @@ export class ChatStreamService {
       }
     });
 
-    subject.subscribe({
-      complete: () => {
-        void sub.unsubscribe(channel).then(() => sub.quit());
-      },
-    });
+    const heartbeat$ = interval(HEARTBEAT_MS).pipe(
+      map(
+        (): SseEvent => ({
+          type: 'heartbeat',
+          data: JSON.stringify({ ok: true }),
+        }),
+      ),
+    );
 
-    return subject.asObservable();
+    return merge(subject, heartbeat$).pipe(
+      finalize(() => {
+        void redis.unsubscribe(channel).then(() => redis.quit());
+      }),
+    );
   }
 }

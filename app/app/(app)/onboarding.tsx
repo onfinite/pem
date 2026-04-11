@@ -187,10 +187,10 @@ export default function OnboardingScreen() {
               <Bell size={36} color={pemAmber} />
             </View>
             <PemText variant="display" style={styles.heading}>
-              Morning brief
+              Daily brief
             </PemText>
             <PemText variant="bodyMuted" style={styles.body}>
-              Every morning Pem sends you a summary.{"\n"}
+              Pem sends you a daily summary.{"\n"}
               When would you like it?
             </PemText>
             <View style={styles.timeGrid}>

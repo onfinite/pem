@@ -1,4 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { and, eq, isNotNull, lte, or, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
@@ -22,6 +24,7 @@ export class CalendarSyncService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly config: ConfigService,
     private readonly connections: CalendarConnectionService,
     private readonly google: GoogleCalendarService,
   ) {}
@@ -42,6 +45,69 @@ export class CalendarSyncService {
       }
     }
     return { synced: true };
+  }
+
+  /** Set up a Google Calendar push notification watch for a connection. */
+  async setupWatch(connectionId: string): Promise<void> {
+    const webhookUrl = this.config.get<string>('googleCalendar.webhookUrl');
+    if (!webhookUrl) {
+      this.log.debug('GOOGLE_CALENDAR_WEBHOOK_URL not set, skipping watch setup');
+      return;
+    }
+
+    const conn = await this.connections.findById(connectionId);
+    if (!conn?.googleAccessToken || !conn.googleRefreshToken) return;
+
+    const channelId = randomUUID();
+    try {
+      const { resourceId, expiration } = await this.google.watchEvents(
+        conn.googleAccessToken,
+        conn.googleRefreshToken,
+        'primary',
+        webhookUrl,
+        channelId,
+      );
+
+      await this.connections.updateWatchState(
+        connectionId,
+        channelId,
+        resourceId,
+        new Date(expiration),
+      );
+
+      this.log.log(`Watch set up for connection ${connectionId}`);
+    } catch (err) {
+      this.log.warn(
+        `Failed to set up watch for ${connectionId}: ${
+          err instanceof Error ? err.message : 'Unknown error'
+        }`,
+      );
+    }
+  }
+
+  /** Renew a watch by stopping the old one and creating a new one. */
+  async renewWatch(connectionId: string): Promise<void> {
+    const conn = await this.connections.findById(connectionId);
+    if (!conn?.googleAccessToken || !conn.googleRefreshToken) return;
+
+    if (conn.watchChannelId && conn.watchResourceId) {
+      try {
+        await this.google.stopWatch(
+          conn.googleAccessToken,
+          conn.googleRefreshToken,
+          conn.watchChannelId,
+          conn.watchResourceId,
+        );
+      } catch (err) {
+        this.log.debug(
+          `Stop watch failed for ${connectionId} (may already be expired): ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+      }
+    }
+
+    await this.setupWatch(connectionId);
   }
 
   /** Sync a single Google Calendar connection: fetch events, upsert extracts. */
@@ -422,6 +488,7 @@ export class CalendarSyncService {
           eventLocation: event.location,
           externalEventId: event.id,
           calendarConnectionId: conn.id,
+          isOrganizer: event.isOrganizer ?? false,
           status: isPast ? 'done' : 'inbox',
           doneAt: isPast ? now : null,
           updatedAt: now,
@@ -450,9 +517,13 @@ export class CalendarSyncService {
           originalText: event.summary ?? '',
           status: isPast ? 'done' : 'inbox',
           tone: 'confident',
-          urgency: this.classifyEventUrgency(event.start),
+          urgency: 'none',
+          periodStart: event.start,
+          periodEnd: event.end,
+          periodLabel: this.periodLabelForEvent(event.start),
           externalEventId: event.id,
           calendarConnectionId: conn.id,
+          isOrganizer: event.isOrganizer ?? false,
           eventStartAt: event.start,
           eventEndAt: event.end,
           eventLocation: event.location,
@@ -478,15 +549,15 @@ export class CalendarSyncService {
     }
   }
 
-  private classifyEventUrgency(
-    start: Date,
-  ): 'today' | 'this_week' | 'someday' | 'none' {
+  private periodLabelForEvent(start: Date): string {
     const now = new Date();
     const diffMs = start.getTime() - now.getTime();
     const diffDays = diffMs / (24 * 60 * 60 * 1000);
     if (diffDays < 1) return 'today';
-    if (diffDays < 7) return 'this_week';
-    return 'none';
+    if (diffDays < 2) return 'tomorrow';
+    if (diffDays < 7) return 'this week';
+    if (diffDays < 14) return 'next week';
+    return start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   }
 
   private async logCalendar(

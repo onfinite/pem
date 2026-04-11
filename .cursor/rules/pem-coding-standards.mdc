@@ -1,0 +1,1294 @@
+---
+description: Pem — Coding standards. Applies to all files in the codebase. NestJS backend and React Native frontend. Read this before writing any code.
+globs: **/*
+alwaysApply: true
+---
+
+# Pem — Coding Standards
+
+The goal is simple: any file should be readable top to bottom in under a minute.
+If it isn't, it needs to be split.
+
+---
+
+## The one rule that governs everything
+
+**Simple is hard. Do the work to make it simple.**
+
+Complexity is not a sign of effort — it's a sign of unfinished thinking.
+If a piece of code is hard to read, it is not done yet.
+Rewrite it until it is obvious.
+
+---
+
+## File length
+
+### Hard limits
+- React Native component files: **150 lines max**
+- NestJS service files: **200 lines max**
+- NestJS controller files: **80 lines max** (controllers are thin — they route, they don't think)
+- Hook files: **80 lines max**
+- Util files: **60 lines max**
+- Type/interface files: no limit — types are documentation
+
+### When a file approaches its limit
+Split it. Not into one big file and one small file — into logical units that each
+have a single reason to exist.
+
+A file should do one thing. If you can't describe what a file does in one sentence,
+it does too many things.
+
+---
+
+## Naming
+
+Names are documentation. A good name means no comment needed.
+
+### Files
+```
+# React Native
+ChatScreen.tsx          ← screen
+UserVoiceBubble.tsx     ← component
+useChatMessages.ts      ← hook
+formatDuration.ts       ← util
+chat.types.ts           ← types
+chat.constants.ts       ← constants
+
+# NestJS
+chat.service.ts         ← service
+chat.controller.ts      ← controller
+chat.module.ts          ← module
+classify-intent.ts      ← single-purpose function
+embed-message.ts        ← single-purpose function
+chat.dto.ts             ← DTOs
+chat.types.ts           ← types
+```
+
+### Variables and functions
+```typescript
+// ✓ Good — obvious from the name
+const hasUnreadMessages = messages.some(m => !m.read)
+const isRecording = recordingState === 'active'
+const overdueTasks = tasks.filter(t => isOverdue(t))
+
+// ✗ Bad — requires reading the body to understand
+const x = messages.some(m => !m.read)
+const flag = recordingState === 'active'
+const filtered = tasks.filter(t => t.dueAt < now && t.status !== 'done')
+```
+
+### Booleans always start with is, has, can, should, did
+```typescript
+isLoading
+hasError
+canSend
+shouldRefetch
+didReceiveMessage
+isVoiceMessage
+```
+
+### Event handlers always start with handle
+```typescript
+handleSend
+handleMicPress
+handleTranscribeToggle
+handleDrawerClose
+handleTaskDone
+```
+
+### Async functions that fetch start with fetch or load
+```typescript
+fetchMessages
+loadMoreMessages
+fetchTaskCounts
+```
+
+---
+
+## No long ternaries
+
+This is one of the most important rules in the codebase.
+
+### ✗ Never — ternary with JSX blocks
+```tsx
+return (
+  <View>
+    {isVoice ? (
+      <View style={styles.voiceContainer}>
+        <PlayButton onPress={handlePlay} />
+        <Waveform bars={waveBars} />
+        <Text style={styles.duration}>{duration}</Text>
+        <TranscribeButton onPress={handleTranscribe} />
+      </View>
+    ) : (
+      <View style={styles.textContainer}>
+        <Text style={styles.messageText}>{content}</Text>
+      </View>
+    )}
+  </View>
+)
+```
+
+### ✓ Always — extract components, ternary only picks between them
+```tsx
+return (
+  <View>
+    {isVoice ? <VoiceContent /> : <TextContent />}
+  </View>
+)
+```
+
+### The threshold: 2 lines of JSX inside a ternary → extract a component
+
+```tsx
+// ✓ Ternary is fine for single values
+<Text style={isRead ? styles.read : styles.unread}>{text}</Text>
+
+// ✓ Ternary is fine for single components
+{isLoading ? <Spinner /> : <MessageList messages={messages} />}
+
+// ✗ Ternary is not fine for blocks of JSX
+{isLoading ? (
+  <View>
+    <Spinner />
+    <Text>Loading...</Text>
+  </View>
+) : (
+  <MessageList messages={messages} />
+)}
+
+// ✓ Extract it
+{isLoading ? <LoadingState /> : <MessageList messages={messages} />}
+```
+
+### Early returns over ternaries for loading/error states
+```tsx
+// ✓ Good
+if (isLoading) return <LoadingState />
+if (error) return <ErrorState error={error} />
+if (!messages.length) return <EmptyState />
+
+return <MessageList messages={messages} />
+
+// ✗ Bad
+return isLoading ? <LoadingState /> : error ? <ErrorState /> : !messages.length ? <EmptyState /> : <MessageList />
+```
+
+---
+
+## Components
+
+### One component per file
+No exceptions. Each component has its own file.
+
+### Component files always export one thing — the component
+```tsx
+// UserVoiceBubble.tsx
+export function UserVoiceBubble({ message }: UserVoiceBubbleProps) {
+  // ...
+}
+```
+
+No default exports. Named exports only — easier to refactor, easier to find.
+
+### Props interfaces are defined in the same file, above the component
+```tsx
+interface UserVoiceBubbleProps {
+  message: VoiceMessage
+  onTranscribe: (messageId: string) => void
+}
+
+export function UserVoiceBubble({ message, onTranscribe }: UserVoiceBubbleProps) {
+  // ...
+}
+```
+
+### Component structure — always in this order
+```tsx
+// 1. Imports
+// 2. Types/interfaces
+// 3. Constants local to the component (if any)
+// 4. The component function
+//    a. State
+//    b. Refs
+//    c. Derived values (useMemo)
+//    d. Effects
+//    e. Handlers
+//    f. Early returns (loading, error, empty)
+//    g. Return JSX
+// 5. Styles (StyleSheet.create at bottom of file)
+```
+
+### Extract sub-components aggressively
+
+If a section of JSX has its own logic or is getting long, it's a component.
+Even if it's only used once. Single-use components are fine — they're
+documentation. They give a name to a concept.
+
+```tsx
+// ✗ Everything in one render
+export function MessageList({ messages }: Props) {
+  return (
+    <FlatList
+      data={messages}
+      renderItem={({ item }) => (
+        <View style={styles.row}>
+          {item.role === 'user' ? (
+            <View style={styles.userBubble}>
+              {item.kind === 'voice' ? (
+                // 30 lines of voice bubble...
+              ) : (
+                // 20 lines of text bubble...
+              )}
+            </View>
+          ) : (
+            // 40 lines of pem bubble...
+          )}
+        </View>
+      )}
+    />
+  )
+}
+
+// ✓ Composed from named pieces
+export function MessageList({ messages }: Props) {
+  return (
+    <FlatList
+      data={messages}
+      renderItem={({ item }) => <MessageRow message={item} />}
+      keyExtractor={m => m.id}
+    />
+  )
+}
+```
+
+---
+
+## Hooks
+
+### Extract all logic from components into hooks
+Components render. Hooks think.
+
+A component that has more than 2-3 useState or useEffect calls needs a hook.
+
+```tsx
+// ✗ Logic mixed into component
+export function ChatInput() {
+  const [text, setText] = useState('')
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingDuration, setRecordingDuration] = useState(0)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const timerRef = useRef<NodeJS.Timeout>()
+
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingDuration(d => d + 1)
+      }, 1000)
+    }
+    return () => clearInterval(timerRef.current)
+  }, [isRecording])
+
+  // ...30 more lines of logic
+}
+
+// ✓ Logic in a hook
+export function ChatInput() {
+  const { text, setText, isTyping } = useChatText()
+  const { isRecording, duration, startRecording, stopRecording } = useVoiceRecording()
+
+  return isRecording
+    ? <RecordingBar duration={duration} onStop={stopRecording} />
+    : <TextBar text={text} onChange={setText} onMicPress={startRecording} isTyping={isTyping} />
+}
+```
+
+### Hook file structure
+```typescript
+// useChatMessages.ts
+export function useChatMessages(userId: string) {
+  // state
+  // refs
+  // derived values
+  // effects
+  // handlers
+
+  return {
+    messages,
+    isLoading,
+    hasError,
+    sendMessage,
+    loadMore,
+  }
+}
+```
+
+Only return what the component needs. Don't return internal state.
+
+---
+
+## Utils
+
+### One function per util file (usually)
+```
+utils/
+  formatDuration.ts       ← formats 0:23 from seconds
+  formatRelativeDate.ts   ← "Today", "Yesterday", "Apr 6"
+  isOverdue.ts            ← checks if a task is overdue
+  groupByDate.ts          ← groups messages by date
+  truncateText.ts         ← truncates with ellipsis
+  parseIntent.ts          ← maps string to Intent enum
+```
+
+### Utils are pure functions — no side effects, no imports from app code
+```typescript
+// ✓ Pure, testable, reusable
+export function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+// ✗ Has side effects, hard to test
+export function formatAndLogDuration(seconds: number): string {
+  const result = `${Math.floor(seconds / 60)}:${seconds % 60}`
+  console.log('duration:', result)
+  return result
+}
+```
+
+---
+
+## Types
+
+### All shared types in `types/` directory
+```
+types/
+  message.types.ts
+  task.types.ts
+  calendar.types.ts
+  user.types.ts
+  sse.types.ts
+```
+
+### Use types, not interfaces for data shapes
+```typescript
+// ✓ type for data
+export type Message = {
+  id: string
+  userId: string
+  role: 'user' | 'pem'
+  kind: 'text' | 'voice' | 'brief' | 'status'
+  content: string | null
+  voiceUrl: string | null
+  transcript: string | null
+  intent: Intent | null
+  createdAt: Date
+}
+
+// ✓ interface for things that get implemented (services, repositories)
+export interface MessageRepository {
+  findByUser(userId: string, options: PaginationOptions): Promise<Message[]>
+  save(message: CreateMessageDto): Promise<Message>
+}
+```
+
+### Enums as const objects, not TypeScript enums
+```typescript
+// ✓ Const object — better tree-shaking, works with Zod
+export const Intent = {
+  DUMP: 'dump',
+  COMMAND: 'command',
+  QUESTION: 'question',
+} as const
+export type Intent = typeof Intent[keyof typeof Intent]
+
+// ✗ TypeScript enum — runtime overhead, worse DX
+enum Intent {
+  DUMP = 'dump',
+  COMMAND = 'command',
+  QUESTION = 'question',
+}
+```
+
+---
+
+## DRY — Don't Repeat Yourself
+
+### If you write the same thing twice, extract it
+```typescript
+// ✗ Repeated
+const isOverdue = task.dueAt < new Date() && task.status !== 'done'
+// ...50 lines later...
+if (task.dueAt < new Date() && task.status !== 'done') { ... }
+
+// ✓ Extracted once
+import { isOverdue } from '@/utils/isOverdue'
+```
+
+### Magic values become constants
+```typescript
+// ✗ Magic values scattered in code
+if (messages.length > 50) loadMore()
+setTimeout(retry, 3000)
+
+// ✓ Named constants
+const MESSAGES_PER_PAGE = 50
+const RETRY_DELAY_MS = 3000
+
+if (messages.length > MESSAGES_PER_PAGE) loadMore()
+setTimeout(retry, RETRY_DELAY_MS)
+```
+
+### Constants live in `constants/` or at the top of the file they belong to
+```
+constants/
+  chat.constants.ts
+  tasks.constants.ts
+  api.constants.ts
+```
+
+---
+
+## NestJS backend specifics
+
+### Controllers are thin — they only route
+```typescript
+// ✓ Thin controller
+@Controller('chat')
+export class ChatController {
+  constructor(private readonly chatService: ChatService) {}
+
+  @Post('messages')
+  async sendMessage(
+    @Body() dto: SendMessageDto,
+    @GetUser() user: AuthUser,
+  ) {
+    return this.chatService.sendMessage(user.id, dto)
+  }
+}
+
+// ✗ Fat controller — business logic does not belong here
+@Post('messages')
+async sendMessage(@Body() dto: SendMessageDto, @GetUser() user: AuthUser) {
+  const message = await this.db.messages.create({ data: { ...dto, userId: user.id } })
+  const intent = await this.openai.classify(dto.content)
+  await this.queue.add('process-message', { messageId: message.id, intent })
+  return { messageId: message.id, status: 'received' }
+}
+```
+
+### Services have one responsibility
+If a service file is doing classification AND embedding AND sending SSE events,
+split it.
+
+```
+chat/
+  chat.controller.ts
+  chat.service.ts          ← orchestrates, delegates
+  chat.module.ts
+  services/
+    classify-intent.service.ts   ← only classification
+    embed-message.service.ts     ← only embedding
+    sse.service.ts               ← only SSE
+  jobs/
+    process-dump.job.ts
+    transcribe-voice.job.ts
+    embed-message.job.ts
+  dto/
+    send-message.dto.ts
+    paginate-messages.dto.ts
+```
+
+### Extract single-purpose functions from services
+```typescript
+// ✓ Single purpose, easy to test
+// classify-intent.ts
+export async function classifyIntent(content: string): Promise<Intent> {
+  const result = await generateText({
+    model: openai('gpt-4o-mini'),
+    output: Output.choice({ options: ['dump', 'command', 'question'] }),
+    prompt: buildClassifyPrompt(content),
+  })
+  return result.output
+}
+```
+
+Use **`generateText` + `Output.*`** per **`pem-core-loop.mdc`** — not `generateObject` / `streamObject`.
+
+### DTOs validate at the boundary — always use class-validator
+```typescript
+export class SendMessageDto {
+  @IsEnum(['text', 'voice'])
+  kind: 'text' | 'voice'
+
+  @IsString()
+  @IsOptional()
+  content?: string
+
+  @IsUrl()
+  @IsOptional()
+  voiceUrl?: string
+}
+```
+
+### No raw SQL in services — use Drizzle query builder
+```typescript
+// ✓ Drizzle
+const messages = await db
+  .select()
+  .from(messagesTable)
+  .where(and(eq(messagesTable.userId, userId), lt(messagesTable.createdAt, before)))
+  .orderBy(desc(messagesTable.createdAt))
+  .limit(50)
+
+// ✗ Raw SQL in application code
+const messages = await db.query(`SELECT * FROM messages WHERE user_id = $1...`)
+```
+
+---
+
+## React Native specifics
+
+### StyleSheet.create always at bottom of component file
+```typescript
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  // ...
+})
+```
+
+### No inline styles except for dynamic values
+```tsx
+// ✓ Dynamic value inline (changes at runtime)
+<View style={{ opacity: progress }} />
+<View style={{ height: keyboardHeight }} />
+
+// ✗ Static value inline (should be in StyleSheet)
+<View style={{ backgroundColor: '#faf8f4', padding: 16 }} />
+```
+
+### Colors, spacing, typography from constants — never hardcoded
+```typescript
+// constants/theme.ts
+export const colors = {
+  bg: '#faf8f4',
+  amber: '#e8763a',
+  amberDark: '#c45e22',
+  amberBg: '#fdf2ea',
+  text: '#1c1a16',
+  text2: '#6b6560',
+  muted: '#b8b0a4',
+  border: '#e8e2d8',
+}
+
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+}
+
+export const radius = {
+  sm: 8,
+  md: 12,
+  lg: 18,
+  full: 999,
+}
+```
+
+Prefer **`app/constants/theme.ts`** and **`typography.ts`** (Pem brand) over duplicating values.
+
+### No `any` — ever
+```typescript
+// ✗ any hides bugs
+const handleEvent = (event: any) => { ... }
+
+// ✓ type it properly
+const handleEvent = (event: GestureResponderEvent) => { ... }
+```
+
+### Avoid nested ternaries — maximum one level deep
+```tsx
+// ✗ Nested ternary — unreadable
+{isLoading ? <Spinner /> : hasError ? <ErrorState /> : <Content />}
+
+// ✓ Early returns handle states, ternary only for binary choices
+if (isLoading) return <Spinner />
+if (hasError) return <ErrorState error={error} />
+return <Content />
+```
+
+---
+
+## Folder structure
+
+### React Native app
+```
+src/
+  screens/
+    ChatScreen/
+      ChatScreen.tsx          ← max 150 lines
+      ChatScreen.types.ts
+      index.ts                ← re-exports ChatScreen
+  components/
+    chat/
+      MessageList.tsx
+      UserTextBubble.tsx
+      UserVoiceBubble.tsx
+      PemTextBubble.tsx
+      PemBriefBubble.tsx
+      PemStatusBubble.tsx
+      DateHeader.tsx
+    input/
+      ChatInput.tsx
+      MicButton.tsx
+      RecordingBar.tsx
+      TextBar.tsx
+    drawer/
+      TaskCalDrawer.tsx
+      TaskCalPill.tsx
+      TasksView.tsx
+      CalendarView.tsx
+      ListView.tsx
+      WeekView.tsx
+    shared/
+      Spinner.tsx
+      ErrorState.tsx
+      EmptyState.tsx
+  hooks/
+    useChatMessages.ts
+    useVoiceRecording.ts
+    useSSE.ts
+    useTaskCounts.ts
+    useCalendarEvents.ts
+    useChatInput.ts
+  utils/
+    formatDuration.ts
+    formatRelativeDate.ts
+    groupMessagesByDate.ts
+    isOverdue.ts
+    truncateText.ts
+  constants/
+    theme.ts
+    api.ts
+    chat.constants.ts
+  types/
+    message.types.ts
+    task.types.ts
+    calendar.types.ts
+    user.types.ts
+```
+
+The repo uses **`app/`** with **expo-router** — align new screens/components with existing `app/` layout (see **`pem-app.mdc`**).
+
+### NestJS backend
+```
+src/
+  chat/
+    chat.controller.ts
+    chat.service.ts
+    chat.module.ts
+    services/
+      classify-intent.service.ts
+      embed-message.service.ts
+      sse.service.ts
+      morning-brief.service.ts
+    jobs/
+      process-dump.job.ts
+      process-command.job.ts
+      transcribe-voice.job.ts
+      embed-message.job.ts
+      synthesize-themes.job.ts
+    dto/
+      send-message.dto.ts
+      paginate-messages.dto.ts
+    prompts/
+      classify-intent.prompt.ts
+      process-dump.prompt.ts
+      answer-question.prompt.ts
+      morning-brief.prompt.ts
+  tasks/
+    tasks.controller.ts
+    tasks.service.ts
+    tasks.module.ts
+    dto/
+  calendar/
+    calendar.controller.ts
+    calendar.service.ts
+    calendar.module.ts
+  database/
+    schema/
+      messages.schema.ts
+      actionables.schema.ts
+      users.schema.ts
+      message-embeddings.schema.ts
+    migrations/
+  common/
+    decorators/
+      get-user.decorator.ts
+    guards/
+      clerk-auth.guard.ts
+    filters/
+      all-exceptions.filter.ts
+    utils/
+      chunk-array.ts
+      retry.ts
+      sleep.ts
+```
+
+---
+
+## Prompts are isolated
+
+AI prompts are first-class code. They live in their own files.
+They are functions that take typed inputs and return strings.
+
+```typescript
+// prompts/classify-intent.prompt.ts
+export function classifyIntentPrompt(content: string): string {
+  return `
+You are classifying a message sent to Pem, an AI life assistant.
+Classify into exactly one: dump | command | question
+
+dump: offloading thoughts, things to remember, stream of consciousness
+command: explicit instruction to do something ("cancel", "add", "schedule")
+question: asking for information or status
+
+Message: "${content}"
+Return only the intent. No explanation.
+  `.trim()
+}
+```
+
+Avoid embedding huge prompt strings in service files — **extract** when adding or refactoring (existing **`pem-agent.service.ts`** may be grandfathered until split per line limits).
+
+---
+
+## Comments
+
+### Don't comment what the code says — comment why
+```typescript
+// ✗ Useless comment — the code already says this
+// Loop through messages
+messages.forEach(message => { ... })
+
+// ✓ Useful comment — explains a non-obvious decision
+// We prepend the ISO timestamp before embedding so the vector
+// carries temporal context — "what the user said on April 9"
+// rather than just "what the user said"
+const embeddingText = `[${message.createdAt.toISOString()}] ${message.content}`
+```
+
+### TODO comments always include what's needed before it gets done
+```typescript
+// TODO: remove this once calendar oauth is implemented
+// For now we only write to Pem's internal task list
+```
+
+---
+
+## Security — non-negotiable, always on
+
+Security is not a feature you add later. It is part of every line of code.
+Every endpoint, every query, every environment variable.
+If you are writing code that touches user data and security is not in your head, stop.
+
+### Authentication — always verify, never trust
+
+Every endpoint is protected by Clerk auth unless explicitly marked public.
+Never write an endpoint without the auth guard. Never.
+
+```typescript
+// ✓ Every protected endpoint
+@UseGuards(ClerkAuthGuard)
+@Controller('chat')
+export class ChatController { ... }
+
+// ✓ Explicit public endpoints only
+@Public()
+@Get('health')
+healthCheck() { return { status: 'ok' } }
+```
+
+Never trust user-provided IDs. Always derive the user ID from the verified auth token.
+
+```typescript
+// ✗ Never — user controls their own userId
+@Get('messages')
+getMessages(@Body('userId') userId: string) { ... }
+
+// ✓ Always — userId comes from verified token only
+@Get('messages')
+getMessages(@GetUser() user: AuthUser) {
+  return this.chatService.getMessages(user.id)
+}
+```
+
+### Data isolation — every query scopes to the authenticated user
+
+Never query without a userId filter. A user must never be able to
+access another user's data — not through ID manipulation, not through
+any endpoint.
+
+```typescript
+// ✗ Missing user scope — any user can see any message
+const message = await db.select().from(messages).where(eq(messages.id, messageId))
+
+// ✓ Always scoped — userId from verified token, not from request
+const message = await db
+  .select()
+  .from(messages)
+  .where(and(
+    eq(messages.id, messageId),
+    eq(messages.userId, authenticatedUserId), // ← always
+  ))
+
+if (!message) throw new NotFoundException()
+```
+
+Make this a habit: every single db query that returns user data must filter by userId.
+
+### Input validation — validate everything at the boundary
+
+All incoming data is validated at the DTO level before it touches a service.
+Never pass raw request body to a service.
+
+```typescript
+// ✓ Validate at the edge
+export class SendMessageDto {
+  @IsEnum(['text', 'voice'])
+  kind: 'text' | 'voice'
+
+  @IsString()
+  @MaxLength(10000)        // ← always set max lengths
+  @IsOptional()
+  content?: string
+
+  @IsUrl({ protocols: ['https'] })  // ← https only
+  @IsOptional()
+  voiceUrl?: string
+}
+```
+
+### Environment variables — never in code, never in logs
+
+```typescript
+// ✗ Hardcoded secrets
+const apiKey = 'sk-proj-abc123...'
+
+// ✓ Always from environment
+const apiKey = process.env.OPENAI_API_KEY
+if (!apiKey) throw new Error('OPENAI_API_KEY is required')
+```
+
+Never log request bodies, tokens, API keys, or any user content.
+Logs are observable by people who are not the user.
+
+```typescript
+// ✗ Logs user content
+console.log('Processing message:', messageContent)
+console.log('User token:', authToken)
+
+// ✓ Logs only safe identifiers
+this.logger.log(`Processing message ${messageId} for user ${userId}`)
+```
+
+### SQL injection — use the query builder, never string interpolation
+
+Drizzle's query builder parameterizes automatically.
+Never construct SQL strings with user input.
+
+```typescript
+// ✗ SQL injection vector
+const result = await db.query(`SELECT * FROM messages WHERE content LIKE '%${search}%'`)
+
+// ✓ Parameterized via Drizzle
+const result = await db
+  .select()
+  .from(messages)
+  .where(like(messages.content, `%${search}%`)) // Drizzle handles escaping
+```
+
+### Rate limiting — on every public-facing endpoint
+
+Protect against abuse and runaway costs.
+
+```typescript
+// Apply at controller or globally
+@Throttle({ default: { limit: 60, ttl: 60000 } }) // 60 req/min per user
+@Controller('chat')
+export class ChatController { ... }
+
+// Tighter limits on expensive operations
+@Throttle({ default: { limit: 10, ttl: 60000 } }) // 10/min for voice upload
+@Post('voice')
+uploadVoice() { ... }
+```
+
+### File uploads — validate type and size
+
+Never trust the Content-Type header. Validate the actual file.
+
+```typescript
+// ✓ Validate uploads
+const ALLOWED_AUDIO_TYPES = ['audio/m4a', 'audio/mp4', 'audio/webm', 'audio/wav']
+const MAX_VOICE_SIZE_BYTES = 25 * 1024 * 1024 // 25MB (Whisper limit)
+
+if (!ALLOWED_AUDIO_TYPES.includes(file.mimetype)) {
+  throw new BadRequestException('Invalid audio format')
+}
+if (file.size > MAX_VOICE_SIZE_BYTES) {
+  throw new BadRequestException('File too large')
+}
+```
+
+### CORS — explicit allowlist, never wildcard in production
+
+```typescript
+// ✗ Never in production
+app.enableCors({ origin: '*' })
+
+// ✓ Explicit origins only
+app.enableCors({
+  origin: [process.env.APP_URL, 'https://heypem.com'],
+  credentials: true,
+})
+```
+
+### Security checklist — run through this for every new endpoint
+
+- [ ] Is this endpoint protected by ClerkAuthGuard?
+- [ ] Does every DB query filter by `authenticatedUserId`?
+- [ ] Is all input validated by a DTO with class-validator?
+- [ ] Are max lengths set on all string inputs?
+- [ ] Is the endpoint rate-limited?
+- [ ] Are there any secrets, tokens, or user content in logs?
+- [ ] If file upload: is type and size validated?
+
+---
+
+## Scalability — built for 10,000 concurrent users from day one
+
+We do not build for a few people. We build for scale and fix it down to small
+if we need to. The cost of retrofitting scale is 10x the cost of building it in.
+
+10,000 concurrent users means:
+- Thousands of simultaneous SSE connections
+- Hundreds of BullMQ jobs in flight at any moment
+- Database queries that must be fast under load
+- No operations that block the event loop
+- No shared in-memory state between instances
+
+### Never block the event loop
+
+Node.js is single-threaded. Anything that blocks it blocks every user.
+
+```typescript
+// ✗ Synchronous operations that block
+const data = fs.readFileSync('file.txt')
+const result = JSON.parse(largeJson) // fine for small, block for large
+
+// ✓ Always async
+const data = await fs.promises.readFile('file.txt')
+```
+
+Heavy CPU work (large JSON parsing, image processing) goes to a worker thread or
+a separate service — never in the request path.
+
+### Database — indexes on everything you query by
+
+Every foreign key, every field in a WHERE clause, every ORDER BY field needs an index.
+Un-indexed queries kill at scale.
+
+```typescript
+// schema/messages.schema.ts
+export const messages = pgTable('messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  intent: text('intent'),
+  kind: text('kind').notNull(),
+}, (table) => ({
+  // Index every field you filter or sort by
+  userIdIdx: index('messages_user_id_idx').on(table.userId),
+  createdAtIdx: index('messages_created_at_idx').on(table.createdAt),
+  userCreatedIdx: index('messages_user_created_idx').on(table.userId, table.createdAt),
+}))
+```
+
+### Database — always paginate, never return unbounded results
+
+```typescript
+// ✗ Returns entire history — breaks at scale
+const messages = await db.select().from(messages).where(eq(messages.userId, userId))
+
+// ✓ Always paginate
+const MESSAGES_PER_PAGE = 50
+
+const messages = await db
+  .select()
+  .from(messagesTable)
+  .where(and(
+    eq(messagesTable.userId, userId),
+    before ? lt(messagesTable.createdAt, before) : undefined,
+  ))
+  .orderBy(desc(messagesTable.createdAt))
+  .limit(MESSAGES_PER_PAGE)
+```
+
+### Database — use connection pooling
+
+Never open a new DB connection per request.
+Use a connection pool (Neon handles this for serverless, PgBouncer for dedicated).
+
+```typescript
+// drizzle config — pool size tuned to your compute
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,              // max connections in pool
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+})
+```
+
+### Database — select only what you need
+
+```typescript
+// ✗ Selects entire row including embeddings and large fields
+const messages = await db.select().from(messagesTable).where(...)
+
+// ✓ Select only what the caller needs
+const messages = await db
+  .select({
+    id: messagesTable.id,
+    role: messagesTable.role,
+    kind: messagesTable.kind,
+    content: messagesTable.content,
+    createdAt: messagesTable.createdAt,
+  })
+  .from(messagesTable)
+  .where(...)
+```
+
+### SSE — one connection per user, managed carefully
+
+10,000 concurrent users = 10,000 open SSE connections.
+Each connection holds memory and a file descriptor.
+
+```typescript
+// SSE connections must be cleaned up on disconnect
+export class SseService {
+  private readonly connections = new Map<string, Response>()
+
+  addConnection(userId: string, res: Response) {
+    // Close any existing connection for this user first
+    this.closeConnection(userId)
+    this.connections.set(userId, res)
+
+    // Clean up when client disconnects
+    res.on('close', () => {
+      this.connections.delete(userId)
+    })
+  }
+
+  closeConnection(userId: string) {
+    const existing = this.connections.get(userId)
+    if (existing) {
+      existing.end()
+      this.connections.delete(userId)
+    }
+  }
+}
+```
+
+In production with multiple instances, SSE connections need Redis pub/sub so
+any instance can push to any user. See **`pem-backend.mdc`** / chat SSE architecture.
+
+### BullMQ — configure concurrency intentionally
+
+```typescript
+// ✓ Set concurrency based on the job's resource cost
+const worker = new Worker('embed-messages', embedProcessor, {
+  connection: redis,
+  concurrency: 20,   // cheap jobs — high concurrency
+})
+
+const agentWorker = new Worker('process-dump', agentProcessor, {
+  connection: redis,
+  concurrency: 5,    // expensive AI calls — lower concurrency to control cost
+})
+```
+
+### BullMQ — always handle failure with retry and backoff
+
+```typescript
+// ✓ Every job configured with retry
+await queue.add('embed-message', payload, {
+  attempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 2000,        // 2s, 4s, 8s
+  },
+  removeOnComplete: { count: 100 },  // don't accumulate completed jobs
+  removeOnFail: { count: 500 },
+})
+```
+
+### Caching — cache what doesn't change per request
+
+```typescript
+// Task counts for the pill — expensive to compute, cache aggressively
+const TASK_COUNTS_TTL_SECONDS = 60
+
+async getTaskCounts(userId: string): Promise<TaskCounts> {
+  const cacheKey = `task_counts:${userId}`
+  const cached = await this.redis.get(cacheKey)
+  if (cached) return JSON.parse(cached)
+
+  const counts = await this.computeTaskCounts(userId)
+  await this.redis.set(cacheKey, JSON.stringify(counts), 'EX', TASK_COUNTS_TTL_SECONDS)
+  return counts
+}
+
+// Invalidate cache when tasks change
+async markTaskDone(taskId: string, userId: string): Promise<void> {
+  await this.db.update(...)
+  await this.redis.del(`task_counts:${userId}`) // ← invalidate
+}
+```
+
+### AI calls — never in the request path if they're slow
+
+Classification (gpt-4o-mini, ~300ms) can be in the request path.
+Agent responses (gpt-4o, 3-30 seconds) must be in BullMQ jobs.
+
+```typescript
+// ✓ Fast classification — OK in request path
+@Post('messages')
+async sendMessage(@Body() dto: SendMessageDto, @GetUser() user: AuthUser) {
+  const message = await this.chatService.save(dto, user.id)
+  const intent = await this.classifyIntent(dto.content) // ~300ms, acceptable
+  await this.queue.add('process-message', { messageId: message.id, intent })
+  return { messageId: message.id, status: 'received' }
+}
+
+// ✓ Slow agent — always in a job
+// processMessage.job.ts
+async process(job: Job) {
+  const response = await runAgent(job.data) // can take 10-30 seconds
+  await this.sse.push(job.data.userId, { event: 'pem_message', data: response })
+}
+```
+
+### Observability — you cannot scale what you cannot see
+
+Every service must emit structured logs, metrics, and traces.
+If something breaks at 10,000 users you need to know where and why in seconds.
+
+```typescript
+// ✓ Structured logs — not console.log strings
+this.logger.log({
+  event: 'message.processed',
+  messageId,
+  userId,
+  intent,
+  durationMs: Date.now() - startTime,
+  tokensUsed: result.usage.totalTokens,
+})
+
+// ✓ Log slow operations
+const start = Date.now()
+const result = await this.runAgent(payload)
+const duration = Date.now() - start
+
+if (duration > 10000) {
+  this.logger.warn({
+    event: 'agent.slow',
+    messageId: payload.messageId,
+    durationMs: duration,
+  })
+}
+```
+
+Track these metrics at minimum:
+- Request latency (p50, p95, p99) per endpoint
+- BullMQ job queue depth and processing time
+- AI API latency and token usage per call
+- SSE connection count
+- DB query latency
+- Error rate per endpoint
+
+### Horizontal scaling — stateless services
+
+NestJS instances must be stateless. No in-memory state that can't
+exist on multiple instances simultaneously.
+
+```typescript
+// ✗ In-memory state — breaks with multiple instances
+const activeSessions = new Map<string, Session>() // only exists on this instance
+
+// ✓ State in Redis — shared across all instances
+const session = await this.redis.get(`session:${userId}`)
+```
+
+### Scalability checklist — run through this for every new feature
+
+- [ ] Does every DB query have indexes on all WHERE and ORDER BY fields?
+- [ ] Is all data paginated — no unbounded queries?
+- [ ] Are slow AI calls (gpt-4o) in BullMQ jobs, not the request path?
+- [ ] Is the service stateless — no in-memory state shared between requests?
+- [ ] Is the new endpoint rate-limited?
+- [ ] Are there structured logs with timing for slow path operations?
+- [ ] Is anything cacheable in Redis with appropriate TTL and invalidation?
+- [ ] Are BullMQ jobs configured with retry and backoff?
+- [ ] Does the SSE handler clean up connections on disconnect?
+
+---
+
+## The checklist before every PR
+
+### Code quality
+- [ ] No file exceeds its line limit
+- [ ] No ternary with more than one line of JSX on either side
+- [ ] No inline styles for static values
+- [ ] No hardcoded colors, spacing, or text strings (except in constants files)
+- [ ] Every boolean variable starts with is/has/can/should/did
+- [ ] Every handler starts with handle
+- [ ] No `any` types
+- [ ] Every component has a single responsibility
+- [ ] Every hook returns only what the component needs
+- [ ] AI prompts extracted or justified if embedded (see line limits)
+- [ ] Controllers are thin — no business logic
+- [ ] No magic numbers — everything is a named constant
+
+### Security
+- [ ] Is every new endpoint protected by ClerkAuthGuard?
+- [ ] Does every DB query that returns user data filter by authenticatedUserId?
+- [ ] Is all input validated by a DTO with class-validator and max lengths?
+- [ ] Is the endpoint rate-limited?
+- [ ] Are there any secrets, tokens, or user content in logs?
+- [ ] If file upload: is type and size validated?
+
+### Scalability
+- [ ] Does every new DB query have indexes on all WHERE and ORDER BY fields?
+- [ ] Is all data paginated — no unbounded queries?
+- [ ] Are slow AI calls in BullMQ jobs, not the request path?
+- [ ] Is the service stateless?
+- [ ] Are there structured logs with timing for the new code path?
+- [ ] Is anything cacheable in Redis?
+- [ ] Are BullMQ jobs configured with retry and backoff?
+
+---
+
+## Cross-references
+
+- **AI SDK:** `pem-core-loop.mdc` (`generateText` + `Output.object`, middleware).
+- **Backend Nest/Drizzle:** `pem-backend.mdc`.
+- **Expo / app layout:** `pem-app.mdc`.
+- **Product:** `pem-thought-organizer.mdc`, `pem-project.mdc`.

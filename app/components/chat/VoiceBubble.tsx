@@ -26,7 +26,7 @@ async function ensureLocalAudio(
   return result.uri;
 }
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Check, CheckCheck, Pause, Play } from "lucide-react-native";
+import { Check, CheckCheck, Pause, Play, X } from "lucide-react-native";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
@@ -42,7 +42,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ApiMessage } from "@/lib/pemApi";
-
+import { pemImpactLight } from "@/lib/pemHaptics";
 const SPEED_STORAGE_KEY = "@pem/voice_playback_speed_idx";
 const SPEEDS = [1, 1.5, 2] as const;
 const SPEED_LABELS = ["1×", "1.5×", "2×"] as const;
@@ -330,8 +330,8 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
   );
 }
 
-const SHEET_H = Dimensions.get("window").height * 0.75;
 const SWIPE_CLOSE = 80;
+const SHEET_HEIGHT_RATIO = 0.55;
 
 function TranscriptModal({
   visible,
@@ -344,21 +344,30 @@ function TranscriptModal({
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(SHEET_H)).current;
+  const screenH = Dimensions.get("window").height;
+  const sheetH = screenH * SHEET_HEIGHT_RATIO;
+
+  const translateY = useRef(new Animated.Value(sheetH)).current;
 
   const animateIn = useCallback(() => {
-    Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-  }, [translateY]);
+    translateY.setValue(sheetH);
+    Animated.spring(translateY, {
+      toValue: 0,
+      useNativeDriver: true,
+      damping: 25,
+      stiffness: 200,
+    }).start();
+  }, [translateY, sheetH]);
 
   const animateOut = useCallback(
     (cb?: () => void) => {
       Animated.timing(translateY, {
-        toValue: SHEET_H,
-        duration: 200,
+        toValue: sheetH,
+        duration: 220,
         useNativeDriver: true,
-      }).start(cb);
+      }).start(() => cb?.());
     },
-    [translateY],
+    [translateY, sheetH],
   );
 
   const handleClose = useCallback(() => {
@@ -366,7 +375,9 @@ function TranscriptModal({
   }, [animateOut, onClose]);
 
   useEffect(() => {
-    if (visible) setTimeout(animateIn, 10);
+    if (!visible) return;
+    const t = setTimeout(animateIn, 10);
+    return () => clearTimeout(t);
   }, [visible, animateIn]);
 
   const panResponder = useRef(
@@ -380,7 +391,12 @@ function TranscriptModal({
         if (g.dy > SWIPE_CLOSE) {
           animateOut(onClose);
         } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 25,
+            stiffness: 200,
+          }).start();
         }
       },
     }),
@@ -397,23 +413,37 @@ function TranscriptModal({
         style={[
           sheetStyles.sheet,
           {
-            height: SHEET_H + insets.bottom,
+            height: sheetH,
             paddingBottom: insets.bottom,
             backgroundColor: colors.pageBackground,
             transform: [{ translateY }],
           },
         ]}
-        {...panResponder.panHandlers}
       >
-        <View style={sheetStyles.handleRow}>
-          <View style={[sheetStyles.handle, { backgroundColor: colors.textTertiary }]} />
+        <View style={sheetStyles.topBar} {...panResponder.panHandlers}>
+          <Text style={[sheetStyles.title, { color: colors.textPrimary }]}>Transcript</Text>
+          <Pressable
+            onPress={() => {
+              pemImpactLight();
+              handleClose();
+            }}
+            style={[sheetStyles.closeBtn, { backgroundColor: colors.secondarySurface }]}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Close transcript"
+          >
+            <X size={18} color={colors.textSecondary} strokeWidth={2.5} />
+          </Pressable>
         </View>
-        <Text style={[sheetStyles.title, { color: colors.textPrimary }]}>Transcript</Text>
         <ScrollView
+          style={sheetStyles.scroll}
           contentContainerStyle={sheetStyles.body}
-          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator
         >
-          <Text style={[sheetStyles.text, { color: colors.textPrimary }]}>{text}</Text>
+          <Text style={[sheetStyles.text, { color: colors.textPrimary }]} selectable>
+            {text}
+          </Text>
         </ScrollView>
       </Animated.View>
     </Modal>
@@ -427,33 +457,45 @@ const sheetStyles = StyleSheet.create({
   },
   sheet: {
     position: "absolute",
-    bottom: 0,
     left: 0,
     right: 0,
+    bottom: 0,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 16,
   },
-  handleRow: {
+  topBar: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingTop: 10,
-    paddingBottom: 6,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    opacity: 0.4,
+    justifyContent: "space-between",
+    paddingHorizontal: space[4],
+    paddingTop: space[3],
+    paddingBottom: space[2],
   },
   title: {
     fontFamily: fontFamily.display.semibold,
     fontSize: fontSize.lg,
-    paddingHorizontal: space[4],
-    paddingBottom: space[3],
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scroll: {
+    flex: 1,
+    minHeight: 0,
   },
   body: {
+    flexGrow: 1,
     paddingHorizontal: space[4],
-    paddingBottom: space[10],
+    paddingBottom: space[6],
   },
   text: {
     fontFamily: fontFamily.sans.regular,

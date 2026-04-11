@@ -64,10 +64,19 @@ export class ClerkAuthGuard implements CanActivate {
     }
     const sub = claim;
 
+    const { email, name } = clerkProfileFromJwtPayload(payload);
     let user = await this.users.findByClerkId(sub);
     if (!user) {
-      const { email, name } = clerkProfileFromJwtPayload(payload);
       user = await this.users.upsertUserFromClerk(sub, email, name);
+    } else if (
+      (email !== null && email !== user.email) ||
+      (name !== null && name !== user.name)
+    ) {
+      user = await this.users.upsertUserFromClerk(
+        sub,
+        email ?? user.email,
+        name ?? user.name,
+      );
     }
     req.user = user;
     return true;

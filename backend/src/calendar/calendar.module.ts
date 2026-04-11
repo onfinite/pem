@@ -1,3 +1,4 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../database/database.module';
@@ -8,7 +9,11 @@ import { CalendarSyncService } from './calendar-sync.service';
 import { GoogleCalendarService } from './google-calendar.service';
 
 @Module({
-  imports: [DatabaseModule, UsersModule],
+  imports: [
+    DatabaseModule,
+    UsersModule,
+    BullModule.registerQueue({ name: 'calendar-sync' }),
+  ],
   controllers: [CalendarController],
   providers: [
     CalendarConnectionService,

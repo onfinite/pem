@@ -17,8 +17,11 @@ import {
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow } from '../database/schemas';
+import { NotificationTimeDto } from './dto/notification-time.dto';
+import { PreferencesDto } from './dto/preferences.dto';
 import { PushTokenDto } from './dto/push-token.dto';
 import { TimezoneDto } from './dto/timezone.dto';
+import { UpdateSummaryDto } from './dto/update-summary.dto';
 import { UserMeDto } from './dto/user-me.dto';
 import { UserService } from './user.service';
 
@@ -52,7 +55,6 @@ export class UsersController {
       summary: user.summary ?? null,
       onboarding_completed: user.onboardingCompleted,
       preferences: user.preferences ?? null,
-      focus_hours_per_week: user.focusHoursPerWeek ?? null,
       scheduling_confidence: user.schedulingConfidence ?? null,
     };
   }
@@ -71,7 +73,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Update user profile summary' })
   async updateSummary(
     @CurrentUser() user: UserRow,
-    @Body() body: { summary: string },
+    @Body() body: UpdateSummaryDto,
   ) {
     await this.users.updateSummary(user.id, body.summary);
     return { ok: true };
@@ -80,10 +82,10 @@ export class UsersController {
   @Patch('me/notification-time')
   @UseGuards(ClerkAuthGuard)
   @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Set notification time for morning brief (HH:MM)' })
+  @ApiOperation({ summary: 'Set notification time for daily brief (HH:MM)' })
   async setNotificationTime(
     @CurrentUser() user: UserRow,
-    @Body() body: { time: string },
+    @Body() body: NotificationTimeDto,
   ) {
     await this.users.setNotificationTime(user.id, body.time);
     return { ok: true, notification_time: body.time };
@@ -117,29 +119,9 @@ export class UsersController {
   @ApiOperation({ summary: 'Set scheduling preferences' })
   async setPreferences(
     @CurrentUser() user: UserRow,
-    @Body()
-    body: {
-      work_hours?: { start: string; end: string };
-      work_days?: number[];
-      work_type?: 'office' | 'remote' | 'hybrid';
-      personal_windows?: ('evenings' | 'weekends' | 'lunch' | 'mornings')[];
-      focus_time_pref?: 'morning' | 'afternoon';
-      errand_window?: 'weekend_morning' | 'lunch' | 'after_work';
-    },
+    @Body() body: PreferencesDto,
   ) {
     await this.users.setPreferences(user.id, body);
-    return { ok: true };
-  }
-
-  @Patch('me/focus-time')
-  @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Set focus hours per week and preferred time' })
-  async setFocusTime(
-    @CurrentUser() user: UserRow,
-    @Body() body: { hours: number; preferred_time?: 'morning' | 'afternoon' },
-  ) {
-    await this.users.setFocusTime(user.id, body.hours, body.preferred_time);
     return { ok: true };
   }
 

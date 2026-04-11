@@ -18,6 +18,7 @@ export type GoogleEvent = {
   location: string | null;
   status: string;
   attendees: GoogleEventAttendee[];
+  isOrganizer: boolean;
 };
 
 @Injectable()
@@ -247,6 +248,7 @@ export class GoogleCalendarService {
           self: a.self ?? false,
           responseStatus: a.responseStatus ?? 'needsAction',
         })),
+        isOrganizer: e.organizer?.self === true,
       }));
   }
 
@@ -365,6 +367,59 @@ export class GoogleCalendarService {
     });
 
     return { newAccessToken };
+  }
+
+  /** Subscribe to push notifications for a calendar via Google's watch API. */
+  async watchEvents(
+    accessToken: string,
+    refreshToken: string,
+    calendarId: string,
+    webhookUrl: string,
+    channelId: string,
+  ): Promise<{ resourceId: string; expiration: number }> {
+    const client = this.getOAuthClient();
+    client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    const cal = google.calendar({ version: 'v3', auth: client });
+    const { data } = await cal.events.watch({
+      calendarId,
+      requestBody: {
+        id: channelId,
+        type: 'web_hook',
+        address: webhookUrl,
+      },
+    });
+
+    if (!data.resourceId || !data.expiration) {
+      throw new Error('Google Calendar watch did not return resourceId/expiration');
+    }
+
+    return {
+      resourceId: data.resourceId,
+      expiration: Number(data.expiration),
+    };
+  }
+
+  /** Stop an existing push notification channel. */
+  async stopWatch(
+    accessToken: string,
+    refreshToken: string,
+    channelId: string,
+    resourceId: string,
+  ): Promise<void> {
+    const client = this.getOAuthClient();
+    client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    const cal = google.calendar({ version: 'v3', auth: client });
+    await cal.channels.stop({
+      requestBody: { id: channelId, resourceId },
+    });
   }
 
   /** Delete an event from Google Calendar. */

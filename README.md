@@ -118,6 +118,7 @@ Cursor rules in **`.cursor/rules/`** capture the same facts for agents, plus cod
 | File | Scope |
 |------|--------|
 | `pem-project.mdc` | Monorepo layout, stacks, README + rules maintenance, collaboration norms |
+| `pem-coding-standards.mdc` | Repo-wide standards — file line limits, naming, components/hooks, security & scalability PR checklist |
 | `pem-app.mdc` | Expo / React Native / UI patterns |
 | `pem-backend.mdc` | NestJS backend (`backend/`) — Drizzle, Clerk, modules |
 | `pem-intake-routing.mdc` | Split vs intent, per-thought routing and Tavily/output UX rules |

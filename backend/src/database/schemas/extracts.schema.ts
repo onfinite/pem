@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { calendarConnectionsTable } from './calendar-connections.schema';
+import { listsTable } from './lists.schema';
 import { messagesTable } from './messages.schema';
 import { usersTable } from './users.schema';
 
@@ -21,6 +22,15 @@ export type RecurrenceRule = {
   by_month_day?: number;
   until?: string;
   count?: number;
+};
+
+export type ExtractMeta = {
+  energy_level?: 'low' | 'medium' | 'high' | null;
+  is_deadline?: boolean;
+  auto_scheduled?: boolean;
+  scheduling_reason?: string | null;
+  recommended_at?: string | null;
+  rsvp_status?: string | null;
 };
 
 export const EXTRACT_SOURCES = ['dump', 'calendar'] as const;
@@ -43,8 +53,6 @@ export const EXTRACT_TONES = [
 export type ExtractTone = (typeof EXTRACT_TONES)[number];
 
 export const EXTRACT_URGENCIES = [
-  'today',
-  'this_week',
   'someday',
   'none',
 ] as const;
@@ -70,6 +78,13 @@ export const extractsTable = pgTable(
     tone: text('tone').notNull(),
     urgency: text('urgency').notNull(),
     batchKey: text('batch_key'),
+    listId: uuid('list_id').references(() => listsTable.id, {
+      onDelete: 'set null',
+    }),
+    priority: text('priority').$type<'high' | 'medium' | 'low'>(),
+    isOrganizer: boolean('is_organizer').default(false),
+    reminderAt: timestamp('reminder_at', { withTimezone: true, mode: 'date' }),
+    reminderSent: boolean('reminder_sent').default(false),
     dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }),
     periodStart: timestamp('period_start', {
       withTimezone: true,
@@ -122,6 +137,7 @@ export const extractsTable = pgTable(
     isAllDay: boolean('is_all_day').default(false),
     isDeadline: boolean('is_deadline').default(false),
     energyLevel: text('energy_level'),
+    meta: jsonb('meta').$type<ExtractMeta>().default({}),
 
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
@@ -134,7 +150,10 @@ export const extractsTable = pgTable(
     index('ix_extracts_user_id').on(t.userId),
     index('ix_extracts_message_id').on(t.messageId),
     index('ix_extracts_user_status_urgency').on(t.userId, t.status, t.urgency),
+    index('ix_extracts_user_period').on(t.userId, t.status, t.periodStart),
     index('ix_extracts_batch').on(t.userId, t.batchKey),
+    index('ix_extracts_list').on(t.userId, t.listId),
+    index('ix_extracts_reminder').on(t.reminderAt, t.reminderSent),
     uniqueIndex('uq_extracts_calendar').on(
       t.calendarConnectionId,
       t.externalEventId,

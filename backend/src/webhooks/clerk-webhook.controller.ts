@@ -19,6 +19,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Webhook } from 'svix';
 
+import { ListsService } from '../lists/lists.service';
 import { UserService } from '../users/user.service';
 import { ClerkWebhookOkDto } from './dto/clerk-webhook-ok.dto';
 
@@ -90,6 +91,7 @@ export class ClerkWebhookController {
   constructor(
     private readonly config: ConfigService,
     private readonly users: UserService,
+    private readonly lists: ListsService,
   ) {}
 
   @Post('webhooks/clerk')
@@ -173,11 +175,20 @@ export class ClerkWebhookController {
         if (!clerkId) {
           throw new BadRequestException('Missing user id');
         }
-        await this.users.upsertUserFromClerk(
+        const user = await this.users.upsertUserFromClerk(
           clerkId,
           primaryEmail(data),
           fullName(data),
         );
+        if (eventType === 'user.created' && user) {
+          await this.lists
+            .seedDefaults(user.id)
+            .catch((err) =>
+              this.log.warn(
+                `Failed to seed default lists: ${err instanceof Error ? err.message : String(err)}`,
+              ),
+            );
+        }
         this.log.log(
           `clerk_user_upserted event=${String(eventType)} clerk_id=${clerkId}`,
         );

@@ -1,16 +1,19 @@
 import ChatBubble from "@/components/chat/ChatBubble";
 import ChatDateHeader from "@/components/chat/ChatDateHeader";
 import ChatInput from "@/components/chat/ChatInput";
+import ChatSearchBar from "@/components/chat/ChatSearchBar";
 import ChatStatusBubble from "@/components/chat/ChatStatusBubble";
 import TaskDrawer, { type TaskDrawerHandle } from "@/components/chat/TaskDrawer";
 import { fontFamily, fontSize, space } from "@/constants/typography";
 import { pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useChatStream } from "@/hooks/useChatStream";
+import { useMessageSearch } from "@/hooks/useMessageSearch";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import {
   getChatMessages,
   getTaskCounts,
+  requestBrief,
   sendChatMessage,
   sendVoiceMessage,
   type ApiMessage,
@@ -18,13 +21,15 @@ import {
 } from "@/lib/pemApi";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
-import { CalendarDays, Settings } from "lucide-react-native";
+import { CalendarDays, Search, Settings } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   FlatList,
+  Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -81,12 +86,38 @@ export default function ChatScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [taskCounts, setTaskCounts] = useState<TaskCounts | null>(null);
   const drawerRef = useRef<TaskDrawerHandle>(null);
+  const search = useMessageSearch(getToken);
 
-  const fetchCounts = useCallback(async () => {
-    try {
-      const c = await getTaskCounts(getTokenRef.current);
-      setTaskCounts(c);
-    } catch { /* non-critical */ }
+  const kbHeight = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(kbHeight, {
+        toValue: e.endCoordinates.height - insets.bottom,
+        duration: 120,
+        useNativeDriver: false,
+      }).start();
+    });
+    const onHide = Keyboard.addListener(hideEvent, () => {
+      Animated.timing(kbHeight, {
+        toValue: 0,
+        duration: 100,
+        useNativeDriver: false,
+      }).start();
+    });
+    return () => { onShow.remove(); onHide.remove(); };
+  }, [kbHeight, insets.bottom]);
+
+  const countsTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const fetchCounts = useCallback(() => {
+    clearTimeout(countsTimerRef.current);
+    countsTimerRef.current = setTimeout(async () => {
+      try {
+        const c = await getTaskCounts(getTokenRef.current);
+        setTaskCounts(c);
+      } catch { /* non-critical */ }
+    }, 800);
   }, []);
 
   const getTokenRef = useRef(getToken);
@@ -132,6 +163,9 @@ export default function ChatScreen() {
       loadMessages();
     });
     fetchCounts();
+    requestBrief(getTokenRef.current).then((res) => {
+      if (res.generated && mounted) loadMessages();
+    }).catch(() => {});
     return () => { mounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -300,6 +334,7 @@ export default function ChatScreen() {
     return (
       <ChatBubble
         message={item.message}
+        isHighlighted={item.message.id === search.highlightId}
         onRetry={handleRetry}
         onViewTasks={handleOpenDrawer}
       />
@@ -316,6 +351,27 @@ export default function ChatScreen() {
     pemImpactLight();
     drawerRef.current?.open();
   }, []);
+
+
+  const scrollToMessage = useCallback(
+    (messageId: string) => {
+      const idx = displayItems.findIndex(
+        (item) => item.type === "message" && item.message.id === messageId,
+      );
+      if (idx >= 0 && flatListRef.current) {
+        flatListRef.current.scrollToIndex({
+          index: idx,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      }
+    },
+    [displayItems],
+  );
+
+  useEffect(() => {
+    if (search.highlightId) scrollToMessage(search.highlightId);
+  }, [search.highlightId, scrollToMessage]);
 
   const handleCountsChanged = useCallback(() => {
     fetchCounts();
@@ -393,7 +449,7 @@ export default function ChatScreen() {
           style={[
             styles.header,
             {
-              paddingTop: insets.top + space[1],
+              paddingTop: insets.top + space[5],
               backgroundColor: colors.pageBackground,
               borderBottomColor: colors.borderMuted,
             },
@@ -412,10 +468,7 @@ export default function ChatScreen() {
             )}
           </Pressable>
           <Pressable onPress={handleOpenDrawer} style={styles.headerCenter} hitSlop={8}>
-            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-              Pem
-            </Text>
-            {taskCounts && taskCounts.total_open > 0 && (
+            {taskCounts && taskCounts.total_open > 0 ? (
               <Text style={[styles.headerBadge, {
                 color: taskCounts.overdue > 0 ? colors.error : colors.textTertiary,
               }]}>
@@ -425,16 +478,33 @@ export default function ChatScreen() {
                     ? `${taskCounts.today} today`
                     : `${taskCounts.total_open} open`}
               </Text>
-            )}
+            ) : null}
           </Pressable>
-          <Pressable
-            onPress={() => router.push("/settings")}
-            style={styles.headerRight}
-            hitSlop={12}
-          >
-            <Settings size={22} color={colors.textSecondary} />
-          </Pressable>
+          <View style={styles.headerRight}>
+            <Pressable onPress={search.handleOpen} hitSlop={12}>
+              <Search size={20} color={colors.textSecondary} />
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/settings")}
+              hitSlop={12}
+            >
+              <Settings size={22} color={colors.textSecondary} />
+            </Pressable>
+          </View>
         </View>
+
+        {search.isOpen && (
+          <ChatSearchBar
+            query={search.query}
+            resultCount={search.results.length}
+            isSearching={search.isSearching}
+            activeIndex={search.activeIndex}
+            onQueryChange={search.handleQueryChange}
+            onClose={search.handleClose}
+            onPrev={search.handlePrev}
+            onNext={search.handleNext}
+          />
+        )}
 
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -461,6 +531,15 @@ export default function ChatScreen() {
             inverted
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.3}
+            onScrollToIndexFailed={(info) => {
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({
+                  index: info.index,
+                  animated: true,
+                  viewPosition: 0.5,
+                });
+              }, 200);
+            }}
             ListFooterComponent={
               loadingMore ? (
                 <View style={styles.paginationSpinner}>
@@ -481,6 +560,7 @@ export default function ChatScreen() {
         >
           <ChatInput onSendText={handleSend} onSendVoice={handleSendVoice} />
         </View>
+        <Animated.View style={{ height: kbHeight }} />
       </View>
 
       <TaskDrawer ref={drawerRef} onCountsChanged={handleCountsChanged} />
@@ -566,10 +646,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
-  headerTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.lg,
-  },
   headerBadge: {
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.xs,
@@ -579,6 +655,9 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: space[4],
     bottom: space[2],
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[3],
   },
   loadingContainer: {
     flex: 1,

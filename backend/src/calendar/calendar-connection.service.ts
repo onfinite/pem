@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull, lte } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -45,6 +45,17 @@ export class CalendarConnectionService {
       .select()
       .from(calendarConnectionsTable)
       .where(eq(calendarConnectionsTable.id, id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async findByWatchChannelId(
+    channelId: string,
+  ): Promise<CalendarConnectionRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(calendarConnectionsTable)
+      .where(eq(calendarConnectionsTable.watchChannelId, channelId))
       .limit(1);
     return row ?? null;
   }
@@ -238,6 +249,23 @@ export class CalendarConnectionService {
       .where(eq(calendarConnectionsTable.id, connectionId));
   }
 
+  async updateWatchState(
+    connectionId: string,
+    watchChannelId: string | null,
+    watchResourceId: string | null,
+    watchExpiration: Date | null,
+  ): Promise<void> {
+    await this.db
+      .update(calendarConnectionsTable)
+      .set({
+        watchChannelId,
+        watchResourceId,
+        watchExpiration,
+        updatedAt: new Date(),
+      })
+      .where(eq(calendarConnectionsTable.id, connectionId));
+  }
+
   async updateSyncState(
     connectionId: string,
     syncCursor: string | null,
@@ -250,6 +278,20 @@ export class CalendarConnectionService {
         updatedAt: new Date(),
       })
       .where(eq(calendarConnectionsTable.id, connectionId));
+  }
+
+  /** Find connections with watches expiring before the given date. */
+  async findExpiringWatches(before: Date): Promise<CalendarConnectionRow[]> {
+    return this.db
+      .select()
+      .from(calendarConnectionsTable)
+      .where(
+        and(
+          isNotNull(calendarConnectionsTable.watchChannelId),
+          isNotNull(calendarConnectionsTable.watchExpiration),
+          lte(calendarConnectionsTable.watchExpiration, before),
+        ),
+      );
   }
 
   private async logCalendarUser(

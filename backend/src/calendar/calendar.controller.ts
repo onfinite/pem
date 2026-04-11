@@ -1,7 +1,11 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   Controller,
   Delete,
   Get,
+  Headers,
+  HttpCode,
+  Logger,
   Param,
   Patch,
   Post,
@@ -10,6 +14,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
+import type { Queue } from 'bullmq';
 import type { Response } from 'express';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
@@ -22,10 +28,13 @@ import { GoogleCalendarService } from './google-calendar.service';
 @ApiTags('calendar')
 @Controller('calendar')
 export class CalendarController {
+  private readonly log = new Logger(CalendarController.name);
+
   constructor(
     private readonly connections: CalendarConnectionService,
     private readonly googleCal: GoogleCalendarService,
     private readonly sync: CalendarSyncService,
+    @InjectQueue('calendar-sync') private readonly calendarQueue: Queue,
   ) {}
 
   // ── Connections ────────────────────────────────────────────
@@ -106,7 +115,10 @@ export class CalendarController {
 
     try {
       const tokens = await this.googleCal.exchangeCode(code);
-      await this.connections.upsertGoogle(userId, tokens);
+      const conn = await this.connections.upsertGoogle(userId, tokens);
+      void this.sync.setupWatch(conn.id).catch((err) => {
+        this.log.warn(`Watch setup after OAuth failed: ${err instanceof Error ? err.message : 'unknown'}`);
+      });
 
       if (appRedirect) {
         const sep = appRedirect.includes('?') ? '&' : '?';
@@ -131,5 +143,38 @@ export class CalendarController {
           );
       }
     }
+  }
+
+  // ── Google push notification webhook ───────────────────────
+
+  @Post('webhook')
+  @HttpCode(200)
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Google Calendar push notification receiver' })
+  async googleWebhook(
+    @Headers('x-goog-channel-id') channelId?: string,
+    @Headers('x-goog-resource-id') resourceId?: string,
+  ) {
+    if (!channelId || !resourceId) return { ok: true };
+
+    const conn = await this.connections.findByWatchChannelId(channelId);
+    if (!conn) {
+      this.log.warn(`Webhook for unknown channel ${channelId}`);
+      return { ok: true };
+    }
+
+    await this.calendarQueue.add(
+      'sync',
+      { connectionId: conn.id },
+      {
+        jobId: `cal-webhook-${conn.id}-${Date.now()}`,
+        removeOnComplete: true,
+        removeOnFail: 50,
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 2000 },
+      },
+    );
+
+    return { ok: true };
   }
 }

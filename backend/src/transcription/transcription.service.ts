@@ -24,7 +24,6 @@ export class TranscriptionService {
     });
     formData.append('file', blob, audio.originalname || 'recording.m4a');
     formData.append('model', 'whisper-1');
-    formData.append('language', 'en');
 
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',

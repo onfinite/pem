@@ -1,4 +1,11 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { customType } from 'drizzle-orm/pg-core';
 
 import { messagesTable } from './messages.schema';
@@ -37,7 +44,7 @@ export const messageEmbeddingsTable = pgTable(
   },
   (t) => [
     index('ix_msg_embed_user').on(t.userId),
-    index('ix_msg_embed_message').on(t.messageId),
+    uniqueIndex('ix_msg_embed_message_unique').on(t.messageId),
   ],
 );
 

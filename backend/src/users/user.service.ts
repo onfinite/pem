@@ -144,29 +144,6 @@ export class UserService {
       .where(eq(usersTable.id, userId));
   }
 
-  async setFocusTime(
-    userId: string,
-    hours: number,
-    preferredTime?: 'morning' | 'afternoon',
-  ): Promise<void> {
-    const updates: Partial<typeof usersTable.$inferInsert> = {
-      focusHoursPerWeek: hours,
-    };
-    if (preferredTime) {
-      const [row] = await this.db
-        .select({ preferences: usersTable.preferences })
-        .from(usersTable)
-        .where(eq(usersTable.id, userId))
-        .limit(1);
-      const existing = (row?.preferences as UserPreferences) ?? {};
-      updates.preferences = { ...existing, focus_time_pref: preferredTime };
-    }
-    await this.db
-      .update(usersTable)
-      .set(updates)
-      .where(eq(usersTable.id, userId));
-  }
-
   async setTimezone(userId: string, timezone: string): Promise<void> {
     const [prev] = await this.db
       .select({ tz: usersTable.timezone })

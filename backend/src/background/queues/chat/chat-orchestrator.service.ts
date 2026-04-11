@@ -2,7 +2,8 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
+import { DateTime } from 'luxon';
 
 import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
@@ -11,6 +12,7 @@ import {
   extractsTable,
   logsTable,
   usersTable,
+  listsTable,
   type ExtractRow,
   type UserPreferences,
 } from '../../../database/schemas';
@@ -29,11 +31,20 @@ import { PushService } from '../../../push/push.service';
 import { SchedulerService } from '../../../scheduler/scheduler.service';
 import { TranscriptionService } from '../../../transcription/transcription.service';
 import { ChatQuestionService } from './chat-question.service';
+import {
+  AGENT_RECENT_MESSAGES_LIMIT,
+  DISMISSED_EXTRACTS_LOOKBACK_DAYS,
+  DONE_EXTRACTS_LOOKBACK_DAYS,
+} from '../../../chat/chat.constants';
 
 function parseIsoDate(s: string | null | undefined): Date | null {
   if (!s || !String(s).trim()) return null;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeDedupeKey(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 @Injectable()
@@ -68,6 +79,16 @@ export class ChatOrchestratorService {
       .limit(1);
     if (!msg) {
       this.log.warn(`Message ${messageId} not found`);
+      return;
+    }
+
+    if (msg.userId !== userId) {
+      this.log.warn(`Message ${messageId} user mismatch`);
+      return;
+    }
+
+    if (msg.processingStatus === 'done') {
+      this.log.log(`processMessage skip already-done messageId=${messageId}`);
       return;
     }
 
@@ -120,6 +141,14 @@ export class ChatOrchestratorService {
           messageId,
           this.trivialResponse(content),
         );
+        this.queueUserMessageEmbedding(msg, content);
+        return;
+      }
+
+      if (category === 'off_topic') {
+        const redirect = await this.generateOffTopicRedirect(content);
+        await this.savePemResponse(userId, messageId, redirect);
+        this.queueUserMessageEmbedding(msg, content);
         return;
       }
 
@@ -137,10 +166,22 @@ export class ChatOrchestratorService {
           userRow?.summary ?? null,
         );
         await this.savePemResponse(userId, messageId, answer);
+        this.queueUserMessageEmbedding(msg, content);
         return;
       }
 
       // needs_agent path
+      if (!this.config.get<string>('openai.apiKey')) {
+        this.log.error('OpenAI API key not configured — cannot run agent');
+        await this.savePemResponse(
+          userId,
+          messageId,
+          "I'm having trouble processing right now. Please try again shortly.",
+        );
+        this.queueUserMessageEmbedding(msg, content);
+        return;
+      }
+
       await this.publishStatus(userId, messageId, 'Analyzing your message...');
 
       const ctx = await this.gatherContext(userId);
@@ -148,12 +189,8 @@ export class ChatOrchestratorService {
       const ragResults = await this.embeddings.similaritySearch(
         userId,
         content,
-        5,
       );
-      const ragContext = ragResults
-        .filter((r) => r.similarity > 0.7)
-        .map((r) => r.content)
-        .join('\n');
+      const ragContext = ragResults.map((r) => r.content).join('\n');
 
       const recentMsgs = await this.getRecentMessages(userId);
 
@@ -176,7 +213,6 @@ export class ChatOrchestratorService {
           if (p.work_type) parts.push(`Work type: ${p.work_type}`);
           if (p.personal_windows?.length)
             parts.push(`Personal tasks: ${p.personal_windows.join(', ')}`);
-          if (p.focus_time_pref) parts.push(`Focus time: ${p.focus_time_pref}`);
           if (p.errand_window) parts.push(`Errands: ${p.errand_window}`);
           userPreferences = parts.join('\n');
         }
@@ -186,7 +222,7 @@ export class ChatOrchestratorService {
         );
       }
 
-      const agentOutput = await this.pemAgent.run({
+      const agentOutputRaw = await this.pemAgent.run({
         messageContent: content,
         userTimezone: ctx.tz,
         openExtracts: ctx.openExtracts,
@@ -198,7 +234,14 @@ export class ChatOrchestratorService {
         userSummary: ctx.userSummary,
         schedulingContext,
         userPreferences,
+        recentDoneSection: ctx.recentDoneSection,
+        recentDismissedSection: ctx.recentDismissedSection,
+        todayCalendarSection: ctx.todayCalendarSection,
+        userActivityLine: ctx.userActivityLine,
+        userLists: ctx.userLists,
       });
+
+      const agentOutput = this.filterDedupedCreates(agentOutputRaw, ctx);
 
       // Apply actions
       await this.applyAgentActions(userId, messageId, agentOutput, ctx);
@@ -235,10 +278,7 @@ export class ChatOrchestratorService {
           .where(eq(messagesTable.id, messageId));
       }
 
-      // Embed user message in background (don't await)
-      this.embeddings
-        .embedMessage(messageId, userId, content, msg.createdAt)
-        .catch((e) => this.log.warn(`Embed failed: ${e}`));
+      this.queueUserMessageEmbedding(msg, content);
 
       // Seed initial summary if user has none yet
       if (!ctx.userSummary) {
@@ -260,6 +300,14 @@ export class ChatOrchestratorService {
           messageId,
           'Sorry, I ran into an issue processing that. Could you try again?',
         );
+        await this.chatEvents.publish(userId, 'processing_failed', {
+          messageId,
+        });
+
+        const failContent = msg.transcript ?? msg.content ?? '';
+        if (failContent.trim()) {
+          this.queueUserMessageEmbedding(msg, failContent);
+        }
       }
       throw err;
     }
@@ -271,7 +319,7 @@ export class ChatOrchestratorService {
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
-    const tz = userRow?.timezone ?? null;
+    const tz = userRow?.timezone ?? 'UTC';
 
     const openRows = await this.db
       .select()
@@ -295,6 +343,67 @@ export class ChatOrchestratorService {
       period_label: r.periodLabel,
     }));
 
+    const now = new Date();
+    const doneSince = new Date(now);
+    doneSince.setUTCDate(doneSince.getUTCDate() - DONE_EXTRACTS_LOOKBACK_DAYS);
+    const dismissedSince = new Date(now);
+    dismissedSince.setUTCDate(
+      dismissedSince.getUTCDate() - DISMISSED_EXTRACTS_LOOKBACK_DAYS,
+    );
+
+    const doneRows = await this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.status, 'done'),
+          isNotNull(extractsTable.doneAt),
+          gte(extractsTable.doneAt, doneSince),
+        ),
+      )
+      .orderBy(desc(extractsTable.doneAt))
+      .limit(120);
+
+    const dismissedRows = await this.db
+      .select()
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.status, 'dismissed'),
+          isNotNull(extractsTable.dismissedAt),
+          gte(extractsTable.dismissedAt, dismissedSince),
+        ),
+      )
+      .orderBy(desc(extractsTable.dismissedAt))
+      .limit(120);
+
+    const thirtyAgo = new Date(now);
+    thirtyAgo.setUTCDate(thirtyAgo.getUTCDate() - 30);
+    const countRows = await this.db
+      .select({ userMsgCount: sql<number>`count(*)::int` })
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.userId, userId),
+          eq(messagesTable.role, 'user'),
+          gte(messagesTable.createdAt, thirtyAgo),
+        ),
+      );
+    const userMsgCount = countRows[0]?.userMsgCount ?? 0;
+
+    const activeTaskKeys = new Set(
+      openRows
+        .map((r) => normalizeDedupeKey(r.extractText))
+        .filter((k) => k.length > 0),
+    );
+    const dismissedKeys = new Set(
+      dismissedRows
+        .map((r) => normalizeDedupeKey(r.extractText))
+        .filter((k) => k.length > 0),
+    );
+
     const calendarEvents: {
       summary: string;
       start_at: string;
@@ -311,18 +420,107 @@ export class ChatOrchestratorService {
       });
     }
 
+    const dayStart = DateTime.now().setZone(tz).startOf('day');
+    const dayEnd = dayStart.endOf('day');
+    const todayLines: string[] = [];
+    for (const ev of calendarEvents) {
+      const start = DateTime.fromISO(ev.start_at, { setZone: true }).setZone(
+        tz,
+      );
+      if (!start.isValid) continue;
+      if (start < dayStart || start > dayEnd) continue;
+      const loc = ev.location ? ` at ${ev.location}` : '';
+      todayLines.push(`- ${ev.summary}: ${start.toFormat('h:mm a')}${loc}`);
+    }
+    const todayCalendarSection =
+      todayLines.length > 0
+        ? todayLines.join('\n')
+        : '(no timed items on your list for today)';
+
+    const recentDoneSection =
+      doneRows.length > 0
+        ? doneRows
+            .map((r) => {
+              const when = r.doneAt ? r.doneAt.toISOString().slice(0, 10) : '';
+              return `- ${r.extractText}${when ? ` (done ${when})` : ''}`;
+            })
+            .join('\n')
+        : '(none in lookback window)';
+
+    const recentDismissedSection =
+      dismissedRows.length > 0
+        ? dismissedRows.map((r) => `- ${r.extractText}`).join('\n')
+        : '(none in lookback window)';
+
+    const userActivityLine = `User messages in Pem (last 30 days): ${userMsgCount}.`;
+
     const memorySection = await this.profile.buildMemoryPromptSection(userId);
 
+    let userLists: { id: string; name: string }[] = [];
+    try {
+      const listRows = await this.db
+        .select({ id: listsTable.id, name: listsTable.name })
+        .from(listsTable)
+        .where(eq(listsTable.userId, userId));
+      userLists = listRows;
+    } catch {
+      /* lists table may not exist yet in some envs */
+    }
+
     return {
-      tz,
+      tz: userRow?.timezone ?? null,
       openRows,
       openExtracts,
       calendarEvents,
+      activeTaskKeys,
+      dismissedKeys,
       memorySection,
       userName: userRow?.name ?? null,
       userSummary: userRow?.summary ?? null,
       prefs: (userRow?.preferences as UserPreferences) ?? null,
+      recentDoneSection,
+      recentDismissedSection,
+      todayCalendarSection,
+      userActivityLine,
+      userLists,
     };
+  }
+
+  private filterDedupedCreates(
+    output: PemAgentOutput,
+    ctx: Awaited<ReturnType<typeof this.gatherContext>>,
+  ): PemAgentOutput {
+    if (!output.creates.length) return output;
+    const filtered = output.creates.filter((c) => {
+      const k = normalizeDedupeKey(c.text);
+      if (!k) return false;
+      if (ctx.activeTaskKeys.has(k)) return false;
+      if (ctx.dismissedKeys.has(k)) return false;
+      return true;
+    });
+    if (filtered.length === output.creates.length) return output;
+    return { ...output, creates: filtered };
+  }
+
+  private queueUserMessageEmbedding(
+    msg: { id: string; userId: string; createdAt: Date },
+    text: string,
+  ): void {
+    const t = text?.trim() ?? '';
+    if (!t) return;
+    void this.embeddings
+      .embedChatMessageIfAbsent({
+        messageId: msg.id,
+        userId: msg.userId,
+        role: 'user',
+        text: t,
+        createdAt: msg.createdAt,
+      })
+      .catch((e) =>
+        this.log.warn(
+          `User embed failed messageId=${msg.id}: ${e instanceof Error ? e.message : String(e)}`,
+        ),
+      );
   }
 
   private async getRecentMessages(userId: string) {
@@ -331,7 +529,7 @@ export class ChatOrchestratorService {
       .from(messagesTable)
       .where(eq(messagesTable.userId, userId))
       .orderBy(sql`${messagesTable.createdAt} DESC`)
-      .limit(15);
+      .limit(AGENT_RECENT_MESSAGES_LIMIT);
 
     return rows.reverse().map((m) => ({
       role: m.role,
@@ -376,6 +574,16 @@ export class ChatOrchestratorService {
       if (upd.patch.urgency !== undefined) patch.urgency = upd.patch.urgency;
       if (upd.patch.batch_key !== undefined)
         patch.batchKey = upd.patch.batch_key;
+      if (upd.patch.list_name !== undefined) {
+        const resolvedListId = await this.resolveListId(
+          userId,
+          upd.patch.list_name,
+          false,
+        );
+        if (resolvedListId) patch.listId = resolvedListId;
+      }
+      if (upd.patch.priority !== undefined)
+        patch.priority = upd.patch.priority;
       if (upd.patch.due_at !== undefined)
         patch.dueAt = parseIsoDate(upd.patch.due_at);
       if (upd.patch.period_start !== undefined)
@@ -646,6 +854,36 @@ export class ChatOrchestratorService {
     }
   }
 
+  private async resolveListId(
+    userId: string,
+    listName: string | null | undefined,
+    createList: boolean | undefined,
+  ): Promise<string | null> {
+    if (!listName) return null;
+    try {
+      const rows = await this.db
+        .select({ id: listsTable.id, name: listsTable.name })
+        .from(listsTable)
+        .where(eq(listsTable.userId, userId));
+
+      const match = rows.find(
+        (r) => r.name.toLowerCase() === listName.toLowerCase(),
+      );
+      if (match) return match.id;
+
+      if (createList) {
+        const [created] = await this.db
+          .insert(listsTable)
+          .values({ userId, name: listName.trim() })
+          .returning({ id: listsTable.id });
+        if (created) return created.id;
+      }
+    } catch {
+      /* lists table may not exist yet */
+    }
+    return null;
+  }
+
   private async insertExtract(
     userId: string,
     messageId: string,
@@ -658,6 +896,12 @@ export class ChatOrchestratorService {
     const tzPending =
       !tz && (!!item.due_at?.trim() || !!item.period_start?.trim());
 
+    const listId = await this.resolveListId(
+      userId,
+      item.list_name,
+      item.create_list,
+    );
+
     const [row] = await this.db
       .insert(extractsTable)
       .values({
@@ -669,6 +913,8 @@ export class ChatOrchestratorService {
         tone: item.tone,
         urgency: item.urgency,
         batchKey: item.batch_key,
+        listId,
+        priority: item.priority,
         dueAt,
         periodStart: pStart,
         periodEnd: pEnd,
@@ -706,6 +952,20 @@ export class ChatOrchestratorService {
       .set({ processingStatus: 'done' })
       .where(eq(messagesTable.id, parentMessageId));
 
+    void this.embeddings
+      .embedChatMessageIfAbsent({
+        messageId: pemMsg.id,
+        userId,
+        role: 'pem',
+        text: responseText,
+        createdAt: pemMsg.createdAt,
+      })
+      .catch((e) =>
+        this.log.warn(
+          `Pem embed failed messageId=${pemMsg.id}: ${e instanceof Error ? e.message : String(e)}`,
+        ),
+      );
+
     await this.chatEvents.publish(userId, 'pem_message', {
       message: {
         id: pemMsg.id,
@@ -736,6 +996,28 @@ export class ChatOrchestratorService {
     )
       return "Hey! What's on your mind?";
     return 'Got it!';
+  }
+
+  private async generateOffTopicRedirect(userMessage: string): Promise<string> {
+    const fallback =
+      "I wish I could help with that! I'm better at organizing your tasks, calendar, and thoughts though. What's on your mind?";
+    try {
+      const apiKey = this.config.get<string>('openai.apiKey');
+      if (!apiKey) return fallback;
+      const openai = createOpenAI({ apiKey });
+      const { text } = await generateText({
+        model: openai('gpt-4o-mini'),
+        maxOutputTokens: 256,
+        system: `You are Pem, a warm and friendly AI life organizer. The user asked something outside your scope. Acknowledge what they asked with warmth and light humor. Express that you wish you could help. Naturally steer back to what you do: organize their tasks, calendar, thoughts, and memory. Be brief (1-2 sentences max). Sound like a friend, not a robot. Never be dismissive. No markdown.`,
+        prompt: userMessage.slice(0, 500),
+      });
+      return text?.trim() || fallback;
+    } catch (e) {
+      this.log.warn(
+        `Off-topic redirect LLM failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return fallback;
+    }
   }
 
   /**
@@ -769,8 +1051,27 @@ Rules:
 - Keep under 300 words. Be concise but complete.
 - Output ONLY the merged summary text, no preamble.`,
         prompt: `EXISTING SUMMARY:\n${existing}\n\nNEW INFORMATION:\n${trimmed}`,
+        maxOutputTokens: 1024,
       });
-      return text.trim() || existing;
+
+      let result = text.trim() || existing;
+
+      if (result && result.length > 2000) {
+        try {
+          const { text: compressed } = await generateText({
+            model: openai('gpt-4o-mini'),
+            maxOutputTokens: 1024,
+            system:
+              'Compress this profile summary to under 1500 characters while keeping all key facts. Output ONLY the compressed summary.',
+            prompt: result,
+          });
+          result = compressed.trim() || result;
+        } catch {
+          /* compression failed — keep the original */
+        }
+      }
+
+      return result ? result.slice(0, 3000) : existing;
     } catch (e) {
       this.log.warn(
         `Summary merge failed: ${e instanceof Error ? e.message : 'unknown'}`,
@@ -818,7 +1119,7 @@ Rules:
 
     if (userRow?.summary) return;
 
-    const openai = createOpenAI({ apiKey: this.config.get('OPENAI_API_KEY') });
+    const openai = createOpenAI({ apiKey: this.config.get<string>('openai.apiKey') });
 
     const { text } = await generateText({
       model: openai('gpt-4o-mini'),

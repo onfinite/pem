@@ -9,22 +9,26 @@ globs: backend/**
 
 **Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **pgvector** (vector similarity search), **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, `embed`, never `generateObject`). **Background work** lives under **`src/background/`**. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription.
 
-**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA, **`notification_time`** for morning brief), **`messages`** (**`role`**: `user` | `pem`, **`kind`**: `text` | `voice` | `brief`, content, voice_url, transcript, **`triage_category`**, **`processing_status`**, polished_text, parent_message_id), **`message_embeddings`** (pgvector 1536-dim, FK to messages), **`extracts`** (tone, urgency, batch_key, dates, status; **`message_id`** FK to messages; calendar event fields), **`calendar_connections`**, **`follow_ups`** (one row per extract), **`reported_issues`**, **`logs`** (unified audit: types include `chat`), **`memory_facts`**.
+**Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA, **`notification_time`** for morning brief), **`messages`** (**`role`**: `user` | `pem`, **`kind`**: `text` | `voice` | `brief`, content, voice_url, transcript, **`triage_category`**, **`processing_status`**, polished_text, parent_message_id), **`message_embeddings`** (pgvector 1536-dim, FK to messages), **`extracts`** (tone, **urgency** `'someday'|'none'` — all timing via `period_start`/`period_end`/`due_at`, **`meta`** jsonb for rarely-queried fields, batch_key, status; **`message_id`** FK to messages; calendar event fields), **`calendar_connections`**, **`follow_ups`** (one row per extract), **`reported_issues`**, **`logs`** (unified audit: types include `chat`), **`memory_facts`**.
 
-**Chat pipeline (single-pass agent):** User sends message → `POST /chat/messages` → save → enqueue BullMQ `chat` job → return immediately.
+**Chat pipeline (workflow-style agent):** User sends message → `POST /chat/messages` → save → enqueue BullMQ `chat` job → return immediately.
 
 `ChatOrchestratorService` processes:
 1. **Transcribe** (voice messages via Whisper)
-2. **Triage** (`TriageService`, gpt-4o-mini) → `trivial` | `question_only` | `needs_agent`
+2. **Triage** (`TriageService`, gpt-4o-mini, routing-only) → `trivial` | `question_only` | `off_topic` | `needs_agent`
 3. **Route:**
    - `trivial` → quick acknowledgment
-   - `question_only` → `ChatQuestionService` (RAG + extracts + memory + gpt-4o)
-   - `needs_agent` → `PemAgentService` (gpt-4o, single-pass, full context)
+   - `off_topic` → short redirect (weather, trivia, general knowledge — Pem does not engage)
+   - `question_only` → `ChatQuestionService` (RAG + extracts + memory + gpt-4o; only *their* data)
+   - `needs_agent` → **`PemAgentService`** — **prompt chaining** (Anthropic-style workflow): (1) **extraction** pass → `creates` / `updates` / `completions` only, low temperature, retries + JSON recovery; (2) **orchestration** pass → `response_text`, calendar, memory, scheduling, etc., using locked extraction JSON in the prompt; if orchestration fails, **synthesized** reply from extraction counts; if extraction stays empty but heuristics say the message is actionable, **monolithic** single-call fallback (full schema, same retries + recovery as before)
+   - **Context to the agent:** open tasks (inbox/snoozed), upcoming timed items from those tasks, **today’s** timed subset, **done** extracts (last 90 days), **dismissed** extracts (last 30 days, to avoid re-extracting), last **30** chat messages (chronological), memory facts, scheduling slots/prefs, **RAG** lines (similarity ≥ **0.75**, top **10** — query embedded after message is saved). **Programmatic dedupe:** new `creates` that match an open or recently dismissed task (normalized, case-insensitive) are dropped before DB apply.
 4. **Apply** agent output: creates, updates, completions, calendar_writes, memory_writes
 5. **Respond** — save Pem response message, publish via SSE, push notification
-6. **Embed** user message into pgvector (background, non-blocking)
+6. **Embed** chat lines into pgvector (background): **user** messages after successful handling; **Pem** replies when saved. **Idempotent** per `message_id` (unique index). Stored text is `[ISO] user:|pem: …` for RAG clarity.
 
-**SSE:** Single persistent connection per user: `GET /chat/stream`. Events: `status`, `pem_message`, `message_updated`. Redis pub/sub via `ChatEventsService` (user-scoped channels: `chat-events:{userId}`).
+**SSE:** `GET /chat/stream` — `X-Accel-Buffering: no`, **heartbeat** every **30s** (type `heartbeat`), events: `status`, `pem_message`, `message_updated`, `processing_failed` (final job failure). Redis pub/sub via `ChatEventsService` (`chat-events:{userId}`).
+
+**Chat idempotency & jobs:** `POST /chat/messages` optional **`idempotency_key`** (unique per user) returns the existing message if replayed. BullMQ job id **`chat-msg:{messageId}`** dedupes duplicate enqueue. Worker **attempts: 3**, exponential backoff; logs **messageId** only (no user text). Pipeline skips work if `processing_status` is already **`done`**.
 
 **Morning brief:** `BriefCronService` — hourly cron checks user timezones, generates brief at midnight (user local), saves as `kind: 'brief'` Pem message, delayed push at user's `notification_time`.
 
@@ -42,6 +46,7 @@ GET  /chat/stream       ← SSE (one per user session)
 GET  /extracts/done|open|query|:id|:id/history
 POST /extracts/:id/draft
 PATCH /extracts/:id/done|dismiss|undone|undismiss|snooze|reschedule
+PATCH /extracts/:id — user edit (partial JSON: text, urgency `someday|none`, batch_key, due_at, period_start, period_end, period_label, duration_minutes, pem_note, is_deadline, energy_level, tone; calendar-linked tasks reject schedule fields)
 POST /extracts/:id/report
 
 PATCH /users/me/timezone
@@ -57,7 +62,7 @@ DELETE /calendar/connections/:id
 | Area | Role |
 |------|------|
 | `src/chat/` | `ChatModule` — controller, service, stream service. `POST /chat/messages`, `GET /chat/messages`, `GET /chat/stream` (SSE). |
-| `src/agents/` | `AgentsModule` — `TriageService` (gpt-4o-mini), `PemAgentService` (gpt-4o single-pass). |
+| `src/agents/` | `AgentsModule` — `TriageService` (gpt-4o-mini), `PemAgentService` (gpt-4o: extraction + orchestration passes, monolithic fallback). |
 | `src/embeddings/` | `EmbeddingsModule` — embed messages, similarity search via pgvector. |
 | `src/background/queues/chat/` | BullMQ `chat` queue: `ChatProcessor`, `ChatOrchestratorService`, `ChatQuestionService`. |
 | `src/background/queues/brief/` | `BriefCronService` — morning brief generation + push. |

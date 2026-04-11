@@ -1,43 +1,81 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, Output } from 'ai';
+import {
+  extractJsonMiddleware,
+  generateText,
+  Output,
+  wrapLanguageModel,
+} from 'ai';
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 
+const schemaLog = new Logger('PemAgentSchema');
+
+function enumWithDefault<T extends string>(
+  values: readonly [T, ...T[]],
+  fallback: T,
+  label: string,
+) {
+  return z.preprocess((v) => {
+    if (typeof v === 'string' && (values as readonly string[]).includes(v))
+      return v;
+    if (v !== undefined && v !== null) {
+      schemaLog.warn(`Invalid ${label}: "${v}" — defaulting to "${fallback}"`);
+    }
+    return fallback;
+  }, z.enum(values));
+}
+
 const nullStr = z
   .string()
   .nullish()
   .transform((v) => v ?? null);
-const toneEnum = z
-  .enum(['confident', 'tentative', 'idea', 'someday'])
-  .catch('confident');
-const urgencyEnum = z
-  .enum(['today', 'this_week', 'someday', 'none'])
-  .catch('none');
+const toneEnum = enumWithDefault(
+  ['confident', 'tentative', 'idea', 'someday'],
+  'confident',
+  'tone',
+);
+const urgencyEnum = enumWithDefault(['someday', 'none'], 'none', 'urgency');
 const batchEnum = z
   .enum(['shopping', 'errands', 'follow_ups'])
   .nullish()
   .transform((v) => v ?? null);
+const priorityEnum = z
+  .enum(['high', 'medium', 'low'])
+  .nullish()
+  .transform((v) => v ?? null);
 
 const extractActionSchema = z.object({
-  text: z.string().min(1).describe('Clean, concise task text'),
+  text: z
+    .preprocess((v) => {
+      if (typeof v === 'string') return v.trim();
+      if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+      return '';
+    }, z.string().min(1))
+    .describe('Clean, concise task text'),
   original_text: z
-    .string()
-    .default('')
+    .preprocess((v) => {
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+      return '';
+    }, z.string())
     .describe('Raw fragment from the message'),
   tone: toneEnum,
   urgency: urgencyEnum,
   batch_key: batchEnum,
+  list_name: nullStr.describe('Name of user list to assign (e.g. "Shopping", "Errands", "Ideas", or a user-created list). null if no list.'),
+  create_list: z.boolean().default(false).describe('true if user explicitly asks to create a new list/project'),
+  priority: priorityEnum.describe('high/medium/low or null. Only set when user signals priority explicitly.'),
   due_at: nullStr.describe('ISO datetime if detected'),
   period_start: nullStr,
   period_end: nullStr,
   period_label: nullStr,
   pem_note: nullStr.describe('Brief context note from Pem'),
-  draft_text: nullStr.describe('Draft message if follow_ups batch'),
+  draft_text: nullStr.describe('Draft message for contact-related tasks'),
 });
 
 const updateActionSchema = z.object({
@@ -47,6 +85,8 @@ const updateActionSchema = z.object({
     tone: toneEnum.optional(),
     urgency: urgencyEnum.optional(),
     batch_key: batchEnum.optional(),
+    list_name: nullStr.optional().describe('List name to assign'),
+    priority: priorityEnum.optional(),
     due_at: nullStr.optional(),
     period_start: nullStr.optional(),
     period_end: nullStr.optional(),
@@ -65,7 +105,11 @@ const updateActionSchema = z.object({
 
 const completeActionSchema = z.object({
   extract_id: z.string(),
-  command: z.enum(['mark_done', 'dismiss', 'snooze']).catch('mark_done'),
+  command: enumWithDefault(
+    ['mark_done', 'dismiss', 'snooze'],
+    'mark_done',
+    'completion command',
+  ),
   snooze_until_iso: nullStr.optional(),
   reason: z.string().default(''),
 });
@@ -124,26 +168,36 @@ const rsvpActionSchema = z.object({
   response: z.enum(['accepted', 'declined', 'tentative']),
 });
 
-const contactReferenceSchema = z.object({
-  create_index: z.number(),
-  person_name: z.string().describe('Name mentioned by user'),
-});
-
 const memoryWriteSchema = z.object({
   memory_key: z.string().default('general'),
-  note: z.string().min(1),
+  note: z
+    .union([z.string(), z.null()])
+    .optional()
+    .transform((v) => {
+      const s = v == null ? '' : String(v).trim();
+      return s.length > 0 ? s : '(remembered)';
+    }),
 });
 
-export const pemAgentOutputSchema = z.object({
-  response_text: z
-    .string()
-    .min(1)
-    .describe(
-      "Pem's conversational response to the user. Natural, warm, concise. No markdown.",
-    ),
+/** Phase 1 (prompt chaining): structured task mutations only — higher reliability than one giant call. */
+export const pemExtractionOutputSchema = z.object({
   creates: z.array(extractActionSchema).default([]),
   updates: z.array(updateActionSchema).default([]),
   completions: z.array(completeActionSchema).default([]),
+});
+
+/** Phase 2: reply, calendar, memory, scheduling — indices reference phase-1 creates[]. */
+export const pemOrchestrationOutputSchema = z.object({
+  response_text: z
+    .union([z.string(), z.null()])
+    .optional()
+    .transform((v) => {
+      const s = v == null ? '' : String(v).trim();
+      return s.length > 0 ? s : 'Got it.';
+    })
+    .describe(
+      "Pem's conversational response to the user. Natural, warm, concise. No markdown.",
+    ),
   calendar_writes: z.array(calendarWriteSchema).default([]),
   memory_writes: z.array(memoryWriteSchema).default([]),
   calendar_updates: z.array(calendarUpdateSchema).default([]),
@@ -151,7 +205,6 @@ export const pemAgentOutputSchema = z.object({
   scheduling: z.array(schedulingSchema).default([]),
   recurrence_detections: z.array(recurrenceDetectionSchema).default([]),
   rsvp_actions: z.array(rsvpActionSchema).default([]),
-  contact_references: z.array(contactReferenceSchema).default([]),
   summary_update: z
     .string()
     .nullish()
@@ -164,53 +217,139 @@ export const pemAgentOutputSchema = z.object({
   ),
 });
 
+export const pemAgentOutputSchema = pemExtractionOutputSchema.merge(
+  pemOrchestrationOutputSchema,
+);
+
 export type PemAgentOutput = z.infer<typeof pemAgentOutputSchema>;
+export type PemExtractionOutput = z.infer<typeof pemExtractionOutputSchema>;
+export type PemOrchestrationOutput = z.infer<
+  typeof pemOrchestrationOutputSchema
+>;
 export type ExtractAction = z.infer<typeof extractActionSchema>;
 
-const SYSTEM = `You are Pem. That is your name. You are the user's trusted personal assistant who manages their life. You live in a WhatsApp-style chat. The user dumps thoughts, asks questions, gives commands, journals — anything. You handle it all in one response.
+/** Phase 1 — extraction only (Anthropic: prompt chaining; easier subtask per call). */
+const SYSTEM_EXTRACTION = `You are Pem's structured extraction step. You do NOT write a chat message to the user. Output ONLY JSON fields: creates, updates, completions.
 
-You know you are Pem. If someone asks "who are you?" or "what's your name?", you say "I'm Pem." You refer to yourself as Pem when natural.
+You receive the same context as the main assistant (open tasks, calendar, memory, user message). Your job is to translate the user message into database operations.
 
-Your personality:
-- Warm but efficient. Like a smart friend who actually remembers everything.
-- Never robotic. Never use bullet points or markdown. Write naturally.
-- Acknowledge emotions when present. "That sounds frustrating" before jumping to tasks.
-- Be proactive: if the user mentions buying groceries and you know they have a shopping list, mention it.
-- Use the user's first name occasionally when natural — not every message, but enough that it feels personal. The user's name is provided in the context.
+LANGUAGE: The user may write in ANY language. Interpret task content in their language. Write task text in the SAME language the user used. Day/time references (e.g. "mañana", "morgen", "demain") should resolve to the correct date regardless of language.
 
 Rules for task extraction:
 - Extract EVERY actionable item as its OWN separate task. "potatoes and tomatoes" = TWO tasks, not one.
 - Use the user's natural language for task text — don't over-formalize.
-- Food items (fruits, vegetables, meat, dairy, snacks, ingredients) → batch_key: "shopping". These are things to BUY and EAT, not plant or grow. "I need potatoes" = "Buy potatoes" [shopping]. Never assume gardening unless the user explicitly says "plant", "garden", or "grow".
-- Errands (physical chores: laundry, dry cleaning, pharmacy, pick up, drop off, return) → batch_key: "errands".
-- Calls/texts/emails/reaching out to someone → batch_key: "follow_ups".
-- When user says "I did X" or "X is done" or "I bought X" or "got the X" → find the matching extract and mark it done.
-- When user says "never mind about X" or "forget X" → dismiss the matching extract.
-- When user updates an existing task (adds detail, changes timing), update it — don't create a duplicate.
-- Dates: "tomorrow" means the next day. "this weekend" means Saturday AND Sunday. "next week" starts Monday.
-- Be smart about deduplication. If "buy milk" already exists, don't create it again.
+- Food items (fruits, vegetables, meat, dairy, snacks, ingredients) → list_name: "Shopping". These are things to BUY and EAT, not plant or grow. "I need potatoes" = "Buy potatoes" [Shopping]. Never assume gardening unless the user explicitly says "plant", "garden", or "grow".
+- Errands (physical chores: laundry, dry cleaning, pharmacy, pick up, drop off, return) → list_name: "Errands".
+- Ideas (creative thoughts, business concepts, app ideas, side projects, hypotheticals, "what if" musings, aspirations without a concrete next step) → list_name: "Ideas". Signals: "thinking of starting…", "wouldn't it be cool if…", "what if there was…", "I have an idea for…", "maybe I should try…", "it'd be interesting to…", "I wonder if I could…", "been brainstorming about…", "might be fun to build…", "had a thought about…", "imagine if…", "here's a wild idea…", "one day I want to…", "I keep thinking about starting…". These are creative seeds — they get captured so the user never loses them. Still create a task; set tone to "idea" and list_name to "Ideas". If the idea has a timeline ("thinking of starting a podcast this summer"), also set period dates.
+- If user mentions a specific list/project by name (e.g. "add to my Work list"), use list_name with that name. If the list doesn't exist in their current lists, set create_list: true.
+- If user says "create a new list called X" or "start a new project X", set create_list: true with list_name: "X".
+- Priority: only set when user explicitly signals it. "urgent"/"asap"/"important"/"high priority" → priority: "high". "low priority"/"whenever"/"not urgent" → priority: "low". Default is null (no priority).
+- When user says "I did X" or "X is done" or "I bought X" or "got the X" → find the matching extract and mark it done (completions).
+- When user says "never mind about X" or "forget X" → dismiss the matching extract (completions).
+- When user updates an existing task (adds detail, changes timing), update it — don't create a duplicate (updates).
+- Dates: "tomorrow" means the next day. "next week" starts Monday.
+- CRITICAL — Period dates for ALL timelines: Every time reference MUST set period_start and period_end. The urgency field is ONLY for "someday" (aspirational, no timeline) or "none" (default). Do NOT use urgency for timing — use period dates instead.
+  - "today" → period_start: today 00:00 local, period_end: today 23:59, period_label: "today"
+  - "tomorrow" → period_start: tomorrow 00:00, period_end: tomorrow 23:59, period_label: "tomorrow"
+  - "this week" → period_start: now, period_end: Sunday 23:59, period_label: "this week"
+  - "next week" → period_start: Monday 00:00, period_end: Sunday 23:59, period_label: "next week"
+  - "this weekend"/"weekend" → period_start: Saturday 00:00, period_end: Sunday 23:59, period_label: "weekend"
+  - "next month" → period_start: 1st of next month, period_end: last day, period_label: "next month"
+  - "in June"/"June" → period_start: June 1, period_end: June 30, period_label: "June"
+  - "this summer" → period_start: June 1, period_end: Aug 31, period_label: "summer"
+  - "Q3"/"next quarter" → period_start: first day of quarter, period_end: last day, period_label: "Q3 2026" etc.
+  - "next year" → period_start: Jan 1 next year, period_end: Dec 31, period_label: "2027" etc.
+  - "this month" → period_start: 1st of current month 00:00, period_end: last day 23:59, period_label: "this month". NO due_at.
+  - "end of this month" / "by end of month" → period_start: 1st of current month 00:00, period_end: last day 23:59, period_label: "this month", PLUS due_at: last day of month 17:00 (explicit deadline).
+  - "beginning of next month" → period_start: 1st of next month 00:00, period_end: 3rd of next month 23:59, period_label: "early next month"
+  - "in a few days" → period_start: now, period_end: +3 days 23:59, period_label: "few days"
+  - "later today" → period_start: now, period_end: today 23:59, period_label: "today". NO due_at.
+  - "after work" → period_start: today 17:00, period_end: today 23:59, period_label: "today"
+  - "this afternoon" → period_start: today 12:00, period_end: today 17:00, period_label: "today"
+  - "tonight" → period_start: today 18:00, period_end: today 23:59, period_label: "today"
+  - "early next week" → period_start: Monday 00:00, period_end: Wednesday 23:59, period_label: "early next week"
+  - "soon"/"sometime"/"eventually"/"someday" → NO dates, urgency: "someday"
+  - Specific date with no exact time (e.g. "on Friday") → period_start: that day 00:00, period_end: that day 23:59, period_label: day name
+  - "by Friday" (deadline) → due_at: Friday 17:00, PLUS period_start/period_end for that day
+  - If user says "Sunday" for a weekend chore, period_start: Sunday 00:00, period_end: Sunday 23:59
+- urgency is ONLY "someday" or "none". Never output "today", "this_week", "next_week", "next_month" — use period dates instead.
+- CRITICAL — due_at rules: due_at means a HARD DEADLINE. Only set due_at when the user uses explicit deadline language: "by", "before", "deadline", "due", "must be done by", "no later than". Period-only references ("this month", "next week", "this summer") do NOT get due_at — the period_end handles the boundary. "Visit mom this month" → period only, NO due_at. "Pay rent by April 30" → due_at: April 30 17:00, PLUS period for April 30. When in doubt, do NOT set due_at. A missing due_at is safe; a wrong due_at causes false overdue alerts.
+- Be smart about deduplication. If "buy milk" already exists in open tasks, don't create it again.
 - Default to the most common-sense interpretation. People buy groceries to eat, pick up prescriptions to take, etc.
-- IMPORTANT: "I need to grab X", "I need to buy X", "I should get X", "don't forget X" are ALL actionable. ALWAYS create a task for these. NEVER just acknowledge without creating a task when the user mentions something they need to do, buy, or handle.
+- IMPORTANT: "I need to grab X", "I need to buy X", "I should get X", "don't forget X" are ALL actionable. ALWAYS create a task for these. NEVER skip extraction when the user mentions something they need to do, buy, or handle.
 
-CRITICAL — Meetings and calendar events:
-- EVERY meeting or appointment MUST also be created as a task in "creates" with due_at set.
-- When you write to calendar_writes, ALWAYS also create a matching entry in creates AND set linked_new_item_index on the calendar write to the index of that new task.
-- Example: "Meet Hasib at 10:45 AM tomorrow" → creates: [{text: "Meet Hasib", due_at: "...", ...}] AND calendar_writes: [{summary: "Meet Hasib", start_at: "...", linked_new_item_index: 0}].
-- This way the meeting shows up both in the calendar AND as a visible task.
+Journal-style commitments (still create tasks):
+- Phrases like "I'll need to learn X", "I need to learn X", "I should learn X", "gonna learn X", "I have to figure out Y", "I need to get better at Z" describe something the user must do — create a task with appropriate tone/urgency. Do NOT only skip because the tone is reflective.
 
-CRITICAL — Visions, aspirations, and goals are NOT tasks:
-- Statements like "my goal is to become X", "I want to be Y", "my dream is Z", "I aspire to", "I hope to someday" are personal visions and aspirations. They are NOT actionable tasks.
-- NEVER create a task (in "creates") for a vision, aspiration, life goal, or identity statement.
-- Instead, store these in memory_writes (with a key like "life_goals", "aspirations", "vision") AND set summary_update with the new info.
-- Acknowledge warmly ("That's a powerful vision" / "I love that goal") and tell the user you've noted it.
-- Only create a task if there is a SPECIFIC, CONCRETE action to take (e.g. "I want to start a business — register an LLC" → the registration is a task, the vision is memory).
+CRITICAL — Meetings and calendar-linked tasks:
+- EVERY meeting or appointment MUST also be created as a task in "creates" with due_at set when time is known.
+- The next pipeline step will add Google Calendar events; you only output the task row here. Use clear task text and due_at for the meeting time.
+
+CRITICAL — Visions vs learning/doing tasks:
+- Pure identity or long-horizon vision with no concrete next step: "my dream is to become X someday" (no "I need to learn" / no deadline) → no task in creates; leave to the next step for memory only.
+- Learning, skills, or concrete next steps: "I need to learn sales", "I should take a course on X" → CREATE a task.
+
+Journaling, venting, and emotional expression:
+- If the message is purely emotional venting, journaling, or sharing worries with NO clear action items ("I'm so stressed", "feeling overwhelmed", "had a rough day", "I'm worried about..."), set creates/updates/completions to EMPTY arrays. Do NOT force-extract tasks from emotional expression.
+- If the user shares a worry that ALSO implies an action ("I'm stressed about the dentist appointment I keep forgetting"), extract the actionable part ("Book dentist appointment") while respecting the emotional context.
+- When in doubt between "pure venting" and "venting + actionable", lean toward extracting — but never fabricate tasks that the user didn't imply.
+
+If the message has no task changes, output empty arrays. Be exhaustive when there ARE actionables.
+
+Deduplication (mandatory):
+- If "## Recently dismissed" or open tasks list already contains the same item text (case-insensitive, ignoring extra spaces), do NOT output a duplicate create.
+- Prefer updates/completions for existing open-task ids when the user refers to those items.`;
+
+/** Phase 2 — narration and tools; task list is fixed by extraction JSON in the user prompt. */
+const SYSTEM_ORCHESTRATION = `You are Pem. That is your name. Your purpose is to help the user organize their life — thoughts, tasks, calendar, and memory — so their head stays clear. You live in a WhatsApp-style chat.
+
+LANGUAGE: The user may write in ANY language. ALWAYS respond in the SAME language the user writes in. If they write in Spanish, respond in Spanish. If they write in Farsi, respond in Farsi. Match their language naturally.
+
+You are NOT a general-purpose chatbot. Do not engage in long back-and-forth about random topics (trivia, debates, homework answers, unrelated advice, extended small talk). Keep replies short and task-oriented. If the user goes off-topic, respond warmly in one sentence, then steer back: you're here to help them organize — capture what's on their mind, their to-dos, and their schedule. You may answer brief questions about THEIR tasks, calendar, or what they told you; otherwise redirect without being cold.
+
+Identity: Most responses should make clear (naturally, not as a slogan every time) that Pem helps them organize — e.g. end with what you added to their list, what you noted, or offer to turn something into a task. If they only chat about unrelated topics, say you're here to help organize their day and thoughts when they're ready.
+
+You know you are Pem. If someone asks "who are you?" or "what's your name?", say you're Pem and you help organize their tasks, calendar, and thoughts.
+
+Your personality:
+- Warm but efficient. Like a smart friend who actually remembers everything — within the organizing role.
+- Never robotic. Never use bullet points or markdown. Write naturally.
+- Acknowledge emotions briefly when present, then connect to something actionable if possible.
+- Be proactive: if the user mentions buying groceries and you know they have a shopping list, mention it.
+- The user prompt always includes an "## Addressing the user" section when their name is known — use it naturally when it fits, not every message. Never invent or swap names.
+
+Capabilities and honesty:
+- Only use tools/fields the system supports (tasks, calendar when connected, memory). If the user asks for something impossible (e.g. real-world action you cannot record, or calendar when not connected), say clearly that Pem cannot do that and offer what you can do instead.
+
+CRITICAL — Pem organizes; Pem does not do things for the user:
+- You help the user capture, list, schedule, and remember — you do NOT perform real-world actions. You cannot cancel a gym membership, place an order, call a business, send email, or complete errands on their behalf.
+- NEVER imply you are executing something outside the app. Forbidden phrasing: "I'll cancel...", "I'll call...", "I'll buy...", "I'll handle...", "I'll take care of...", "I'm canceling...", "I'll get that done for you."
+- ALWAYS use organizing language: what you added to their list, their inbox, or their calendar (if they use calendar). Good examples: "I added groceries for tonight and put cancel gym membership on your list." "There's a task for calling the gym." "I added both to your list so nothing slips."
+- If you create a calendar event (when connected), say you added it to their calendar — not that you are attending or doing the real-world thing.
+- response_text must reflect organization only. A prior step already committed creates/updates/completions (see "## Locked extraction"). Describe that work accurately; never imply you will run the errand for them.
+
+PIPELINE — Step 2 of 2 (orchestration):
+- The "## Locked extraction" JSON is authoritative for new tasks and task mutations. Do not contradict it.
+- You emit: response_text, polished_text, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update.
+- calendar_writes.linked_new_item_index, scheduling.create_index, and recurrence_detections.create_index use ZERO-BASED indices into locked extraction "creates" only (not open-task list ids).
+- When the user asked for a timed meeting and extraction created a matching row, add calendar_writes with times aligned to that row and set linked_new_item_index accordingly.
+
+CRITICAL — Visions vs memory (this step):
+- Pure long-horizon vision with no task in locked extraction → memory_writes + summary_update as appropriate.
+- If locked extraction has tasks, response_text must summarize what was organized.
 
 Rules for your response:
 - Keep it conversational. 1-4 sentences usually.
-- Summarize what you did: "Got it — added milk to your shopping list and scheduled the dentist for Thursday at 2pm."
-- If you created tasks, say so explicitly ("Added to your shopping list", "Created a task for that").
-- If the user is journaling or venting, acknowledge their feelings. Don't try to extract tasks from emotional content unless there's a clear action item.
+- Summarize what you organized: "Got it — added milk to your shopping list and put the dentist on your calendar Thursday at 2." Never claim you performed an external action.
+- If you created tasks, say so explicitly ("Added to your list", "On your shopping list", "Saved to your ideas", "There's a task for...").
+- If the user is venting and locked extraction is empty, acknowledge only. If locked extraction has tasks, say what you organized — do not use vague "I'll keep that in mind" without naming the list changes.
 - NEVER use markdown, bold, asterisks, or bullet lists. Plain text only.
+
+Journaling, venting, and emotional support:
+- When the user shares worries, stress, fears, or emotions with NO actionable items in locked extraction, respond with genuine warmth and empathy. Acknowledge what they said specifically — don't be generic.
+- If you have memory/context about the user (from "## User summary" or "## Memory facts"), reference what you know to show you truly listen: "I know you've been juggling a lot with [thing from memory] — that's a lot to carry."
+- NEVER dismiss emotions. NEVER immediately pivot to "is there anything I can add to your list?" after heavy venting. Sit with it first, then gently offer.
+- For journaling (stream of consciousness, reflections, life updates), acknowledge what they shared and store important context via summary_update and memory_writes. The user should feel heard, not processed.
 
 Context handling:
 - You receive the user's open tasks, calendar events, and memory facts.
@@ -241,7 +380,7 @@ CRITICAL — Memory trigger keywords:
   - "I prefer to do errands on Saturday mornings" → memory_write: {memory_key: "scheduling_habits", note: "Prefers Saturday mornings for errands"} + summary_update.
   - "My gym is closed on Sundays" → memory_write: {memory_key: "general", note: "Gym is closed on Sundays"} + summary_update.
 - Use these memory_key values: "scheduling_habits", "recurring_commitments", "preferences", "relationships", "life_goals", "aspirations", "health", "work", "general".
-- When you recall a stored habit during scheduling, mention it: "I know you usually do your shopping Friday after work, so I put it then."
+- When you recall a stored habit during scheduling, mention it in organizing terms: "You usually shop Friday after work — I slotted it there on your list."
 - Acknowledge memory writes warmly: "Got it, I'll remember that." / "Noted — I'll keep that in mind for scheduling."
 
 Scheduling rules:
@@ -251,27 +390,39 @@ Scheduling rules:
 - Match task type to window: personal → evenings/weekends, work → work hours, errands → errand window.
 - Never schedule personal tasks during work hours unless user is remote and task is quick.
 - 15 min buffer before important meetings.
-- For urgent tasks, prefer earliest slot. For this_week, spread across days.
+- For urgent tasks, prefer earliest slot. For this_week / next_week, spread across the right week.
 - For shopping/errands, group into one time block when possible.
 - If no slot fits, say so and suggest alternatives.
 - User can ALWAYS change — your pick is a suggestion.
 
 Date rules:
 - Output all dates as ISO 8601 with the user's timezone offset (not Z/UTC).
-- "tomorrow" = next day at 09:00 local (if no time given).
-- "this weekend" = period_start Saturday 00:00, period_end Sunday 23:59. No due_at.
-- "this week" = period_start now, period_end Sunday 23:59.
-- "next week" = Monday 00:00 to Sunday 23:59.
-- "next month" = 1st to last day of next month.
-- "morning" = 06:00-12:00, "afternoon" = 12:00-17:00, "evening"/"tonight" = 17:00-23:59.
+- "tomorrow" = next day at 09:00 local (if no time given). ALWAYS set period_start/period_end for the day.
+- "this weekend" / weekend without a day = period_start Saturday 00:00 local, period_end Sunday 23:59, period_label "weekend", no due_at.
+- "this week" = period_start now, period_end Sunday 23:59, period_label "this week".
+- "next week" = Monday 00:00 to Sunday 23:59, period_label "next week".
+- "next month" = 1st to last day of next month, period_label "next month".
+- "this month" = 1st to last day of current month, period_label "this month". NO due_at.
+- "end of this month" / "by end of month" = same period as "this month", PLUS due_at last day 17:00 (deadline signal).
+- "beginning of next month" = 1st to 3rd of next month, period_label "early next month".
+- "in June" / named month = period_start 1st, period_end last day, period_label "June" etc.
+- "this summer" = June 1 – Aug 31, period_label "summer".
+- "Q3" / "next quarter" = first day – last day of quarter, period_label "Q3 2026" etc.
+- "next year" = Jan 1 – Dec 31 next year, period_label "2027" etc.
+- "morning" = 06:00-12:00, "afternoon" / "this afternoon" = 12:00-17:00, "evening"/"tonight" = 17:00-23:59.
+- "later today" = now to today 23:59, period_label "today". No due_at.
+- "after work" = today 17:00 to 23:59, period_label "today".
+- "in a few days" = now to +3 days, period_label "few days".
+- "early next week" = Monday to Wednesday, period_label "early next week".
 - "in X days" = now + X at 09:00.
-- "April 25th" (no year) = this year; if past, next year.
-- "the 15th" = this month; if past, next month.
-- "by Friday" = deadline (is_deadline: true), due_at Friday 17:00. Should be scheduled BEFORE Friday.
-- "on Friday" = specific day. Schedule for Friday.
+- "April 25th" (no year) = this year; if past, next year. Set period_start/period_end for that day.
+- "the 15th" = this month; if past, next month. Set period_start/period_end for that day.
+- "by Friday" = deadline, due_at Friday 17:00. Should be scheduled BEFORE Friday. Also set period_start/period_end.
+- "on Friday" = specific day. Set period_start/period_end for that Friday.
 - "Friday at 3pm" = specific time. Calendar event at 3pm Friday.
-- "soon"/"sometime" = no dates, urgency someday.
-- Urgency: today if due today, this_week if within 7 days, none beyond, someday if vague.
+- "soon"/"sometime"/"eventually" = no dates, urgency: "someday".
+- CRITICAL: urgency is ONLY "someday" (aspirational, no timeline) or "none" (default). All timing comes from period_start/period_end and due_at. Do NOT output "today", "this_week", "next_week", "next_month" for urgency.
+- CRITICAL — due_at rules: Only set due_at when user uses deadline words ("by", "before", "deadline", "due", "no later than"). Period references ("this month", "next week", "this summer") do NOT get due_at. The period_end is the implicit boundary. A wrong due_at causes false overdue alerts.
 
 Recurrence rules:
 - "every Monday" / "weekly" / "daily" / "monthly" → detect and output in recurrence_detections.
@@ -295,14 +446,79 @@ Calendar blocking:
 
 Overwhelm handling:
 - If the user dumps 5+ items AND the tone suggests stress/anxiety, acknowledge warmly: "I've got all of that. Your head is clear."
-- Create all tasks but do NOT auto-schedule in this response.
-- Only mention 1-2 of the most urgent items.
+- Do NOT auto-schedule in scheduling[] for this response when that applies (extraction already created the tasks).
+- Only mention 1-2 of the most urgent items in response_text.
 
 Bulk rescheduling:
 - When user says "I'm sick today", "cancel this afternoon", or indicates period unavailability, identify ALL tasks in that period, suggest new slots, and respond with a summary.
 
-Contact references:
-- When a task involves meeting/calling/emailing someone by name, output the name in contact_references so the system can look up their info.`;
+`;
+
+/** Single-call fallback: orchestration instructions + full extraction duty in one JSON (Anthropic: simpler path when chaining fails). */
+const SYSTEM_MONOLITHIC = `${SYSTEM_ORCHESTRATION}
+
+MONOLITHIC (fallback only): Output ONE JSON object that includes creates, updates, completions AND all orchestration fields. There is no separate locked-extraction block — you must extract tasks yourself into creates/updates/completions while following the orchestration rules above. For meetings: always creates[] plus calendar_writes with linked_new_item_index pointing at the new task index.`;
+
+/** Fallback when structured output fails — short; user prompt already has full context. */
+const JSON_RECOVERY_SYSTEM = `You must output ONE JSON object only. No markdown, no code fences, no text before or after the JSON.
+
+Keys: response_text (string, required), creates, updates, completions, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update (string or null), polished_text (string or null). Use [] for empty arrays.
+
+creates items: text (required), original_text, tone (confident|tentative|idea|someday), urgency (someday|none), batch_key (shopping|errands or null — legacy, prefer list_name), list_name (name of list to assign or null, e.g. "Shopping", "Errands", "Ideas"), create_list (boolean — true only when user asks to create a new list), priority (high|medium|low or null), due_at, period_start, period_end, period_label, pem_note, draft_text (strings or null). ALWAYS set period_start/period_end for any time reference. urgency is ONLY someday or none. Creative thoughts, "what if" ideas, business concepts → list_name: "Ideas", tone: "idea".
+
+Extract every actionable from the user message; dedupe against open tasks; food/groceries → shopping list; ideas/brainstorms → Ideas list; memory_writes when user says remember/note/keep in mind; plain text only in response_text.`;
+
+const JSON_RECOVERY_EXTRACTION = `Output ONE JSON object only. No markdown, no fences. Keys: creates (array), updates (array), completions (array). Use [] if none. Same item shapes as Pem task extraction. Extract every actionable; dedupe against open tasks in the prompt.`;
+
+const JSON_RECOVERY_ORCHESTRATION = `Output ONE JSON object only. No markdown, no fences. Keys: response_text (string, required), polished_text, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update. Use [] for empty arrays. Plain text only in response_text.`;
+
+const PEM_AGENT_STRUCTURED_ATTEMPTS = 3;
+const PEM_EXTRACTION_ATTEMPTS = 3;
+const PEM_ORCHESTRATION_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractionIsEmpty(e: PemExtractionOutput): boolean {
+  return (
+    e.creates.length === 0 &&
+    e.updates.length === 0 &&
+    e.completions.length === 0
+  );
+}
+
+/** Programmatic gate (Anthropic): re-check when model returns no work but text looks actionable. */
+const MAX_MESSAGE_CHARS = 4000;
+
+function truncateForPrompt(content: string): string {
+  if (content.length <= MAX_MESSAGE_CHARS) return content;
+  return content.slice(0, MAX_MESSAGE_CHARS) + '\n\n(message truncated for length)';
+}
+
+function messageLikelyContainsTasks(content: string): boolean {
+  const t = content.trim();
+  if (t.length < 10) return false;
+  // Longer messages almost always contain something worth extracting
+  if (t.length > 80) return true;
+  // Minimal keyword check as a fast filter for short messages
+  return /\b(need|have to|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline)\b/i.test(
+    t,
+  );
+}
+
+const DEFAULT_ORCHESTRATION: PemOrchestrationOutput = {
+  response_text: 'Got it.',
+  calendar_writes: [],
+  memory_writes: [],
+  calendar_updates: [],
+  calendar_deletes: [],
+  scheduling: [],
+  recurrence_detections: [],
+  rsvp_actions: [],
+  summary_update: null,
+  polished_text: null,
+};
 
 @Injectable()
 export class PemAgentService {
@@ -339,6 +555,11 @@ export class PemAgentService {
     userSummary: string | null;
     schedulingContext?: string;
     userPreferences?: string;
+    recentDoneSection?: string;
+    recentDismissedSection?: string;
+    todayCalendarSection?: string;
+    userActivityLine?: string;
+    userLists?: { id: string; name: string }[];
   }): Promise<PemAgentOutput> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) throw new Error('OpenAI API key not configured');
@@ -346,6 +567,109 @@ export class PemAgentService {
     const openai = createOpenAI({ apiKey });
     const agentModel = this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
 
+    const prompt = this.buildUserPrompt(params);
+
+    const fallback: PemAgentOutput = {
+      response_text: "Got it. I'll keep that in mind.",
+      creates: [],
+      updates: [],
+      completions: [],
+      calendar_writes: [],
+      memory_writes: [],
+      calendar_updates: [],
+      calendar_deletes: [],
+      scheduling: [],
+      recurrence_detections: [],
+      rsvp_actions: [],
+      summary_update: null,
+      polished_text: null,
+    };
+
+    const baseModel = openai(agentModel);
+    const model = wrapLanguageModel({
+      model: baseModel,
+      middleware: extractJsonMiddleware(),
+    });
+
+    /** Prompt chaining: extraction → orchestration (Anthropic “workflows” pattern). */
+    let extraction = await this.runExtractionPhase(
+      openai,
+      agentModel,
+      model,
+      prompt,
+    );
+    if (
+      extractionIsEmpty(extraction) &&
+      messageLikelyContainsTasks(params.messageContent)
+    ) {
+      this.log.warn(
+        'PemAgent: empty extraction for likely-actionable message; nudged retry',
+      );
+      extraction = await this.runExtractionPhase(
+        openai,
+        agentModel,
+        model,
+        `${prompt}\n\nIMPORTANT: The user message almost certainly contains at least one actionable (buy/do/call/remember/time). Populate creates, updates, or completions — do not leave all three arrays empty unless there is truly nothing to capture.`,
+      );
+    }
+    if (
+      extractionIsEmpty(extraction) &&
+      messageLikelyContainsTasks(params.messageContent)
+    ) {
+      this.log.warn('PemAgent: monolithic fallback after extraction gate');
+      return this.runMonolithicPhase(
+        openai,
+        agentModel,
+        model,
+        prompt,
+        fallback,
+      );
+    }
+
+    const orchPrompt = `${prompt}\n\n## Locked extraction\n${JSON.stringify(extraction)}`;
+    const orchestration = await this.runOrchestrationPhase(
+      openai,
+      agentModel,
+      model,
+      orchPrompt,
+      extraction,
+    );
+
+    return { ...extraction, ...orchestration };
+  }
+
+  private buildUserPrompt(params: {
+    messageContent: string;
+    userTimezone: string | null;
+    openExtracts: {
+      id: string;
+      text: string;
+      status: string;
+      tone: string;
+      urgency: string;
+      batch_key: string | null;
+      due_at: string | null;
+      period_label: string | null;
+    }[];
+    calendarEvents: {
+      summary: string;
+      start_at: string;
+      end_at: string;
+      location: string | null;
+    }[];
+    memorySection: string;
+    recentMessages: { role: string; content: string; created_at: string }[];
+    ragContext: string;
+    userName: string | null;
+    userSummary: string | null;
+    schedulingContext?: string;
+    userPreferences?: string;
+    recentDoneSection?: string;
+    recentDismissedSection?: string;
+    todayCalendarSection?: string;
+    userActivityLine?: string;
+    userLists?: { id: string; name: string }[];
+  }): string {
     const tz = params.userTimezone ?? 'UTC';
     const nowLocal = DateTime.now().setZone(tz);
     const fmt = (iso: string) => {
@@ -395,16 +719,20 @@ export class PemAgentService {
       ? `## About the user\n${params.userSummary}`
       : '## About the user\n(No summary yet — learn about them from conversation)';
 
-    const nameNote = params.userName
-      ? `\nThe user's name is ${params.userName}.`
-      : '';
+    const addressingBlock = params.userName
+      ? `## Addressing the user\n- Preferred name: ${params.userName}\n- Use it naturally when it fits (not every message). Never invent or use a different name.\n`
+      : `## Addressing the user\n- Name is not on file. Do not guess a name. If it feels natural, you may ask what they prefer to be called.\n`;
 
-    const prompt = `${summaryBlock}${nameNote}
+    return `${summaryBlock}
 
+${addressingBlock}
 Current time: ${nowLocal.toFormat('cccc, MMMM d, yyyy h:mm a ZZZZ')} (${tz})
 
 ## Open tasks
 ${openTasksSection}
+
+## User's lists
+${params.userLists && params.userLists.length > 0 ? params.userLists.map((l) => `- ${l.name}`).join('\n') : '(no lists yet — defaults: Shopping, Errands, Ideas)'}
 
 ## Calendar (upcoming)
 ${calendarSection}
@@ -415,65 +743,418 @@ ${params.memorySection || '(none yet)'}
 ## Recent conversation
 ${recentSection || '(start of conversation)'}
 
-${params.ragContext ? `## Related past context\n${params.ragContext}\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}## User message
-"${params.messageContent}"`;
+${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentDoneSection ? `## Recently completed tasks\n${params.recentDoneSection}\n\n` : ''}${params.recentDismissedSection ? `## Recently dismissed (do not recreate)\n${params.recentDismissedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}## User message
+"${truncateForPrompt(params.messageContent)}"`;
+  }
 
-    const fallback: PemAgentOutput = {
-      response_text: "Got it. I'll keep that in mind.",
+  private async runExtractionPhase(
+    openai: ReturnType<typeof createOpenAI>,
+    agentModel: string,
+    model: Parameters<typeof generateText>[0]['model'],
+    prompt: string,
+  ): Promise<PemExtractionOutput> {
+    const empty: PemExtractionOutput = {
       creates: [],
       updates: [],
       completions: [],
-      calendar_writes: [],
-      memory_writes: [],
-      calendar_updates: [],
-      calendar_deletes: [],
-      scheduling: [],
-      recurrence_detections: [],
-      rsvp_actions: [],
-      contact_references: [],
-      summary_update: null,
-      polished_text: null,
     };
 
-    try {
-      const result = await generateText({
-        model: openai(agentModel),
-        output: Output.object({ schema: pemAgentOutputSchema }),
-        system: SYSTEM,
-        prompt,
-        maxRetries: 2,
-        providerOptions: { openai: { strictJsonSchema: false } },
-      });
+    for (let attempt = 0; attempt < PEM_EXTRACTION_ATTEMPTS; attempt++) {
+      try {
+        const result = await generateText({
+          model,
+          system: SYSTEM_EXTRACTION,
+          prompt,
+          output: Output.object({ schema: pemExtractionOutputSchema }),
+          temperature: 0.15,
+          maxRetries: 1,
+          maxOutputTokens: 4096,
+          providerOptions: { openai: { strictJsonSchema: false } },
+        });
 
-      if (!result.output) {
+        if (result.output != null) {
+          return result.output;
+        }
+
+        const raw = result.text?.trim();
         this.log.warn(
-          `No structured output. finish=${result.finishReason}, text=${result.text?.slice(0, 300)}`,
+          `PemAgent extraction attempt ${attempt + 1}: no object. finish=${result.finishReason}, text=${raw?.slice(0, 200)}`,
         );
-        const recovered = this.tryRecoverFromRawText(result.text, fallback);
-        if (recovered) return recovered;
-        return fallback;
-      }
-
-      return result.output;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.log.error(`PemAgent failed: ${msg}`);
-
-      const rawText =
-        e && typeof e === 'object' && 'text' in e
-          ? String((e as { text: unknown }).text)
-          : undefined;
-
-      if (msg.includes('did not match schema') || msg.includes('parse')) {
-        const recovered = this.tryRecoverFromRawText(rawText, fallback);
+        const recovered = this.tryRecoverExtractionFromRaw(raw);
         if (recovered) {
-          this.log.log('Recovered structured output via lenient parse');
+          this.log.warn(
+            `PemAgent: extraction recovered from model text (attempt ${attempt + 1})`,
+          );
           return recovered;
         }
-        return fallback;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.log.warn(
+          `PemAgent extraction attempt ${attempt + 1}/${PEM_EXTRACTION_ATTEMPTS}: ${msg}`,
+        );
+        if (attempt < PEM_EXTRACTION_ATTEMPTS - 1) {
+          await sleep(350 * (attempt + 1));
+        }
       }
-      throw e;
     }
+
+    try {
+      const recovered = await this.runExtractionJsonRecovery(
+        openai,
+        agentModel,
+        prompt,
+      );
+      if (recovered) {
+        this.log.warn('PemAgent: extraction JSON recovery produced output');
+        return recovered;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log.warn(`PemAgent extraction recovery error: ${msg}`);
+    }
+
+    return empty;
+  }
+
+  private async runOrchestrationPhase(
+    openai: ReturnType<typeof createOpenAI>,
+    agentModel: string,
+    model: Parameters<typeof generateText>[0]['model'],
+    orchPrompt: string,
+    extraction: PemExtractionOutput,
+  ): Promise<PemOrchestrationOutput> {
+    for (let attempt = 0; attempt < PEM_ORCHESTRATION_ATTEMPTS; attempt++) {
+      try {
+        const result = await generateText({
+          model,
+          system: SYSTEM_ORCHESTRATION,
+          prompt: orchPrompt,
+          output: Output.object({ schema: pemOrchestrationOutputSchema }),
+          temperature: 0.35,
+          maxRetries: 1,
+          maxOutputTokens: 4096,
+          providerOptions: { openai: { strictJsonSchema: false } },
+        });
+
+        if (result.output != null) {
+          return result.output;
+        }
+
+        const raw = result.text?.trim();
+        this.log.warn(
+          `PemAgent orchestration attempt ${attempt + 1}: no object. finish=${result.finishReason}, text=${raw?.slice(0, 200)}`,
+        );
+        const recovered = this.tryRecoverOrchestrationFromRaw(raw);
+        if (recovered) {
+          this.log.warn(
+            `PemAgent: orchestration recovered from model text (attempt ${attempt + 1})`,
+          );
+          return recovered;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.log.warn(
+          `PemAgent orchestration attempt ${attempt + 1}/${PEM_ORCHESTRATION_ATTEMPTS}: ${msg}`,
+        );
+        if (attempt < PEM_ORCHESTRATION_ATTEMPTS - 1) {
+          await sleep(350 * (attempt + 1));
+        }
+      }
+    }
+
+    try {
+      const recovered = await this.runOrchestrationJsonRecovery(
+        openai,
+        agentModel,
+        orchPrompt,
+      );
+      if (recovered) {
+        this.log.warn('PemAgent: orchestration JSON recovery produced output');
+        return recovered;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log.warn(`PemAgent orchestration recovery error: ${msg}`);
+    }
+
+    this.log.warn(
+      'PemAgent: orchestration failed after retries — synthesizing response from extraction',
+    );
+    return this.synthesizeOrchestration(extraction);
+  }
+
+  private async runMonolithicPhase(
+    openai: ReturnType<typeof createOpenAI>,
+    agentModel: string,
+    model: Parameters<typeof generateText>[0]['model'],
+    prompt: string,
+    fallback: PemAgentOutput,
+  ): Promise<PemAgentOutput> {
+    for (let attempt = 0; attempt < PEM_AGENT_STRUCTURED_ATTEMPTS; attempt++) {
+      try {
+        const result = await generateText({
+          model,
+          system: SYSTEM_MONOLITHIC,
+          prompt,
+          output: Output.object({ schema: pemAgentOutputSchema }),
+          temperature: 0.25,
+          maxRetries: 1,
+          maxOutputTokens: 4096,
+          providerOptions: { openai: { strictJsonSchema: false } },
+        });
+
+        if (result.output != null) {
+          return result.output;
+        }
+
+        const raw = result.text?.trim();
+        this.log.warn(
+          `PemAgent monolithic attempt ${attempt + 1}: no object. finish=${result.finishReason}, text=${raw?.slice(0, 200)}`,
+        );
+        const recovered = this.tryRecoverFromRawText(raw, fallback);
+        if (recovered) {
+          this.log.warn(
+            `PemAgent: monolithic recovered from model text (attempt ${attempt + 1})`,
+          );
+          return recovered;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.log.warn(
+          `PemAgent monolithic attempt ${attempt + 1}/${PEM_AGENT_STRUCTURED_ATTEMPTS}: ${msg}`,
+        );
+        if (attempt < PEM_AGENT_STRUCTURED_ATTEMPTS - 1) {
+          await sleep(350 * (attempt + 1));
+        }
+      }
+    }
+
+    try {
+      const recovered = await this.runJsonRecoveryPass(
+        openai,
+        agentModel,
+        prompt,
+        fallback,
+      );
+      if (recovered) {
+        this.log.warn('PemAgent: monolithic JSON recovery produced output');
+        return recovered;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log.warn(`PemAgent monolithic recovery error: ${msg}`);
+    }
+
+    this.log.error('PemAgent: monolithic path failed — using minimal fallback');
+    return fallback;
+  }
+
+  private synthesizeOrchestration(
+    extraction: PemExtractionOutput,
+  ): PemOrchestrationOutput {
+    const bits: string[] = [];
+    if (extraction.creates.length > 0) {
+      bits.push(
+        `I added ${extraction.creates.length} thing${extraction.creates.length === 1 ? '' : 's'} to your list.`,
+      );
+    }
+    if (extraction.updates.length > 0) {
+      bits.push(
+        `Updated ${extraction.updates.length} item${extraction.updates.length === 1 ? '' : 's'}.`,
+      );
+    }
+    if (extraction.completions.length > 0) {
+      bits.push(
+        `Checked off ${extraction.completions.length} item${extraction.completions.length === 1 ? '' : 's'}.`,
+      );
+    }
+    return {
+      ...DEFAULT_ORCHESTRATION,
+      response_text: bits.join(' ') || DEFAULT_ORCHESTRATION.response_text,
+    };
+  }
+
+  private tryRecoverExtractionFromRaw(
+    raw: string | undefined | null,
+  ): PemExtractionOutput | null {
+    if (!raw?.trim()) return null;
+    const normalized = this.stripMarkdownJsonFence(raw.trim());
+    const jsonMatch = normalized.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      return null;
+    }
+    const result = pemExtractionOutputSchema.safeParse(parsed);
+    if (result.success) return result.data;
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    return this.recoverPartialExtractionOutput(
+      parsed as Record<string, unknown>,
+    );
+  }
+
+  private recoverPartialExtractionOutput(
+    o: Record<string, unknown>,
+  ): PemExtractionOutput | null {
+    const mapArr = <T>(v: unknown, schema: z.ZodType<T>): T[] =>
+      Array.isArray(v)
+        ? v.flatMap((item) => {
+            const r = schema.safeParse(item);
+            return r.success ? [r.data] : [];
+          })
+        : [];
+
+    const creates = mapArr(o.creates, extractActionSchema);
+    const updates = mapArr(o.updates, updateActionSchema);
+    const completions = mapArr(o.completions, completeActionSchema);
+    if (creates.length + updates.length + completions.length === 0) return null;
+    return { creates, updates, completions };
+  }
+
+  private async runExtractionJsonRecovery(
+    openai: ReturnType<typeof createOpenAI>,
+    agentModel: string,
+    userPrompt: string,
+  ): Promise<PemExtractionOutput | null> {
+    const model = openai(agentModel);
+    const { text } = await generateText({
+      model,
+      system: JSON_RECOVERY_EXTRACTION,
+      prompt: userPrompt,
+      temperature: 0.1,
+      maxRetries: 2,
+      maxOutputTokens: 4096,
+      providerOptions: { openai: { strictJsonSchema: false } },
+    });
+    return this.tryRecoverExtractionFromRaw(text);
+  }
+
+  private tryRecoverOrchestrationFromRaw(
+    raw: string | undefined | null,
+  ): PemOrchestrationOutput | null {
+    if (!raw?.trim()) return null;
+    const normalized = this.stripMarkdownJsonFence(raw.trim());
+    const jsonMatch = normalized.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      return null;
+    }
+    const result = pemOrchestrationOutputSchema.safeParse(parsed);
+    if (result.success) return result.data;
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    return this.recoverPartialOrchestrationOutput(
+      parsed as Record<string, unknown>,
+    );
+  }
+
+  private recoverPartialOrchestrationOutput(
+    o: Record<string, unknown>,
+  ): PemOrchestrationOutput | null {
+    const mapArr = <T>(v: unknown, schema: z.ZodType<T>): T[] =>
+      Array.isArray(v)
+        ? v.flatMap((item) => {
+            const r = schema.safeParse(item);
+            return r.success ? [r.data] : [];
+          })
+        : [];
+
+    const calendar_writes = mapArr(o.calendar_writes, calendarWriteSchema);
+    const memory_writes = mapArr(o.memory_writes, memoryWriteSchema);
+    const calendar_updates = mapArr(o.calendar_updates, calendarUpdateSchema);
+    const calendar_deletes = mapArr(o.calendar_deletes, calendarDeleteSchema);
+    const scheduling = mapArr(o.scheduling, schedulingSchema);
+    const recurrence_detections = mapArr(
+      o.recurrence_detections,
+      recurrenceDetectionSchema,
+    );
+    const rsvp_actions = mapArr(o.rsvp_actions, rsvpActionSchema);
+
+    const hasWork =
+      calendar_writes.length > 0 ||
+      memory_writes.length > 0 ||
+      calendar_updates.length > 0 ||
+      calendar_deletes.length > 0 ||
+      scheduling.length > 0 ||
+      recurrence_detections.length > 0 ||
+      rsvp_actions.length > 0;
+
+    let response_text =
+      typeof o.response_text === 'string' && o.response_text.trim()
+        ? o.response_text.trim()
+        : '';
+
+    if (!response_text && hasWork) {
+      const bits: string[] = [];
+      if (calendar_writes.length) bits.push(`Scheduled on your calendar.`);
+      if (memory_writes.length) bits.push(`Saved to memory.`);
+      if (calendar_updates.length) bits.push(`Updated calendar events.`);
+      if (calendar_deletes.length) bits.push(`Removed calendar events.`);
+      if (scheduling.length) bits.push(`Suggested times.`);
+      if (rsvp_actions.length) bits.push(`Updated RSVPs.`);
+      response_text = bits.join(' ') || "I've got that.";
+    }
+
+    if (!response_text) return null;
+
+    return {
+      response_text,
+      calendar_writes,
+      memory_writes,
+      calendar_updates,
+      calendar_deletes,
+      scheduling,
+      recurrence_detections,
+      rsvp_actions,
+      summary_update:
+        typeof o.summary_update === 'string' ? o.summary_update : null,
+      polished_text:
+        typeof o.polished_text === 'string' ? o.polished_text : null,
+    };
+  }
+
+  private async runOrchestrationJsonRecovery(
+    openai: ReturnType<typeof createOpenAI>,
+    agentModel: string,
+    userPrompt: string,
+  ): Promise<PemOrchestrationOutput | null> {
+    const model = openai(agentModel);
+    const { text } = await generateText({
+      model,
+      system: JSON_RECOVERY_ORCHESTRATION,
+      prompt: userPrompt,
+      temperature: 0.15,
+      maxRetries: 2,
+      maxOutputTokens: 4096,
+      providerOptions: { openai: { strictJsonSchema: false } },
+    });
+    return this.tryRecoverOrchestrationFromRaw(text);
+  }
+
+  /**
+   * Last resort: same prompt context, no structured-output mode — parse JSON from text.
+   */
+  private async runJsonRecoveryPass(
+    openai: ReturnType<typeof createOpenAI>,
+    agentModel: string,
+    userPrompt: string,
+    fallback: PemAgentOutput,
+  ): Promise<PemAgentOutput | null> {
+    const model = openai(agentModel);
+    const { text } = await generateText({
+      model,
+      system: JSON_RECOVERY_SYSTEM,
+      prompt: userPrompt,
+      temperature: 0.2,
+      maxRetries: 2,
+      maxOutputTokens: 4096,
+      providerOptions: { openai: { strictJsonSchema: false } },
+    });
+    return this.tryRecoverFromRawText(text, fallback);
   }
 
   private tryRecoverFromRawText(
@@ -482,59 +1163,123 @@ ${params.ragContext ? `## Related past context\n${params.ragContext}\n` : ''}${p
   ): PemAgentOutput | null {
     if (!raw?.trim()) return null;
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const normalized = this.stripMarkdownJsonFence(raw.trim());
+    const jsonMatch = normalized.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       if (raw.length > 10) {
-        return { ...fallback, response_text: raw.trim().slice(0, 2000) };
+        return { ...fallback, response_text: normalized.slice(0, 2000) };
       }
       return null;
     }
 
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const result = pemAgentOutputSchema.safeParse(parsed);
-      if (result.success) return result.data;
-
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        typeof parsed.response_text === 'string'
-      ) {
-        this.log.warn(
-          `Partial schema match — using response_text + valid arrays`,
-        );
-        return {
-          ...fallback,
-          response_text: parsed.response_text,
-          creates: Array.isArray(parsed.creates)
-            ? parsed.creates.flatMap((c: unknown) => {
-                const r = extractActionSchema.safeParse(c);
-                return r.success ? [r.data] : [];
-              })
-            : [],
-          memory_writes: Array.isArray(parsed.memory_writes)
-            ? parsed.memory_writes.flatMap((m: unknown) => {
-                const r = memoryWriteSchema.safeParse(m);
-                return r.success ? [r.data] : [];
-              })
-            : [],
-          summary_update:
-            typeof parsed.summary_update === 'string'
-              ? parsed.summary_update
-              : null,
-          polished_text:
-            typeof parsed.polished_text === 'string'
-              ? parsed.polished_text
-              : null,
-        };
-      }
-
-      return null;
+      parsed = JSON.parse(jsonMatch[0]);
     } catch {
       if (raw.length > 10) {
-        return { ...fallback, response_text: raw.trim().slice(0, 2000) };
+        return { ...fallback, response_text: normalized.slice(0, 2000) };
       }
       return null;
     }
+
+    const result = pemAgentOutputSchema.safeParse(parsed);
+    if (result.success) return result.data;
+
+    if (typeof parsed !== 'object' || parsed === null) return null;
+
+    const o = parsed as Record<string, unknown>;
+    const recovered = this.recoverPartialAgentOutput(o);
+    if (recovered) {
+      this.log.warn(
+        `Partial schema match — recovered fields without full Zod pass`,
+      );
+      return recovered;
+    }
+
+    return null;
+  }
+
+  /** Remove ```json ... ``` wrappers models sometimes add despite instructions. */
+  private stripMarkdownJsonFence(s: string): string {
+    let t = s.trim();
+    if (t.startsWith('```')) {
+      t = t.replace(/^```(?:json)?\s*\n?/i, '');
+      t = t.replace(/\n?```\s*$/i, '');
+    }
+    return t.trim();
+  }
+
+  /** Build output from loose JSON when full schema validation fails. */
+  private recoverPartialAgentOutput(
+    o: Record<string, unknown>,
+  ): PemAgentOutput | null {
+    const mapArr = <T>(v: unknown, schema: z.ZodType<T>): T[] =>
+      Array.isArray(v)
+        ? v.flatMap((item) => {
+            const r = schema.safeParse(item);
+            return r.success ? [r.data] : [];
+          })
+        : [];
+
+    const creates = mapArr(o.creates, extractActionSchema);
+    const updates = mapArr(o.updates, updateActionSchema);
+    const completions = mapArr(o.completions, completeActionSchema);
+    const calendar_writes = mapArr(o.calendar_writes, calendarWriteSchema);
+    const memory_writes = mapArr(o.memory_writes, memoryWriteSchema);
+    const calendar_updates = mapArr(o.calendar_updates, calendarUpdateSchema);
+    const calendar_deletes = mapArr(o.calendar_deletes, calendarDeleteSchema);
+    const scheduling = mapArr(o.scheduling, schedulingSchema);
+    const recurrence_detections = mapArr(
+      o.recurrence_detections,
+      recurrenceDetectionSchema,
+    );
+    const rsvp_actions = mapArr(o.rsvp_actions, rsvpActionSchema);
+
+    const hasWork =
+      creates.length > 0 ||
+      updates.length > 0 ||
+      completions.length > 0 ||
+      calendar_writes.length > 0 ||
+      memory_writes.length > 0 ||
+      calendar_updates.length > 0 ||
+      calendar_deletes.length > 0 ||
+      scheduling.length > 0 ||
+      recurrence_detections.length > 0 ||
+      rsvp_actions.length > 0;
+
+    let response_text =
+      typeof o.response_text === 'string' && o.response_text.trim()
+        ? o.response_text.trim()
+        : '';
+
+    if (!response_text && hasWork) {
+      const bits: string[] = [];
+      if (creates.length) bits.push(`Added ${creates.length} item(s).`);
+      if (calendar_writes.length) bits.push(`Scheduled on your calendar.`);
+      if (updates.length) bits.push(`Updated ${updates.length} item(s).`);
+      if (completions.length) bits.push(`Marked ${completions.length} done.`);
+      if (memory_writes.length) bits.push(`Saved to memory.`);
+      response_text = bits.join(' ') || "I've got that.";
+    }
+
+    if (!response_text) return null;
+
+    return {
+      response_text,
+      creates,
+      updates,
+      completions,
+      calendar_writes,
+      memory_writes,
+      calendar_updates,
+      calendar_deletes,
+      scheduling,
+      recurrence_detections,
+      rsvp_actions,
+      summary_update:
+        typeof o.summary_update === 'string' ? o.summary_update : null,
+      polished_text:
+        typeof o.polished_text === 'string' ? o.polished_text : null,
+    };
   }
 }

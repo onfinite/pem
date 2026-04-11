@@ -32,9 +32,19 @@ export class PushService {
 
   async notifyBrief(userId: string): Promise<void> {
     await this.sendPush(userId, {
-      title: 'Good morning',
+      title: 'Pem',
       body: 'Your daily brief is ready',
-      data: { kind: 'morning_brief' },
+      data: { kind: 'daily_brief' },
+    });
+  }
+
+  async notifyReminder(userId: string, taskText: string): Promise<void> {
+    const body =
+      taskText.length > 200 ? taskText.slice(0, 197) + '...' : taskText;
+    await this.sendPush(userId, {
+      title: 'Reminder',
+      body,
+      data: { kind: 'reminder' },
     });
   }
 

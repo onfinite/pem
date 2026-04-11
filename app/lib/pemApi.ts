@@ -1,36 +1,60 @@
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
 
+const MAX_429_RETRIES = 5;
+const RETRY_BASE_MS = 1500;
+
 export async function apiFetch<T>(
   path: string,
   init: RequestInit & { getToken: () => Promise<string | null> },
 ): Promise<T> {
   const { getToken, ...rest } = init;
-  const token = await getToken();
-  if (!token) throw new Error("No auth token available");
-  const headers = new Headers(rest.headers);
-  headers.set("Accept", "application/json");
-  headers.set("Authorization", `Bearer ${token}`);
-  if (rest.body && !headers.has("Content-Type") && !(rest.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
+
+  const buildHeaders = async () => {
+    const token = await getToken();
+    if (!token) throw new Error("No auth token available");
+    const h = new Headers(rest.headers);
+    h.set("Accept", "application/json");
+    h.set("Authorization", `Bearer ${token}`);
+    if (rest.body && !h.has("Content-Type") && !(rest.body instanceof FormData)) {
+      h.set("Content-Type", "application/json");
+    }
+    return h;
+  };
+
+  let headers = await buildHeaders();
+  let didRetryAuth = false;
+
+  for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(`${getApiBaseUrl()}${path}`, { ...rest, headers });
+    } catch (e) {
+      const base = getApiBaseUrl();
+      const hint =
+        __DEV__ && (e instanceof TypeError || String(e).includes("Network request failed"))
+          ? ` Check API is running at ${base}.`
+          : "";
+      throw new Error((e instanceof Error ? e.message : String(e)) + hint);
+    }
+
+    if (res.status === 401 && !didRetryAuth) {
+      didRetryAuth = true;
+      headers = await buildHeaders();
+      continue;
+    }
+    if (res.status === 429 && attempt < MAX_429_RETRIES) {
+      await new Promise((r) => setTimeout(r, RETRY_BASE_MS * (attempt + 1)));
+      continue;
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      if (res.status === 429) throw new Error("Too many requests. Try again in a moment.");
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    if (res.status === 204) return undefined as T;
+    return (await res.json()) as T;
   }
-  let res: Response;
-  try {
-    res = await fetch(`${getApiBaseUrl()}${path}`, { ...rest, headers });
-  } catch (e) {
-    const base = getApiBaseUrl();
-    const hint =
-      __DEV__ && (e instanceof TypeError || String(e).includes("Network request failed"))
-        ? ` Check API is running at ${base}.`
-        : "";
-    throw new Error((e instanceof Error ? e.message : String(e)) + hint);
-  }
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    if (res.status === 429) throw new Error("Too many requests. Try again in a moment.");
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  throw new Error("Too many requests. Try again in a moment.");
 }
 
 export async function createDump(
@@ -57,6 +81,7 @@ export type ApiMessage = {
   processing_status: string | null;
   polished_text: string | null;
   parent_message_id: string | null;
+  idempotency_key?: string | null;
   created_at: string;
   metadata?: {
     tasks_created?: number;
@@ -70,8 +95,18 @@ export type ApiMessage = {
 
 export async function sendChatMessage(
   getToken: () => Promise<string | null>,
-  params: { kind: "text" | "voice"; content?: string; voice_url?: string; audio_key?: string },
-): Promise<{ message: ApiMessage; status: string }> {
+  params: {
+    kind: "text" | "voice";
+    content?: string;
+    voice_url?: string;
+    audio_key?: string;
+    idempotency_key?: string;
+  },
+): Promise<{
+  message: ApiMessage;
+  status: string;
+  deduplicated?: boolean;
+}> {
   return apiFetch("/chat/messages", {
     method: "POST",
     getToken,
@@ -83,7 +118,8 @@ export async function sendVoiceMessage(
   getToken: () => Promise<string | null>,
   audioUri: string,
   mimeType = "audio/m4a",
-): Promise<{ message: ApiMessage; status: string }> {
+  opts?: { idempotency_key?: string },
+): Promise<{ message: ApiMessage; status: string; deduplicated?: boolean }> {
   const token = await getToken();
   const formData = new FormData();
   formData.append("audio", {
@@ -91,7 +127,10 @@ export async function sendVoiceMessage(
     name: "recording.m4a",
     type: mimeType,
   } as any);
-  const res = await fetch(`${getApiBaseUrl()}/chat/voice`, {
+  const q = opts?.idempotency_key
+    ? `?idempotency_key=${encodeURIComponent(opts.idempotency_key)}`
+    : "";
+  const res = await fetch(`${getApiBaseUrl()}/chat/voice${q}`, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -116,6 +155,27 @@ export async function getChatMessages(
   const qs = params.toString();
   return apiFetch(`/chat/messages${qs ? `?${qs}` : ""}`, {
     method: "GET",
+    getToken,
+  });
+}
+
+export async function searchMessages(
+  getToken: () => Promise<string | null>,
+  query: string,
+  limit = 20,
+) {
+  return apiFetch<{ messages: ApiMessage[] }>(
+    `/chat/messages/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    { method: "GET", getToken },
+  );
+}
+
+export async function deleteMessage(
+  getToken: () => Promise<string | null>,
+  messageId: string,
+) {
+  return apiFetch<{ ok: boolean }>(`/chat/messages/${messageId}`, {
+    method: "DELETE",
     getToken,
   });
 }
@@ -161,6 +221,15 @@ export async function triggerCalendarSync(
   });
 }
 
+export type ExtractMeta = {
+  energy_level?: "low" | "medium" | "high" | null;
+  is_deadline?: boolean;
+  auto_scheduled?: boolean;
+  scheduling_reason?: string | null;
+  recommended_at?: string | null;
+  rsvp_status?: string | null;
+};
+
 export type ApiExtract = {
   id: string;
   message_id: string | null;
@@ -169,7 +238,7 @@ export type ApiExtract = {
   original_text: string;
   status: string;
   tone: string;
-  urgency: string;
+  urgency: "someday" | "none";
   batch_key: string | null;
   due_at: string | null;
   period_start: string | null;
@@ -184,11 +253,60 @@ export type ApiExtract = {
   draft_text: string | null;
   event_start_at: string | null;
   event_end_at: string | null;
+  /** Block / focus time suggested by agent (ISO). */
+  scheduled_at: string | null;
   event_location: string | null;
   external_event_id: string | null;
+  duration_minutes: number | null;
+  auto_scheduled: boolean;
+  scheduling_reason: string | null;
+  recurrence_rule: unknown;
+  recurrence_parent_id: string | null;
+  rsvp_status: string | null;
+  is_all_day: boolean;
+  is_deadline: boolean;
+  is_organizer: boolean;
+  energy_level: string | null;
+  list_id: string | null;
+  priority: "high" | "medium" | "low" | null;
+  reminder_at: string | null;
+  reminder_sent: boolean;
+  meta: ExtractMeta;
   created_at: string;
   updated_at: string;
 };
+
+/** PATCH /extracts/:id — all keys optional; send `null` to clear nullable fields. */
+export type UpdateExtractPayload = {
+  text?: string;
+  original_text?: string;
+  tone?: "confident" | "tentative" | "idea" | "someday";
+  urgency?: "someday" | "none";
+  batch_key?: "shopping" | "errands" | "follow_ups" | null;
+  due_at?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  period_label?: string | null;
+  duration_minutes?: number | null;
+  pem_note?: string | null;
+  is_deadline?: boolean;
+  energy_level?: "low" | "medium" | "high" | null;
+  priority?: "high" | "medium" | "low" | null;
+  list_id?: string | null;
+  reminder_at?: string | null;
+};
+
+export async function patchExtractUpdate(
+  getToken: () => Promise<string | null>,
+  id: string,
+  body: UpdateExtractPayload,
+) {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}`, {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify(body),
+  });
+}
 
 export async function getInboxToday(getToken: () => Promise<string | null>) {
   return apiFetch<{ today: ApiExtract[] }>("/inbox", { method: "GET", getToken });
@@ -202,7 +320,7 @@ export type BatchSlot = {
 
 export async function getInboxAll(getToken: () => Promise<string | null>) {
   return apiFetch<{
-    this_week: ApiExtract[];
+    dated: ApiExtract[];
     someday: ApiExtract[];
     ideas: ApiExtract[];
     dismissed: ApiExtract[];
@@ -216,7 +334,7 @@ export type ExtractsQueryParams = {
   batch_key?: "shopping" | "errands" | "follow_ups";
   tone?: "confident" | "tentative" | "idea" | "someday";
   exclude_tone?: "confident" | "tentative" | "idea" | "someday";
-  urgency?: "today" | "this_week" | "someday" | "none";
+  urgency?: "someday" | "none";
   limit?: number;
   cursor?: string | null;
 };
@@ -358,6 +476,13 @@ export type BriefResponse = {
 
 export async function getBrief(getToken: () => Promise<string | null>) {
   return apiFetch<BriefResponse>("/inbox/brief", { method: "GET", getToken });
+}
+
+export async function requestBrief(getToken: () => Promise<string | null>) {
+  return apiFetch<{ generated: boolean; briefId?: string }>("/chat/brief", {
+    method: "POST",
+    getToken,
+  });
 }
 
 // ── Draft ────────────────────────────────────────────────
@@ -555,102 +680,56 @@ export async function getExtractsDone(
   );
 }
 
-/** Voice dump — upload audio for transcription and dump creation. */
-export async function createVoiceDump(
-  getToken: () => Promise<string | null>,
-  audioUri: string,
-  mimeType = "audio/m4a",
-): Promise<{ dumpId: string; text: string }> {
-  const token = await getToken();
-  const formData = new FormData();
-  formData.append("audio", {
-    uri: audioUri,
-    name: "recording.m4a",
-    type: mimeType,
-  } as any);
-  const res = await fetch(`${getApiBaseUrl()}/dumps/voice`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-    body: formData,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return (await res.json()) as { dumpId: string; text: string };
-}
 
-// ── Ask Pem (separate from dumps — never creates a dump) ──
+// ── Lists ───────────────────────────────────────────────────
 
-export type AskPemResponse = {
-  answer: string;
-  sources: { id: string; text: string }[];
-};
-
-export async function askPem(
-  getToken: () => Promise<string | null>,
-  question: string,
-): Promise<AskPemResponse> {
-  return apiFetch<AskPemResponse>("/ask", {
-    method: "POST",
-    getToken,
-    body: JSON.stringify({ question }),
-  });
-}
-
-export type VoiceAskResponse = AskPemResponse & { text: string };
-
-export type AskHistoryTurn = {
+export type ApiList = {
   id: string;
-  question_text: string;
-  answer_text: string | null;
-  sources: { id: string; text: string }[];
-  input_kind: "text" | "voice";
-  error: { message: string; stack?: string } | null;
+  user_id: string;
+  name: string;
+  color: string | null;
+  icon: string | null;
+  is_default: boolean;
+  sort_order: number;
+  open_count: number;
   created_at: string;
+  updated_at: string;
 };
 
-export async function getAskHistory(
+export async function fetchLists(
   getToken: () => Promise<string | null>,
-  limit?: number,
+): Promise<{ items: ApiList[] }> {
+  return apiFetch<{ items: ApiList[] }>("/lists", { method: "GET", getToken });
+}
+
+export async function createList(
+  getToken: () => Promise<string | null>,
+  data: { name: string; color?: string; icon?: string },
 ) {
-  const q =
-    limit !== undefined && Number.isFinite(limit)
-      ? `?limit=${encodeURIComponent(String(limit))}`
-      : "";
-  return apiFetch<{ turns: AskHistoryTurn[] }>(`/ask/history${q}`, {
+  return apiFetch<{ item: ApiList }>("/lists", {
+    method: "POST",
     getToken,
+    body: JSON.stringify(data),
   });
 }
 
-export async function createVoiceAsk(
+export async function updateList(
   getToken: () => Promise<string | null>,
-  audioUri: string,
-  mimeType = "audio/m4a",
-): Promise<VoiceAskResponse> {
-  const token = await getToken();
-  const formData = new FormData();
-  formData.append("audio", {
-    uri: audioUri,
-    name: "recording.m4a",
-    type: mimeType,
-  } as any);
-  const res = await fetch(`${getApiBaseUrl()}/ask/voice`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-    body: formData,
+  id: string,
+  data: { name?: string; color?: string; icon?: string; sortOrder?: number },
+) {
+  return apiFetch<{ item: ApiList }>(`/lists/${id}`, {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return (await res.json()) as VoiceAskResponse;
+}
+
+export async function deleteList(
+  getToken: () => Promise<string | null>,
+  id: string,
+) {
+  return apiFetch<void>(`/lists/${id}`, { method: "DELETE", getToken });
 }
 
 // ── Scheduling Preferences ──────────────────────────────────
@@ -662,7 +741,6 @@ export async function setSchedulingPreferences(
     work_days?: number[];
     work_type?: "office" | "remote" | "hybrid";
     personal_windows?: ("evenings" | "weekends" | "lunch" | "mornings")[];
-    focus_time_pref?: "morning" | "afternoon";
     errand_window?: "weekend_morning" | "lunch" | "after_work";
   },
 ) {
@@ -670,18 +748,6 @@ export async function setSchedulingPreferences(
     method: "PATCH",
     getToken,
     body: JSON.stringify(prefs),
-  });
-}
-
-export async function setFocusTime(
-  getToken: () => Promise<string | null>,
-  hours: number,
-  preferredTime?: "morning" | "afternoon",
-) {
-  return apiFetch<{ ok: boolean }>("/users/me/focus-time", {
-    method: "PATCH",
-    getToken,
-    body: JSON.stringify({ hours, preferred_time: preferredTime }),
   });
 }
 

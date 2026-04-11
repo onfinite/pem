@@ -1,5 +1,5 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { and, desc, eq, ilike, isNotNull, lt, or } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -27,6 +27,7 @@ export class ChatService {
     triageCategory?: TriageCategory | null;
     processingStatus?: ProcessingStatus | null;
     parentMessageId?: string | null;
+    idempotencyKey?: string | null;
   }): Promise<MessageRow> {
     const [row] = await this.db
       .insert(messagesTable)
@@ -41,9 +42,30 @@ export class ChatService {
         triageCategory: params.triageCategory ?? null,
         processingStatus: params.processingStatus ?? null,
         parentMessageId: params.parentMessageId ?? null,
+        idempotencyKey: params.idempotencyKey?.trim() || null,
       })
       .returning();
     return row;
+  }
+
+  async findMessageByIdempotencyKey(
+    userId: string,
+    key: string,
+  ): Promise<MessageRow | null> {
+    const k = key.trim();
+    if (!k) return null;
+    const [row] = await this.db
+      .select()
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.userId, userId),
+          isNotNull(messagesTable.idempotencyKey),
+          eq(messagesTable.idempotencyKey, k),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
   }
 
   async updateMessage(
@@ -107,6 +129,39 @@ export class ChatService {
     return row ?? null;
   }
 
+  async deleteMessage(userId: string, messageId: string): Promise<void> {
+    const [row] = await this.db
+      .delete(messagesTable)
+      .where(
+        and(eq(messagesTable.id, messageId), eq(messagesTable.userId, userId)),
+      )
+      .returning({ id: messagesTable.id });
+    if (!row) throw new NotFoundException('Message not found');
+  }
+
+  async searchMessages(
+    userId: string,
+    query: string,
+    limit: number,
+  ): Promise<MessageRow[]> {
+    if (!query.trim()) return [];
+    const pattern = `%${query.replace(/%/g, '\\%')}%`;
+    return this.db
+      .select()
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.userId, userId),
+          or(
+            ilike(messagesTable.content, pattern),
+            ilike(messagesTable.transcript, pattern),
+          ),
+        ),
+      )
+      .orderBy(desc(messagesTable.createdAt))
+      .limit(Math.min(limit, 50));
+  }
+
   serializeMessage(m: MessageRow) {
     return {
       id: m.id,
@@ -120,6 +175,7 @@ export class ChatService {
       polished_text: m.polishedText,
       metadata: m.metadata ?? null,
       parent_message_id: m.parentMessageId,
+      idempotency_key: m.idempotencyKey ?? null,
       created_at: m.createdAt.toISOString(),
     };
   }

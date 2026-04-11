@@ -4,6 +4,7 @@ import { extractsTable } from './extracts.schema';
 import { messagesTable } from './messages.schema';
 import { usersTable } from './users.schema';
 
+/** @deprecated — no longer used in code. Table kept for Drizzle snapshot consistency. */
 export const followUpsTable = pgTable(
   'follow_ups',
   {

@@ -12,18 +12,8 @@ export function toneChipLabel(tone: string | null | undefined): string | null {
 
 export function urgencyChipLabel(urgency: string | null | undefined): string | null {
   if (!urgency || urgency === "none") return null;
-  switch (urgency) {
-    case "today":
-      return "Today";
-    case "this_week":
-      return "This Week";
-    case "next_week":
-      return "Next Week";
-    case "someday":
-      return "Someday";
-    default:
-      return null;
-  }
+  if (urgency === "someday") return "Someday";
+  return null;
 }
 
 export function batchKeyLabel(batchKey: string | null | undefined): string | null {

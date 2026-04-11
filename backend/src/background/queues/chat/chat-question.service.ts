@@ -13,6 +13,7 @@ import {
   type BriefBuckets,
 } from '../../../extracts/extracts.service';
 import { ProfileService } from '../../../profile/profile.service';
+import { RAG_MIN_SIMILARITY, RAG_TOP_K } from '../../../chat/chat.constants';
 
 function formatBuckets(b: BriefBuckets): string {
   const lines: string[] = [];
@@ -42,12 +43,15 @@ function formatAllOpen(rows: ExtractRow[]): string {
     .map((r) => {
       const parts = [r.extractText];
       if (r.batchKey) parts.push(`[${r.batchKey}]`);
-      if (r.urgency && r.urgency !== 'none')
-        parts.push(`urgency: ${r.urgency}`);
+      if (r.urgency === 'someday') parts.push('someday');
       if (r.tone) parts.push(`tone: ${r.tone}`);
       if (r.dueAt) parts.push(`due: ${r.dueAt.toISOString()}`);
-      if (r.eventStartAt) parts.push(`event: ${r.eventStartAt.toISOString()}`);
+      if (r.eventStartAt)
+        parts.push(`event: ${r.eventStartAt.toISOString()}`);
       if (r.periodLabel) parts.push(`period: ${r.periodLabel}`);
+      if (r.periodStart)
+        parts.push(`from: ${r.periodStart.toISOString()}`);
+      if (r.periodEnd) parts.push(`to: ${r.periodEnd.toISOString()}`);
       return `- ${parts.join(' | ')}`;
     })
     .join('\n');
@@ -90,7 +94,12 @@ export class ChatQuestionService {
           .orderBy(desc(extractsTable.createdAt))
           .limit(100),
         this.extracts.getAskOpenTimelineBuckets(userId),
-        this.embeddings.similaritySearch(userId, question, 8),
+        this.embeddings.similaritySearch(
+          userId,
+          question,
+          RAG_TOP_K,
+          RAG_MIN_SIMILARITY,
+        ),
         this.profile.buildMemoryPromptSection(userId),
       ]);
 
@@ -100,7 +109,6 @@ export class ChatQuestionService {
       const ragBlock =
         ragHits.length > 0
           ? `Related past messages (by similarity):\n${ragHits
-              .filter((h) => h.similarity > 0.65)
               .map((h) => `- ${h.content}`)
               .join('\n')}`
           : '';
@@ -114,7 +122,14 @@ export class ChatQuestionService {
 
       const { text } = await generateText({
         model: openai('gpt-4o'),
-        system: `You are Pem.${nameNote} The user asked a question in chat. Answer using ONLY the context below (all open tasks, timeline view, memory, related messages). If the context does not contain the answer, say you don't have that information yet. Be warm and concise — no markdown. Use a natural list style if listing tasks (e.g. "You have: potatoes, tomatoes, and cherries on your shopping list").`,
+        maxRetries: 2,
+        system: `You are Pem.${nameNote} The user asked a question about THEIR own data in Pem. Answer using ONLY the context below (open tasks, timeline, memory, related past messages). If the context does not contain the answer, say you don't have that in Pem yet — do not invent facts.
+
+Never answer weather, news, sports, homework, or other general-knowledge questions from this path (those should not reach you). If the question is clearly not about their tasks, calendar, or what they told Pem, say you're only set up to help with what they've saved in Pem.
+
+If they asked for a "brief" or overview (today, tomorrow, next week, next month, or similar), give a short narrative: what matters first, what's on the calendar, what's on their lists — prioritize by dates in the data. When a month or quarter is starting, proactively mention items with period labels like "June", "Q3", "this month" so the user remembers to schedule them. Do not tell them you are "adding tasks"; this path is read-only. If a time range has little in the data, say so plainly.
+
+Be warm and concise — no markdown. For lists, use natural prose (e.g. "You have: milk, onions, and tomatoes on your shopping list" or "In your ideas: starting a podcast, the fitness app concept").`,
         prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
       });
 

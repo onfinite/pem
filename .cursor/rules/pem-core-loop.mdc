@@ -6,9 +6,18 @@ alwaysApply: true
 
 # Pem — Core engineering (AI + real-time)
 
-## Vercel AI SDK — never use generateObject / streamObject
+Canonical docs: [AI SDK](https://ai-sdk.dev/docs/introduction) — prefer **AI SDK Core** pages (Generating Text, Structured Data, Middleware, Tool Calling) over improvising patterns.
 
-Use **`generateText`** with **`Output.object({ schema })`** and Zod. See AI SDK 6 migration.
+## Structured output — the supported path (do not fight the prompt)
+
+**Do not** rely on “output raw JSON” or `response_format: json_object` alone for complex shapes. The SDK is designed for **schema-first** generation:
+
+- Use **`generateText`** (or `streamText`) with **`output: Output.object({ schema })`** and **Zod** (or Valibot / JSON Schema per docs).
+- Read the validated result from **`result.output`** (typed from your schema).
+- Use **Zod `.describe()`** on fields so the model gets hints; optional **`name`** / **`description`** on `Output.object({ ... })` help some providers route the structured output.
+- **`Output.json()`** is only for arbitrary JSON without validation — prefer **`Output.object`** when you have a schema.
+
+**Never** use **`generateObject`** / **`streamObject`** (legacy); migration is to `generateText` + `Output`.
 
 ```typescript
 import { generateText, Output } from 'ai'
@@ -18,8 +27,35 @@ const result = await generateText({
   output: Output.object({ schema: mySchema }),
   prompt: '...',
 })
-// result.output — typed from schema
+// result.output — typed, validated
 ```
+
+### Models that wrap JSON in markdown fences
+
+If the model returns ` ```json ... ``` ` around JSON, wrap the model with **`extractJsonMiddleware()`** via **`wrapLanguageModel`** so `Output.object()` can parse reliably (see [Language Model Middleware](https://ai-sdk.dev/docs/ai-sdk-core/middleware)):
+
+```typescript
+import { extractJsonMiddleware, generateText, Output, wrapLanguageModel } from 'ai'
+
+const model = wrapLanguageModel({
+  model: openai('gpt-4o'),
+  middleware: extractJsonMiddleware(),
+})
+```
+
+### Tools + structured output
+
+Structured output counts as a **step**. If you combine **`tools`** with **`output`**, set **`stopWhen`** (e.g. `stepCountIs(n)`) high enough for tool calls **and** the final object (see [Generating Structured Data](https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data)).
+
+### When validation still fails
+
+The SDK may throw **`NoObjectGeneratedError`** — use **`NoObjectGeneratedError.isInstance(error)`** and read **`error.text`** / **`error.cause`** for logging or fallback parsing. Prefer fixing schema/middleware first; app-level **lenient recovery** (e.g. `safeParse` + partial apply) is a last resort for production UX.
+
+### Other `Output` modes (use when shape matches)
+
+- **`Output.array({ element })`** — list of typed items; streaming: **`elementStream`** for completed elements.
+- **`Output.choice({ options })`** — fixed string enum / classification.
+- **`Output.text()`** — plain string (default when `output` omitted).
 
 ## SSE (inbox extraction)
 

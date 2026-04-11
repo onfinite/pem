@@ -19,6 +19,7 @@ import { CalendarSyncProcessor } from './queues/calendar/calendar-sync.processor
 import { ChatOrchestratorService } from './queues/chat/chat-orchestrator.service';
 import { ChatProcessor } from './queues/chat/chat.processor';
 import { ChatQuestionService } from './queues/chat/chat-question.service';
+import { ReminderCronService } from './queues/reminder/reminder-cron.service';
 import { RecurrenceCronService } from './queues/scheduler/recurrence-cron.service';
 
 @Global()
@@ -69,7 +70,8 @@ import { RecurrenceCronService } from './queues/scheduler/recurrence-cron.servic
     CalendarSyncProcessor,
     CalendarCronService,
     RecurrenceCronService,
+    ReminderCronService,
   ],
-  exports: [BullModule, ChatEventsModule, ChatQuestionService],
+  exports: [BullModule, ChatEventsModule, ChatQuestionService, BriefCronService],
 })
 export class BackgroundModule {}

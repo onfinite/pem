@@ -35,7 +35,7 @@ alwaysApply: true
 | Mobile | **Expo ~54**, **React 19**, **React Native**, **expo-router** (file-based routes), **TypeScript** (strict), **New Architecture** + **React Compiler** (see `app/app.json` experiments) |
 | API | **`backend/`** — **Node**, **NestJS**, **Drizzle ORM**, **PostgreSQL** (`pg`), **Clerk** (JWT via **jose** + JWKS, webhooks via **Svix**), **@nestjs/throttler**, **@nestjs/swagger** (`/docs` when not prod) |
 
-**Conventions:** Prefer small, focused changes; match existing naming (`Pem*` UI primitives in `app/`, Nest modules in `backend/`). Run `expo lint` in `app/` and `npm run lint` in `backend/` when editing those trees.
+**Conventions:** Prefer small, focused changes; match existing naming (`Pem*` UI primitives in `app/`, Nest modules in `backend/`). Run `expo lint` in `app/` and `npm run lint` in `backend/` when editing those trees. **Detailed standards** (file line limits, components/hooks, no long JSX ternaries, isolated prompts, security and scalability checklists): **`pem-coding-standards.mdc`**.
 
 **`README.md` as source of truth:** The repo-root **`README.md`** is canonical **human-facing documentation** (stack, layout, how to run, env, contributor workflow). Whenever a change affects what contributors need to know—**new packages**, **dependencies**, **patterns**, **setup**, **commands**, or **folder roles**—**update `README.md` in the same effort** so it stays accurate. Do not leave README stale while code or `.mdc` files move ahead.
 
@@ -48,6 +48,7 @@ alwaysApply: true
 | **Styling & UI architecture** — tokens, navigation routes, new patterns | `pem-app.mdc`; **`app/constants/theme.ts`** & **typography** stay the implementation source of truth |
 | **Product / strategy** — what Pem is, intake, naming (“prep” vs actionables, etc.) | `pem-thought-organizer.mdc`, `pem-product-brief.mdc`, **`README.md`** *What is Pem?* — whichever files own that story |
 | **Dependencies, env vars, scripts, folder roles** | `pem-project.mdc` stack table; **root `README.md`** |
+| **Coding style / PR checklist** — line limits, naming, security & scalability | `pem-coding-standards.mdc` |
 
 Also update **`README.md`** whenever contributor-facing facts change (see above). **README and `.mdc` should move together** for the same facts.
 

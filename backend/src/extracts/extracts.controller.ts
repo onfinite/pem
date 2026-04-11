@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -11,7 +12,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -22,6 +23,10 @@ import { ExtractsQueryDto } from './dto/extracts-query.dto';
 import { RescheduleExtractDto } from './dto/reschedule-extract.dto';
 import { ReportExtractDto } from './dto/report-extract.dto';
 import { SnoozeExtractDto } from './dto/snooze-extract.dto';
+import {
+  UpdateExtractDto,
+  updateExtractBodySchema,
+} from './dto/update-extract.dto';
 
 @ApiTags('extracts')
 @Controller('extracts')
@@ -220,6 +225,30 @@ export class ExtractsController {
     @Body() body: RescheduleExtractDto,
   ) {
     const row = await this.extracts.reschedule(user.id, id, body.target);
+    return { item: this.extracts.serialize(row) };
+  }
+
+  @Patch(':id')
+  @HttpCode(200)
+  @ApiBody({ type: UpdateExtractDto })
+  @ApiOperation({
+    summary:
+      'Update task (title, when/priority, dates, period, duration, list)',
+  })
+  async updateExtract(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = updateExtractBodySchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      const msg = parsed.error.issues.map((i) => i.message).join('; ');
+      throw new BadRequestException(msg || 'Invalid body');
+    }
+    if (Object.keys(parsed.data).length === 0) {
+      throw new BadRequestException('No fields to update');
+    }
+    const row = await this.extracts.updateExtract(user.id, id, parsed.data);
     return { item: this.extracts.serialize(row) };
   }
 

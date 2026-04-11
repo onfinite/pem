@@ -18,6 +18,7 @@ export type AppConfig = {
     clientId: string | undefined;
     clientSecret: string | undefined;
     redirectUri: string | undefined;
+    webhookUrl: string | undefined;
   };
 };
 
@@ -53,6 +54,7 @@ export default (): AppConfig => {
       clientId: process.env.GOOGLE_CALENDAR_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
       redirectUri: process.env.GOOGLE_CALENDAR_REDIRECT_URI,
+      webhookUrl: process.env.GOOGLE_CALENDAR_WEBHOOK_URL,
     },
   };
 };

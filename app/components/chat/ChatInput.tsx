@@ -3,17 +3,20 @@ import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, space, radii } from "@/constants/typography";
 import {
   useAudioRecorder,
+  useAudioRecorderState,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   IOSOutputFormat,
   AudioQuality,
   type RecordingOptions,
 } from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
 import { pemImpactLight, pemImpactMedium } from "@/lib/pemHaptics";
 import { ArrowUp, Mic, Pause, Play, Send, Trash2 } from "lucide-react-native";
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Alert,
+  AppState,
   Keyboard,
   Linking,
   Platform,
@@ -26,6 +29,8 @@ import {
 
 const MAX_DURATION_S = 30 * 60;
 const WAVEFORM_MAX_BARS = 48;
+const PENDING_RECORDING_PATH =
+  FileSystem.cacheDirectory + "pending-recording.m4a";
 
 const RECORDING_PRESET: RecordingOptions = {
   isMeteringEnabled: true,
@@ -56,31 +61,45 @@ function dbToHeight(db: number | undefined): number {
   return 3 + normalized * 25;
 }
 
+/** Single static line — matches common chat apps; rotating hints need long dwell + fade to feel calm. */
+const COMPOSER_PLACEHOLDER = "Message Pem…";
+
 type Props = {
   onSendText: (text: string) => void;
   onSendVoice: (audioUri: string) => void;
   disabled?: boolean;
 };
 
-export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) {
+export default function ChatInput({
+  onSendText,
+  onSendVoice,
+  disabled,
+}: Props) {
   const { colors } = useTheme();
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"idle" | "recording" | "paused">("idle");
   const inputRef = useRef<TextInput>(null);
 
-  // Recorder from expo-audio — we listen to its native state via a status callback
-  const recorder = useAudioRecorder(RECORDING_PRESET, (status) => {
-    // When metering comes in, push a bar to the waveform
-    if (mode === "recording" && status.isRecording) {
-      const h = dbToHeight(status.metering);
-      levelsRef.current = [...levelsRef.current.slice(-WAVEFORM_MAX_BARS + 1), h];
-      setLevels([...levelsRef.current]);
-    }
-  });
+  const recorder = useAudioRecorder(RECORDING_PRESET);
+  const recorderState = useAudioRecorderState(recorder, 100);
+
+  // Persisted recording from a previous session
+  const pendingFileRef = useRef<string | null>(null);
 
   // Waveform state
   const levelsRef = useRef<number[]>([]);
   const [levels, setLevels] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (mode === "recording" && recorderState.isRecording) {
+      const h = dbToHeight(recorderState.metering);
+      levelsRef.current = [
+        ...levelsRef.current.slice(-WAVEFORM_MAX_BARS + 1),
+        h,
+      ];
+      setLevels([...levelsRef.current]);
+    }
+  }, [mode, recorderState.isRecording, recorderState.metering]);
 
   // JS-based timer — completely independent of native bridge
   const startTimeRef = useRef(0);
@@ -99,6 +118,16 @@ export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) 
     }, 250);
     return () => clearInterval(id);
   }, [mode]);
+
+  // Restore a paused recording that was persisted before the app closed
+  useEffect(() => {
+    FileSystem.getInfoAsync(PENDING_RECORDING_PATH).then((info) => {
+      if (info.exists) {
+        pendingFileRef.current = PENDING_RECORDING_PATH;
+        setMode("paused");
+      }
+    });
+  }, []);
 
   const hasText = text.trim().length > 0;
   const isRecMode = mode === "recording" || mode === "paused";
@@ -140,20 +169,36 @@ export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) 
     }
   }, [recorder]);
 
-  const handlePause = useCallback(() => {
+  const handlePause = useCallback(async () => {
     try {
       recorder.pause();
       accumulatedRef.current += Date.now() - startTimeRef.current;
       setMode("paused");
+
+      const uri = recorder.uri;
+      if (uri) {
+        await FileSystem.copyAsync({ from: uri, to: PENDING_RECORDING_PATH });
+        pendingFileRef.current = PENDING_RECORDING_PATH;
+      }
     } catch (e) {
       console.warn("Pause failed:", e);
     }
   }, [recorder]);
 
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active" && mode === "recording") {
+        handlePause();
+      }
+    });
+    return () => sub.remove();
+  }, [mode, handlePause]);
+
   const handleResume = useCallback(() => {
     try {
       recorder.record();
       startTimeRef.current = Date.now();
+      pendingFileRef.current = null;
       setMode("recording");
     } catch (e) {
       console.warn("Resume failed:", e);
@@ -163,6 +208,10 @@ export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) 
   const handleCancel = useCallback(async () => {
     try { await recorder.stop(); } catch { /* ignore */ }
     await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    FileSystem.deleteAsync(PENDING_RECORDING_PATH, { idempotent: true }).catch(
+      () => {},
+    );
+    pendingFileRef.current = null;
     accumulatedRef.current = 0;
     setDisplaySec(0);
     levelsRef.current = [];
@@ -182,8 +231,9 @@ export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) 
     }
     await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
 
-    const uri = recorder.uri;
+    const uri = pendingFileRef.current ?? recorder.uri;
     // Go back to idle IMMEDIATELY — don't wait for upload
+    pendingFileRef.current = null;
     accumulatedRef.current = 0;
     setDisplaySec(0);
     levelsRef.current = [];
@@ -191,9 +241,12 @@ export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) 
     setMode("idle");
 
     if (uri) {
-      // Fire and forget — bubble appears in chat instantly (optimistic)
       onSendVoice(uri);
     }
+
+    FileSystem.deleteAsync(PENDING_RECORDING_PATH, { idempotent: true }).catch(
+      () => {},
+    );
   }, [recorder, onSendVoice, mode]);
 
   if (isRecMode) {
@@ -253,7 +306,7 @@ export default function ChatInput({ onSendText, onSendVoice, disabled }: Props) 
           ref={inputRef}
           value={text}
           onChangeText={setText}
-          placeholder="Message Pem..."
+          placeholder={COMPOSER_PLACEHOLDER}
           placeholderTextColor={colors.placeholder}
           style={[styles.input, { color: colors.textPrimary }]}
           multiline

@@ -88,9 +88,12 @@ export class RecurrenceCronService {
           originalText: parent.originalText,
           status: 'inbox',
           tone: parent.tone,
-          urgency: this.classifyUrgency(date, now),
+          urgency: 'none',
           batchKey: parent.batchKey,
           dueAt: date.toJSDate(),
+          periodStart: date.startOf('day').toJSDate(),
+          periodEnd: date.endOf('day').toJSDate(),
+          periodLabel: this.periodLabel(date, now),
           scheduledAt: parent.scheduledAt
             ? date
                 .set({
@@ -158,13 +161,12 @@ export class RecurrenceCronService {
     return dates;
   }
 
-  private classifyUrgency(
-    date: DateTime,
-    now: DateTime,
-  ): 'today' | 'this_week' | 'none' {
+  private periodLabel(date: DateTime, now: DateTime): string {
     const diffDays = date.diff(now, 'days').days;
     if (diffDays < 1) return 'today';
-    if (diffDays < 7) return 'this_week';
-    return 'none';
+    if (diffDays < 2) return 'tomorrow';
+    if (diffDays < 7) return 'this week';
+    if (diffDays < 14) return 'next week';
+    return date.toFormat('MMMM yyyy');
   }
 }

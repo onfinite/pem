@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { and, eq, ne, isNotNull, lte, sql } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 import type { Queue } from 'bullmq';
 
@@ -9,10 +9,12 @@ import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
 import {
   calendarConnectionsTable,
-  extractsTable,
   usersTable,
 } from '../../../database/schemas';
+import { CalendarConnectionService } from '../../../calendar/calendar-connection.service';
 import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
+
+const WATCH_RENEWAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class CalendarCronService {
@@ -23,6 +25,7 @@ export class CalendarCronService {
     @InjectQueue('calendar-sync') private readonly calendarQueue: Queue,
     @InjectQueue('weekly-planning')
     private readonly weeklyPlanningQueue: Queue,
+    private readonly connectionsSvc: CalendarConnectionService,
     private readonly sync: CalendarSyncService,
   ) {}
 
@@ -62,46 +65,27 @@ export class CalendarCronService {
     }
   }
 
-  /** Hourly: auto-promote urgency as dates approach. */
-  @Cron(CronExpression.EVERY_HOUR)
-  async autoPromoteUrgency(): Promise<void> {
-    const now = new Date();
-    const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  @Cron(CronExpression.EVERY_6_HOURS)
+  async renewExpiringWatches(): Promise<void> {
+    const expiryThreshold = new Date(Date.now() + WATCH_RENEWAL_WINDOW_MS);
+    const expiring = await this.connectionsSvc.findExpiringWatches(expiryThreshold);
+    if (expiring.length === 0) return;
 
-    const toToday = await this.db
-      .update(extractsTable)
-      .set({ urgency: 'today', updatedAt: now })
-      .where(
-        and(
-          eq(extractsTable.urgency, 'this_week'),
-          ne(extractsTable.status, 'done'),
-          ne(extractsTable.status, 'dismissed'),
-          isNotNull(extractsTable.dueAt),
-          lte(extractsTable.dueAt, sql`CURRENT_DATE + INTERVAL '1 day'`),
-        ),
-      )
-      .returning({ id: extractsTable.id });
-
-    const toThisWeek = await this.db
-      .update(extractsTable)
-      .set({ urgency: 'this_week', updatedAt: now })
-      .where(
-        and(
-          eq(extractsTable.urgency, 'none'),
-          ne(extractsTable.status, 'done'),
-          ne(extractsTable.status, 'dismissed'),
-          isNotNull(extractsTable.dueAt),
-          lte(extractsTable.dueAt, sevenDays),
-        ),
-      )
-      .returning({ id: extractsTable.id });
-
-    if (toToday.length || toThisWeek.length) {
-      this.log.log(
-        `Urgency promoted: ${toToday.length} → today, ${toThisWeek.length} → this_week`,
-      );
+    this.log.log(`Renewing ${expiring.length} expiring calendar watches`);
+    for (const conn of expiring) {
+      try {
+        await this.sync.renewWatch(conn.id);
+      } catch (err) {
+        this.log.warn(
+          `Watch renewal failed for ${conn.id}: ${
+            err instanceof Error ? err.message : 'unknown'
+          }`,
+        );
+      }
     }
   }
+
+  // Urgency auto-promotion removed — bucketing is now computed dynamically from period dates.
 
   /** Hourly: check if it's Sunday 6-11pm for any user → enqueue weekly planning. */
   @Cron(CronExpression.EVERY_HOUR)

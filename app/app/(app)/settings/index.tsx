@@ -24,7 +24,6 @@ import {
   Monitor,
   Moon,
   Sun,
-  Target,
   UserRound,
   X,
 } from "lucide-react-native";
@@ -187,7 +186,7 @@ function NotificationTimeCard() {
   return (
     <>
       <PemText variant="label" style={styles.sectionLabel}>
-        Morning brief
+        Daily brief
       </PemText>
       <PemText variant="caption" style={styles.sectionHint}>
         When Pem sends your daily brief notification.
@@ -475,32 +474,6 @@ export default function SettingsScreen() {
             );
           })}
         </View>
-
-        <PemText variant="label" style={styles.sectionLabel}>
-          Scheduling
-        </PemText>
-        <PemText variant="caption" style={styles.sectionHint}>
-          Help Pem schedule things at the right times.
-        </PemText>
-        <Pressable
-          onPress={() => router.push("/settings/focus-time")}
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.cardBackground,
-              borderColor: colors.borderMuted,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: space[3],
-            },
-          ]}
-        >
-          <Target size={20} stroke={colors.textSecondary} strokeWidth={1.8} />
-          <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>
-            Focus time
-          </PemText>
-          <ChevronRight size={18} stroke={colors.textSecondary} strokeWidth={1.5} />
-        </Pressable>
 
         <CalendarSection />
 

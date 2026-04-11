@@ -2,11 +2,12 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createOpenAI } from '@ai-sdk/openai';
 import { embed } from 'ai';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import { messageEmbeddingsTable } from '../database/schemas';
+import { RAG_MIN_SIMILARITY, RAG_TOP_K } from '../chat/chat.constants';
 
 @Injectable()
 export class EmbeddingsService {
@@ -17,19 +18,35 @@ export class EmbeddingsService {
     private readonly config: ConfigService,
   ) {}
 
-  async embedMessage(
-    messageId: string,
-    userId: string,
-    content: string,
-    createdAt: Date,
-  ): Promise<void> {
+  /**
+   * Embed a chat line after the message is persisted. Idempotent per message_id.
+   * Prefix role so RAG snippets stay interpretable (user vs Pem).
+   */
+  async embedChatMessageIfAbsent(params: {
+    messageId: string;
+    userId: string;
+    role: 'user' | 'pem';
+    text: string;
+    createdAt: Date;
+  }): Promise<void> {
+    const { messageId, userId, role, text, createdAt } = params;
+    const trimmed = text?.trim() ?? '';
+    if (!trimmed) return;
+
+    const [existing] = await this.db
+      .select({ id: messageEmbeddingsTable.id })
+      .from(messageEmbeddingsTable)
+      .where(eq(messageEmbeddingsTable.messageId, messageId))
+      .limit(1);
+    if (existing) return;
+
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) {
       this.log.warn('No OpenAI key — skipping embedding');
       return;
     }
 
-    const embeddingText = `[${createdAt.toISOString()}] ${content}`;
+    const embeddingText = `[${createdAt.toISOString()}] ${role}: ${trimmed}`;
     const openai = createOpenAI({ apiKey });
 
     try {
@@ -38,12 +55,17 @@ export class EmbeddingsService {
         value: embeddingText,
       });
 
-      await this.db.insert(messageEmbeddingsTable).values({
-        messageId,
-        userId,
-        content: embeddingText,
-        embedding,
-      });
+      await this.db
+        .insert(messageEmbeddingsTable)
+        .values({
+          messageId,
+          userId,
+          content: embeddingText,
+          embedding,
+        })
+        .onConflictDoNothing({
+          target: messageEmbeddingsTable.messageId,
+        });
     } catch (e) {
       this.log.error(
         `Embedding failed for message ${messageId}: ${e instanceof Error ? e.message : String(e)}`,
@@ -54,7 +76,8 @@ export class EmbeddingsService {
   async similaritySearch(
     userId: string,
     query: string,
-    limit = 10,
+    limit = RAG_TOP_K,
+    minSimilarity = RAG_MIN_SIMILARITY,
   ): Promise<{ messageId: string; content: string; similarity: number }[]> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) return [];
@@ -74,6 +97,7 @@ export class EmbeddingsService {
         1 - (me.embedding <=> ${vectorStr}::vector) as similarity
       FROM message_embeddings me
       WHERE me.user_id = ${userId}
+        AND (1 - (me.embedding <=> ${vectorStr}::vector)) >= ${minSimilarity}
       ORDER BY me.embedding <=> ${vectorStr}::vector
       LIMIT ${limit}
     `);

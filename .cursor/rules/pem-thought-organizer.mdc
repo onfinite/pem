@@ -150,16 +150,17 @@ text            text        -- the extracted thought, clean and short
 original_text   text        -- raw fragment from dump that produced this
 status          enum        -- 'inbox' | 'done' | 'snoozed' | 'dismissed'
 tone            enum        -- 'confident' | 'tentative' | 'idea' | 'someday'
-urgency         enum        -- 'today' | 'this_week' | 'someday' | 'none'
+urgency         enum        -- 'someday' | 'none' (all timing lives in period dates, not urgency)
 batch_key       text        -- nullable. 'shopping' | 'errands' | 'follow_ups' | null
 due_at          timestamptz -- nullable. exact datetime if detected
 period_start    timestamptz -- nullable. for period-based timing (e.g. start of weekend)
 period_end      timestamptz -- nullable. for period-based timing (e.g. end of weekend)
-period_label    text        -- nullable. 'weekend' | 'this week' | 'next week' | 'morning' | etc.
+period_label    text        -- nullable. 'weekend' | 'this week' | 'next week' | 'June' | 'Q3' | etc.
 timezone_pending boolean    -- true if extracted before user timezone was known
 snoozed_until   timestamptz -- nullable. set when status = snoozed
 done_at         timestamptz -- nullable
 dismissed_at    timestamptz -- nullable
+meta            jsonb       -- nullable. { energy_level, is_deadline, auto_scheduled, scheduling_reason, recommended_at, rsvp_status }
 created_at      timestamptz
 updated_at      timestamptz
 ```
@@ -184,19 +185,19 @@ Extraction worker (BullMQ):
   → classify and extract actionable items from dump text
   → for each actionable item:
       - determine tone (confident | tentative | idea | someday)
-      - determine urgency (today | this_week | someday | none)
-      - detect exact datetime OR period
+      - determine urgency ('someday' for aspirational items, 'none' otherwise)
+      - detect exact datetime OR period (always set period_start/period_end for any timeline)
       - detect batch_key if batchable
   → insert actionable rows
   → SSE push to client: inbox.updated
 
 GET /inbox
-  → today's view: actionables where status=inbox, urgency=today
+  → today's view: actionables with date anchors landing today
   → ordered: overdue first, then by due_at asc, then quick wins
 
 GET /inbox/all
-  → full list: this_week + batches + someday + dismissed
-  → grouped by batch_key where applicable
+  → dated items + batches + someday + dismissed
+  → grouped by date range and batch_key where applicable
 ```
 
 No calendar merging in iteration 1. Calendar is a future feature.
@@ -227,12 +228,19 @@ Weekend always means BOTH Saturday AND Sunday — never just Saturday.
 "This week" means Mon–Fri unless user says otherwise.
 "Next week" starts the following Monday.
 
-### Surfacing logic
+### Surfacing logic (date-driven — no urgency fallbacks)
 
-- exact `due_at` → surface when due_at is today or within the next hour
-- period (today) → surface all day
-- period (this week) → surface in "this week" section
-- someday / no date → never in today view; lives in someday
+All bucketing is computed dynamically from date anchors (`scheduled_at`, `event_start_at`, `due_at`, `period_start`):
+
+- overdue: `due_at` or `event_end_at` in the past
+- today: anchor falls within today
+- tomorrow: anchor falls within tomorrow
+- this week / next week / later: anchor in respective range
+- named periods (June, Q3, etc.): `period_label` displayed as section title
+- someday: `urgency = 'someday'` — no date, aspirational
+- undated `urgency = 'none'`: falls through to "unscheduled" or general inbox
+
+At start of month/quarter, morning brief and ask-mode proactively surface items with matching `period_label`.
 
 ---
 
@@ -266,7 +274,7 @@ When in doubt, do not batch. Batches require 2+ items with same `batch_key`.
 
 - Pem's statement (italic serif, 1–3 sentences) — gpt-4o, fresh each load.
 - **Today** — overdue first, then due_at asc, then quick wins.
-- **This week** — collapsed by default; urgency=this_week.
+- **Dynamic date sections** — This week, Next week, named periods (June, Q3, etc.) — collapsed by default.
 - **Batches** — collapsed; only when 2+ share `batch_key`.
 - **Someday** — collapsed, low visual weight.
 
@@ -293,6 +301,8 @@ Flat list, newest done first. Tap → detail with original fragment; un-done fro
 ## Helpfulness & detail view
 
 Mind-clearing first; helpfulness secondary. Three actions max on detail (primary optional, "I handled it", "Not relevant"). Snooze via "Later" sheet. No chat. No research for tentative items without user ask.
+
+**Chat copy (Pem’s role):** Pem **organizes** — it does not claim to perform real-world actions (cancel subscriptions, call businesses, shop). Replies should describe what was **added to the list / inbox / calendar**, not “I’ll cancel that for you.” Journal-style lines (“I’ll need to learn sales”) should still yield **extracted actionables**, not only memory or vague acknowledgment.
 
 ---
 
