@@ -73,14 +73,22 @@ function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function primaryDateIso(extract: ApiExtract): string | null {
+  return extract.due_at ?? extract.event_start_at ?? extract.scheduled_at ?? extract.period_start ?? null;
+}
+
 function formatDateSummary(extract: ApiExtract, datePatch: Record<string, unknown>): string {
   const urgency = (datePatch.urgency as string) ?? extract.urgency;
   const dueAt = datePatch.due_at !== undefined ? datePatch.due_at : extract.due_at;
   const pLabel = datePatch.period_label !== undefined ? datePatch.period_label : extract.period_label;
   const pStart = datePatch.period_start !== undefined ? datePatch.period_start : extract.period_start;
+  const eventStart = extract.event_start_at;
+  const scheduledAt = extract.scheduled_at;
 
   if (urgency === "someday") return "Someday";
   if (dueAt) return new Date(dueAt as string).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  if (eventStart) return new Date(eventStart).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  if (scheduledAt) return new Date(scheduledAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   if (pLabel) return (pLabel as string).charAt(0).toUpperCase() + (pLabel as string).slice(1);
   if (pStart) return "Scheduled";
   return "No date";
@@ -111,7 +119,8 @@ export function TaskEditSheet({
     setListOpen(false);
     setDateOpen(false);
     setShowTimePicker(false);
-    setSelectedDay(extract.due_at ? toDateKey(new Date(extract.due_at)) : toDateKey(new Date()));
+    const anchor = primaryDateIso(extract);
+    setSelectedDay(anchor ? toDateKey(new Date(anchor)) : toDateKey(new Date()));
   }, [extract]);
 
   const mergePatch = useCallback((partial: Record<string, unknown>) => {
@@ -289,7 +298,7 @@ export function TaskEditSheet({
 
                 {showTimePicker && (
                   <DateTimePicker
-                    value={extract.due_at ? new Date(extract.due_at) : new Date()}
+                    value={primaryDateIso(extract) ? new Date(primaryDateIso(extract)!) : new Date()}
                     mode="time"
                     display="spinner"
                     themeVariant={resolved}

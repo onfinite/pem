@@ -151,6 +151,18 @@ export class ChatOrchestratorService {
         return;
       }
 
+      // Content moderation — fast, free via OpenAI moderation endpoint
+      const isFlagged = await this.checkModeration(content);
+      if (isFlagged) {
+        await this.savePemResponse(
+          userId,
+          messageId,
+          "I'm not able to help with that kind of request. I'm here to organize your tasks, calendar, and thoughts — let me know what's on your mind.",
+        );
+        this.queueUserMessageEmbedding(msg, content);
+        return;
+      }
+
       // Triage
       await this.publishStatus(
         userId,
@@ -1095,6 +1107,48 @@ export class ChatOrchestratorService {
         );
       }
     })();
+  }
+
+  /**
+   * OpenAI moderation endpoint — free, ~100ms. Returns true if content is flagged.
+   * Fails open (returns false) on error so we never block legitimate messages.
+   */
+  private async checkModeration(content: string): Promise<boolean> {
+    try {
+      const apiKey = this.config.get<string>('openai.apiKey');
+      if (!apiKey) return false;
+
+      const res = await fetch('https://api.openai.com/v1/moderations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ input: content.slice(0, 4000) }),
+      });
+
+      if (!res.ok) return false;
+
+      const data = (await res.json()) as {
+        results: { flagged: boolean; categories: Record<string, boolean> }[];
+      };
+      const result = data.results?.[0];
+      if (!result?.flagged) return false;
+
+      const flaggedCategories = Object.entries(result.categories)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
+
+      this.log.warn(
+        `Content moderation flagged: ${flaggedCategories.join(', ')}`,
+      );
+      return true;
+    } catch (e) {
+      this.log.warn(
+        `Moderation check failed (allowing through): ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return false;
+    }
   }
 
   private trivialResponse(content: string): string {
