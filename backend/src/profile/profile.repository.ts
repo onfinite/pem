@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -258,6 +258,40 @@ export class ProfileRepository {
         ),
       )
       .orderBy(desc(memoryFactsTable.learnedAt))
-      .limit(120);
+      .limit(150);
+  }
+
+  /** Keep only the N most recent active facts per memory_key; mark older ones historical. */
+  async capActivePerKey(
+    userId: string,
+    memoryKey: string,
+    maxActive: number,
+  ): Promise<void> {
+    const rows = await this.db
+      .select({ id: memoryFactsTable.id })
+      .from(memoryFactsTable)
+      .where(
+        and(
+          eq(memoryFactsTable.userId, userId),
+          eq(memoryFactsTable.memoryKey, memoryKey),
+          eq(memoryFactsTable.status, 'active'),
+        ),
+      )
+      .orderBy(desc(memoryFactsTable.learnedAt));
+
+    if (rows.length <= maxActive) return;
+
+    const idsToArchive = rows.slice(maxActive).map((r) => r.id);
+    if (idsToArchive.length === 0) return;
+
+    await this.db
+      .update(memoryFactsTable)
+      .set({ status: 'historical' })
+      .where(
+        and(
+          eq(memoryFactsTable.userId, userId),
+          inArray(memoryFactsTable.id, idsToArchive),
+        ),
+      );
   }
 }

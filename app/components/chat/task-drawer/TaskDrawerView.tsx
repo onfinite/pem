@@ -23,7 +23,7 @@ const TaskDrawerView = forwardRef<
   const { colors } = useTheme();
   const { getToken } = useAuth();
   const insets = useSafeAreaInsets();
-  const { lists, loadLists } = useLists();
+  const { lists, loadLists, addList, removeList } = useLists();
 
   const c = useTaskDrawerController(
     ref as ForwardedRef<TaskDrawerHandle | null>,
@@ -67,7 +67,7 @@ const TaskDrawerView = forwardRef<
           },
         ]}
       >
-        <View style={{ height: insets.top + 20 }} />
+        <View style={{ height: insets.top + 4 }} />
 
         <View style={styles.headerRow}>
           <TaskDrawerTabBar
@@ -137,6 +137,11 @@ const TaskDrawerView = forwardRef<
               onEditTask={c.openTaskEdit}
               onRefresh={c.handleRefresh}
               refreshing={c.refreshing}
+              onAddList={addList}
+              onDeleteList={async (id) => {
+                c.removeTasksByListId(id);
+                await removeList(id);
+              }}
             />
           )}
         </View>
@@ -154,7 +159,6 @@ const TaskDrawerView = forwardRef<
         onClose={c.closeTaskEdit}
         onSave={c.handleEditSave}
         onDone={c.handleEditDone}
-        onDismiss={c.handleEditDismiss}
         onDelete={c.handleEditDelete}
       />
     </Modal>

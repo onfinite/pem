@@ -17,7 +17,23 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow } from '../database/schemas';
 import { CreateListDto } from './dto/create-list.dto';
 import { UpdateListDto } from './dto/update-list.dto';
+import { type ListRow } from '../database/schemas';
 import { ListsService } from './lists.service';
+
+function serializeList(l: ListRow & { openCount?: number }) {
+  return {
+    id: l.id,
+    user_id: l.userId,
+    name: l.name,
+    color: l.color,
+    icon: l.icon,
+    is_default: l.isDefault ?? false,
+    sort_order: l.sortOrder ?? 0,
+    open_count: (l as { openCount?: number }).openCount ?? 0,
+    created_at: l.createdAt.toISOString(),
+    updated_at: l.updatedAt.toISOString(),
+  };
+}
 
 @ApiTags('lists')
 @Controller('lists')
@@ -30,14 +46,15 @@ export class ListsController {
   @ApiOperation({ summary: 'All lists with open task counts' })
   async getAll(@CurrentUser() user: UserRow) {
     await this.lists.seedDefaults(user.id);
-    return { items: await this.lists.findByUserWithCounts(user.id) };
+    const rows = await this.lists.findByUserWithCounts(user.id);
+    return { items: rows.map(serializeList) };
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a list' })
   async create(@CurrentUser() user: UserRow, @Body() dto: CreateListDto) {
     const list = await this.lists.create(user.id, dto);
-    return { item: list };
+    return { item: serializeList(list) };
   }
 
   @Patch(':id')
@@ -49,7 +66,7 @@ export class ListsController {
     @Body() dto: UpdateListDto,
   ) {
     const list = await this.lists.update(user.id, id, dto);
-    return { item: list };
+    return { item: serializeList(list) };
   }
 
   @Delete(':id')

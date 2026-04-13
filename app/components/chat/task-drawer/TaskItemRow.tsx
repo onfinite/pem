@@ -53,7 +53,7 @@ export const TaskItemRow = memo(function TaskItemRow({
         accessibilityState={{ checked: false, disabled: noManualComplete }}
         accessibilityLabel={
           noManualComplete
-            ? "Done unavailable for calendar events"
+            ? "Not completable"
             : "Mark done"
         }
       >

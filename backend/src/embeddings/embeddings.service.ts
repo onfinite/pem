@@ -94,11 +94,15 @@ export class EmbeddingsService {
       SELECT
         me.message_id,
         me.content,
-        1 - (me.embedding <=> ${vectorStr}::vector) as similarity
+        1 - (me.embedding <=> ${vectorStr}::vector) as cosine_sim,
+        me.created_at,
+        (1 - (me.embedding <=> ${vectorStr}::vector))
+          + LEAST(0.05, 0.05 * (1.0 - EXTRACT(EPOCH FROM (NOW() - me.created_at)) / (30.0 * 86400)))
+          as boosted_sim
       FROM message_embeddings me
       WHERE me.user_id = ${userId}
         AND (1 - (me.embedding <=> ${vectorStr}::vector)) >= ${minSimilarity}
-      ORDER BY me.embedding <=> ${vectorStr}::vector
+      ORDER BY boosted_sim DESC
       LIMIT ${limit}
     `);
 
@@ -106,12 +110,13 @@ export class EmbeddingsService {
       results.rows as {
         message_id: string;
         content: string;
-        similarity: string;
+        cosine_sim: string;
+        boosted_sim: string;
       }[]
     ).map((r) => ({
       messageId: r.message_id,
       content: r.content,
-      similarity: Number(r.similarity),
+      similarity: Number(r.boosted_sim),
     }));
   }
 }

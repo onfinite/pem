@@ -80,12 +80,14 @@ export function TaskItemMeta({
     });
   }, [item.event_location]);
 
+  const hasPeriod = !!periodLine;
+
   return (
     <View style={itemStyles.meta}>
       {isOverdue && (
         <Text style={[itemStyles.metaText, { color: "#e74c3c" }]}>Overdue</Text>
       )}
-      {!isOverdue && timeStr && (
+      {!isOverdue && !hasPeriod && timeStr && (
         <View style={itemStyles.metaRow}>
           <Clock size={11} color={colors.textTertiary} />
           <Text style={[itemStyles.metaText, { color: colors.textTertiary }]}>
@@ -93,17 +95,17 @@ export function TaskItemMeta({
           </Text>
         </View>
       )}
-      {!isOverdue && dateStr && (
+      {!isOverdue && !hasPeriod && dateStr && (
         <Text style={[itemStyles.metaText, { color: colors.textTertiary }]}>
           {dateStr}
         </Text>
       )}
-      {urgencyLabel && (
+      {urgencyLabel && !hasPeriod && (
         <Text style={[itemStyles.metaText, { color: colors.textTertiary }]}>
           {urgencyLabel}
         </Text>
       )}
-      {periodLine && (
+      {hasPeriod && (
         <Text style={[itemStyles.metaText, { color: colors.textTertiary }]}>
           {periodLabel ? `${periodLabel} · ` : ""}
           {periodLine}
@@ -161,7 +163,7 @@ export function TaskItemMeta({
           </Text>
         </View>
       )}
-      {noManualComplete && !compact && (
+      {isCalendarBacked && noManualComplete && !compact && (
         <Text
           style={[itemStyles.metaText, { color: colors.textTertiary }]}
           numberOfLines={2}

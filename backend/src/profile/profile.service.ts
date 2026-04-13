@@ -8,6 +8,8 @@ import type { MemoryFactRow } from '../database/schemas';
 import { decodeMemoryCursor, ProfileRepository } from './profile.repository';
 import { formatTimedForAgent } from './profile-timed';
 
+const MAX_ACTIVE_PER_KEY = 5;
+
 /** Short snake_case key for memory (e.g. `location`, `car_budget`). */
 export function normalizeProfileKey(raw: string): string {
   return raw
@@ -75,11 +77,8 @@ export class ProfileService {
       return `What I know about this user:
 (nothing saved yet — infer only from this dump. When they share stable preferences, constraints, or facts worth recalling later, add them via memory_writes so future runs can use them.)`;
     }
-    const seen = new Set<string>();
     const lines: string[] = [];
     for (const r of rows) {
-      if (seen.has(r.memoryKey)) continue;
-      seen.add(r.memoryKey);
       const when = r.learnedAt.toLocaleDateString(undefined, {
         month: 'short',
         year: 'numeric',
@@ -101,7 +100,8 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
   }
 
   /**
-   * Agent save: supersede prior active rows for this memory_key, append new active.
+   * Agent save: insert a new active fact for this memory_key.
+   * Keeps up to MAX_ACTIVE_PER_KEY active facts per key (oldest beyond cap → historical).
    */
   async saveFromAgent(
     userId: string,
@@ -117,7 +117,7 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
     if (!trimmed) {
       return;
     }
-    await this.repo.markHistoricalForMemoryKey(userId, memoryKey);
+
     await this.repo.insertFact({
       userId,
       memoryKey,
@@ -126,6 +126,8 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
       status: 'active',
       provenance: 'agent',
     });
+
+    await this.repo.capActivePerKey(userId, memoryKey, MAX_ACTIVE_PER_KEY);
   }
 
   /** User-added from Settings (does not supersede — must be unique active key). */

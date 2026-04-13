@@ -25,12 +25,18 @@ import { Observable } from 'rxjs';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow } from '../database/schemas';
+import { TriageService, type TriageCategory } from '../agents/triage.service';
 import { BriefCronService } from '../background/queues/brief/brief-cron.service';
 import { ChatService } from './chat.service';
 import { ChatStreamService, type SseEvent } from './chat-stream.service';
+import { SummarizeTranscriptService } from './summarize-transcript.service';
 import { TranscriptionService } from '../transcription/transcription.service';
 import { StorageService } from '../storage/storage.service';
-import { CHAT_JOB_DELAY_MS, CHAT_JOB_ID_PREFIX } from './chat.constants';
+import {
+  CHAT_JOB_DELAY_MS_DUMP,
+  CHAT_JOB_DELAY_MS_QUESTION,
+  CHAT_JOB_ID_PREFIX,
+} from './chat.constants';
 import { SendMessageDto } from './dto/send-message.dto';
 
 @ApiTags('chat')
@@ -41,9 +47,11 @@ export class ChatController {
   constructor(
     private readonly chat: ChatService,
     private readonly stream: ChatStreamService,
+    private readonly summarize: SummarizeTranscriptService,
     private readonly transcription: TranscriptionService,
     private readonly storage: StorageService,
     private readonly briefCron: BriefCronService,
+    private readonly triage: TriageService,
     @InjectQueue('chat') private readonly chatQueue: Queue,
   ) {}
 
@@ -69,6 +77,14 @@ export class ChatController {
       }
     }
 
+    const textContent =
+      body.kind === 'text' ? body.content?.trim() ?? '' : '';
+
+    let triageCategory: TriageCategory | null = null;
+    if (textContent) {
+      triageCategory = await this.triage.classify(textContent);
+    }
+
     const msg = await this.chat.saveMessage({
       userId: user.id,
       role: 'user',
@@ -76,9 +92,16 @@ export class ChatController {
       content: body.kind === 'text' ? body.content : null,
       voiceUrl: body.kind === 'voice' ? body.voice_url : null,
       audioKey: body.kind === 'voice' ? body.audio_key : null,
+      triageCategory,
       processingStatus: 'pending',
       idempotencyKey: body.idempotency_key?.trim() || null,
     });
+
+    const isInstant =
+      triageCategory === 'question_only' || triageCategory === 'trivial';
+    const delay = isInstant
+      ? CHAT_JOB_DELAY_MS_QUESTION
+      : CHAT_JOB_DELAY_MS_DUMP;
 
     await this.chatQueue.add(
       'process-message',
@@ -88,7 +111,7 @@ export class ChatController {
       },
       {
         jobId: `${CHAT_JOB_ID_PREFIX}${msg.id}`,
-        delay: CHAT_JOB_DELAY_MS,
+        delay,
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
       },
@@ -163,12 +186,23 @@ export class ChatController {
       idempotencyKey: idempotencyKey?.trim() || null,
     });
 
+    let triageCat: TriageCategory | null = null;
+    if (transcript) {
+      triageCat = await this.triage.classify(transcript);
+    }
+    if (triageCat) {
+      await this.chat.updateMessage(msg.id, { triageCategory: triageCat }, user.id);
+    }
+
+    const isInstantVoice =
+      triageCat === 'question_only' || triageCat === 'trivial';
+
     await this.chatQueue.add(
       'process-message',
       { messageId: msg.id, userId: user.id },
       {
         jobId: `${CHAT_JOB_ID_PREFIX}${msg.id}`,
-        delay: CHAT_JOB_DELAY_MS,
+        delay: isInstantVoice ? CHAT_JOB_DELAY_MS_QUESTION : CHAT_JOB_DELAY_MS_DUMP,
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
       },
@@ -228,6 +262,18 @@ export class ChatController {
   async ensureBrief(@CurrentUser() user: UserRow) {
     const result = await this.briefCron.ensureBriefForToday(user);
     return result;
+  }
+
+  @Post('messages/:id/summarize')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Generate a summary of a voice message transcript' })
+  async summarizeMessage(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const summary = await this.summarize.summarize(user.id, id);
+    return { summary };
   }
 
   @Delete('messages/:id')

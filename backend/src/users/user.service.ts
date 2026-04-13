@@ -98,6 +98,11 @@ export class UserService {
     return true;
   }
 
+  async deleteAccount(userId: string): Promise<void> {
+    await this.db.delete(usersTable).where(eq(usersTable.id, userId));
+    this.log.log(`account_deleted userId=${userId}`);
+  }
+
   async setPushToken(userId: string, token: string | null): Promise<void> {
     await this.db
       .update(usersTable)
@@ -127,6 +132,13 @@ export class UserService {
     await this.db
       .update(usersTable)
       .set({ notificationTime: time })
+      .where(eq(usersTable.id, userId));
+  }
+
+  async setName(userId: string, name: string): Promise<void> {
+    await this.db
+      .update(usersTable)
+      .set({ name: name.trim() })
       .where(eq(usersTable.id, userId));
   }
 

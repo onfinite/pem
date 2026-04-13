@@ -122,8 +122,8 @@ const styles = StyleSheet.create({
   container: {
     position: "absolute",
     bottom: space[3],
-    left: space[4],
-    right: space[4],
+    left: space[5],
+    right: space[5],
     borderRadius: radii.md,
     backgroundColor: "#323232",
     elevation: 6,

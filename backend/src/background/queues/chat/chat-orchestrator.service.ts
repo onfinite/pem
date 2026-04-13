@@ -47,6 +47,35 @@ function normalizeDedupeKey(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+const SAFETY_CAPS = {
+  creates: 10,
+  updates: 10,
+  completions: 10,
+  calendar_writes: 5,
+  calendar_updates: 5,
+  calendar_deletes: 3,
+  scheduling: 10,
+  recurrence_detections: 10,
+  rsvp_actions: 5,
+  memory_writes: 10,
+} as const;
+
+function clampAgentOutput(output: PemAgentOutput): PemAgentOutput {
+  return {
+    ...output,
+    creates: output.creates.slice(0, SAFETY_CAPS.creates),
+    updates: output.updates.slice(0, SAFETY_CAPS.updates),
+    completions: output.completions.slice(0, SAFETY_CAPS.completions),
+    calendar_writes: output.calendar_writes.slice(0, SAFETY_CAPS.calendar_writes),
+    calendar_updates: output.calendar_updates.slice(0, SAFETY_CAPS.calendar_updates),
+    calendar_deletes: output.calendar_deletes.slice(0, SAFETY_CAPS.calendar_deletes),
+    scheduling: output.scheduling.slice(0, SAFETY_CAPS.scheduling),
+    recurrence_detections: output.recurrence_detections.slice(0, SAFETY_CAPS.recurrence_detections),
+    rsvp_actions: output.rsvp_actions.slice(0, SAFETY_CAPS.rsvp_actions),
+    memory_writes: output.memory_writes.slice(0, SAFETY_CAPS.memory_writes),
+  };
+}
+
 @Injectable()
 export class ChatOrchestratorService {
   private readonly log = new Logger(ChatOrchestratorService.name);
@@ -142,6 +171,7 @@ export class ChatOrchestratorService {
           this.trivialResponse(content),
         );
         this.queueUserMessageEmbedding(msg, content);
+        this.tryLightweightMemoryExtraction(userId, messageId, content);
         return;
       }
 
@@ -149,6 +179,7 @@ export class ChatOrchestratorService {
         const redirect = await this.generateOffTopicRedirect(content);
         await this.savePemResponse(userId, messageId, redirect);
         this.queueUserMessageEmbedding(msg, content);
+        this.tryLightweightMemoryExtraction(userId, messageId, content);
         return;
       }
 
@@ -222,6 +253,12 @@ export class ChatOrchestratorService {
         );
       }
 
+      const slowStatusTimer = setTimeout(() => {
+        this.publishStatus(userId, messageId, 'Organizing your tasks...').catch(
+          () => {},
+        );
+      }, 5_000);
+
       const agentOutputRaw = await this.pemAgent.run({
         messageContent: content,
         userTimezone: ctx.tz,
@@ -241,7 +278,11 @@ export class ChatOrchestratorService {
         userLists: ctx.userLists,
       });
 
-      const agentOutput = this.filterDedupedCreates(agentOutputRaw, ctx);
+      clearTimeout(slowStatusTimer);
+
+      const agentOutput = clampAgentOutput(
+        this.filterDedupedCreates(agentOutputRaw, ctx),
+      );
 
       // Apply actions
       await this.applyAgentActions(userId, messageId, agentOutput, ctx);
@@ -902,6 +943,18 @@ export class ChatOrchestratorService {
       item.create_list,
     );
 
+    const timeAnchor = dueAt ?? pStart;
+    const hasSpecificTime =
+      timeAnchor &&
+      !(
+        (timeAnchor.getHours() === 0 && timeAnchor.getMinutes() === 0) ||
+        (timeAnchor.getHours() === 23 && timeAnchor.getMinutes() === 59)
+      );
+    const defaultReminderAt =
+      hasSpecificTime && timeAnchor
+        ? new Date(timeAnchor.getTime() - 60 * 60 * 1000)
+        : null;
+
     const [row] = await this.db
       .insert(extractsTable)
       .values({
@@ -920,6 +973,7 @@ export class ChatOrchestratorService {
         periodEnd: pEnd,
         periodLabel: item.period_label,
         timezonePending: tzPending,
+        reminderAt: defaultReminderAt,
         pemNote: item.pem_note?.trim() || null,
         draftText: item.draft_text?.trim() || null,
         updatedAt: new Date(),
@@ -983,6 +1037,64 @@ export class ChatOrchestratorService {
 
   private async publishStatus(userId: string, messageId: string, text: string) {
     await this.chatEvents.publish(userId, 'status', { messageId, text });
+  }
+
+  /**
+   * Fire-and-forget lightweight memory extraction for trivial/off_topic messages.
+   * Checks if the user casually mentioned a durable fact worth saving.
+   */
+  private tryLightweightMemoryExtraction(
+    userId: string,
+    messageId: string,
+    content: string,
+  ): void {
+    if (content.trim().length < 15) return;
+
+    void (async () => {
+      try {
+        const apiKey = this.config.get<string>('openai.apiKey');
+        if (!apiKey) return;
+
+        const openai = createOpenAI({ apiKey });
+        const { text } = await generateText({
+          model: openai('gpt-4o-mini'),
+          maxOutputTokens: 512,
+          temperature: 0,
+          system: `You extract durable personal facts from casual messages. Output ONLY a JSON array of {memory_key, note} objects for facts worth remembering about the user — name, location, job, family, preferences, habits, allergies, pets, etc. If there are NO durable facts, output an empty array []. Examples:
+- "thanks, I'm heading to the gym now" → [{"memory_key": "exercise", "note": "Goes to the gym regularly"}]
+- "hey" → []
+- "what's the weather like in paris" → []
+- "btw I'm vegan" → [{"memory_key": "diet", "note": "Vegan"}]`,
+          prompt: content.slice(0, 500),
+        });
+
+        const trimmed = text?.trim();
+        if (!trimmed || trimmed === '[]') return;
+
+        let facts: { memory_key: string; note: string }[];
+        try {
+          facts = JSON.parse(trimmed);
+        } catch {
+          return;
+        }
+        if (!Array.isArray(facts) || facts.length === 0) return;
+
+        for (const f of facts.slice(0, 3)) {
+          if (f.memory_key && f.note) {
+            await this.profile.saveFromAgent(
+              userId,
+              f.memory_key,
+              f.note,
+              messageId,
+            );
+          }
+        }
+      } catch (e) {
+        this.log.warn(
+          `Lightweight memory extraction failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    })();
   }
 
   private trivialResponse(content: string): string {
@@ -1074,9 +1186,9 @@ Rules:
       return result ? result.slice(0, 3000) : existing;
     } catch (e) {
       this.log.warn(
-        `Summary merge failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        `Summary merge failed, appending raw: ${e instanceof Error ? e.message : 'unknown'}`,
       );
-      return existing;
+      return `${existing}\n\n[Update]: ${trimmed}`.slice(0, 3000);
     }
   }
 

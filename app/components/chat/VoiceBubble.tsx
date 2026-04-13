@@ -26,7 +26,10 @@ async function ensureLocalAudio(
   return result.uri;
 }
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Check, CheckCheck, Pause, Play, X } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
+import { useAuth } from "@clerk/expo";
+import { summarizeMessage } from "@/lib/pemApi";
+import { Check, CheckCheck, ChevronDown, ChevronUp, Copy, FileText, Pause, Play, X } from "lucide-react-native";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
@@ -323,6 +326,9 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
         <TranscriptModal
           visible={showModal}
           text={transcript}
+          messageId={message.id}
+          existingSummary={message.summary}
+          audioDuration={duration}
           onClose={() => setShowModal(false)}
         />
       )}
@@ -331,21 +337,66 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
 }
 
 const SWIPE_CLOSE = 80;
-const SHEET_HEIGHT_RATIO = 0.55;
+const AUTO_SUMMARY_THRESHOLD_SEC = 60;
 
 function TranscriptModal({
   visible,
   text,
+  messageId,
+  existingSummary,
+  audioDuration,
   onClose,
 }: {
   visible: boolean;
   text: string;
+  messageId: string;
+  existingSummary: string | null;
+  audioDuration: number;
   onClose: () => void;
 }) {
   const { colors } = useTheme();
+  const { getToken } = useAuth();
   const insets = useSafeAreaInsets();
+  const [copied, setCopied] = useState(false);
+  const [summary, setSummary] = useState<string | null>(existingSummary ?? null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const didAutoSummarize = useRef(false);
+
+  const isLongEnough = audioDuration >= AUTO_SUMMARY_THRESHOLD_SEC;
+
+  useEffect(() => {
+    if (existingSummary) setSummary(existingSummary);
+  }, [existingSummary]);
+
+  const runSummarize = useCallback(async () => {
+    if (summary || isSummarizing) return;
+    setIsSummarizing(true);
+    try {
+      const res = await summarizeMessage(getToken, messageId);
+      setSummary(res.summary);
+    } catch {
+      setSummary(null);
+    } finally {
+      setIsSummarizing(false);
+    }
+  }, [summary, isSummarizing, getToken, messageId]);
+
+  useEffect(() => {
+    if (!visible || didAutoSummarize.current || summary) return;
+    if (!isLongEnough) return;
+    didAutoSummarize.current = true;
+    runSummarize();
+  }, [visible, isLongEnough, summary, runSummarize]);
+
+  const handleCopy = useCallback(() => {
+    Clipboard.setStringAsync(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [text]);
+
   const screenH = Dimensions.get("window").height;
-  const sheetH = screenH * SHEET_HEIGHT_RATIO;
+  const sheetH = screenH - insets.top;
 
   const translateY = useRef(new Animated.Value(sheetH)).current;
 
@@ -404,6 +455,9 @@ function TranscriptModal({
 
   if (!visible) return null;
 
+  const showSummarySection = isLongEnough;
+  const showTranscriptDirectly = !isLongEnough;
+
   return (
     <Modal visible transparent animationType="none" onRequestClose={handleClose}>
       <Pressable style={sheetStyles.backdrop} onPress={handleClose}>
@@ -441,9 +495,80 @@ function TranscriptModal({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator
         >
-          <Text style={[sheetStyles.text, { color: colors.textPrimary }]} selectable>
-            {text}
-          </Text>
+          {showSummarySection && (
+            <>
+              {isSummarizing && !summary && (
+                <View style={[sheetStyles.summaryBlock, { backgroundColor: colors.secondarySurface }]}>
+                  <View style={sheetStyles.summaryHeader}>
+                    <View style={[sheetStyles.summaryAccent, { backgroundColor: pemAmber }]} />
+                    <Text style={[sheetStyles.summaryLabel, { color: pemAmber }]}>Summary</Text>
+                  </View>
+                  <View style={sheetStyles.summarizingRow}>
+                    <ActivityIndicator size={14} color={pemAmber} />
+                    <Text style={[sheetStyles.summarizingText, { color: colors.textTertiary }]}>
+                      Summarizing your thoughts...
+                    </Text>
+                  </View>
+                </View>
+              )}
+              {summary && (
+                <View style={[sheetStyles.summaryBlock, { backgroundColor: colors.secondarySurface }]}>
+                  <View style={sheetStyles.summaryHeader}>
+                    <View style={[sheetStyles.summaryAccent, { backgroundColor: pemAmber }]} />
+                    <Text style={[sheetStyles.summaryLabel, { color: pemAmber }]}>Summary</Text>
+                  </View>
+                  <Text style={[sheetStyles.summaryText, { color: colors.textPrimary }]} selectable>
+                    {summary}
+                  </Text>
+                </View>
+              )}
+              <View style={[sheetStyles.divider, { borderBottomColor: colors.borderMuted }]} />
+              <Pressable
+                onPress={() => setTranscriptExpanded((p) => !p)}
+                style={sheetStyles.transcriptToggle}
+              >
+                <FileText size={15} color={colors.textTertiary} />
+                <Text style={[sheetStyles.transcriptToggleText, { color: colors.textSecondary }]}>
+                  {transcriptExpanded ? "Hide full transcript" : "Show full transcript"}
+                </Text>
+                {transcriptExpanded
+                  ? <ChevronUp size={14} color={colors.textTertiary} />
+                  : <ChevronDown size={14} color={colors.textTertiary} />
+                }
+              </Pressable>
+              {transcriptExpanded && (
+                <Text style={[sheetStyles.text, { color: colors.textPrimary }]} selectable>
+                  {text}
+                </Text>
+              )}
+            </>
+          )}
+          {showTranscriptDirectly && (
+            <Text style={[sheetStyles.text, { color: colors.textPrimary }]} selectable>
+              {text}
+            </Text>
+          )}
+          <View style={sheetStyles.actionRow}>
+            <Pressable
+              onPress={handleCopy}
+              style={[sheetStyles.actionBtn, { backgroundColor: colors.secondarySurface }]}
+              hitSlop={8}
+            >
+              {copied ? (
+                <Check size={14} color={pemAmber} strokeWidth={2.5} />
+              ) : (
+                <Copy size={14} color={colors.textSecondary} />
+              )}
+              <Text
+                style={[
+                  sheetStyles.actionBtnText,
+                  { color: copied ? pemAmber : colors.textSecondary },
+                ]}
+              >
+                {copied ? "Copied" : "Copy"}
+              </Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </Animated.View>
     </Modal>
@@ -501,6 +626,80 @@ const sheetStyles = StyleSheet.create({
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.base,
     lineHeight: 24,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    marginTop: space[4],
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: space[3],
+    paddingVertical: 8,
+    borderRadius: radii.md,
+  },
+  actionBtnText: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.sm,
+  },
+  summaryBlock: {
+    padding: space[3],
+    paddingLeft: space[3] + 4,
+    borderRadius: radii.md,
+    marginBottom: space[2],
+    position: "relative",
+    overflow: "hidden",
+  },
+  summaryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    marginBottom: space[2],
+  },
+  summaryAccent: {
+    width: 3,
+    height: 16,
+    borderRadius: 1.5,
+  },
+  summaryLabel: {
+    fontFamily: fontFamily.display.semibold,
+    fontSize: fontSize.sm,
+  },
+  summaryText: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.base,
+    lineHeight: 24,
+    paddingLeft: 3 + space[2],
+  },
+  summarizingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    paddingLeft: 3 + space[2],
+    paddingVertical: space[1],
+  },
+  summarizingText: {
+    fontFamily: fontFamily.sans.regular,
+    fontSize: fontSize.sm,
+  },
+  divider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginVertical: space[3],
+  },
+  transcriptToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    paddingVertical: space[2],
+    marginBottom: space[2],
+  },
+  transcriptToggleText: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.sm,
+    flex: 1,
   },
 });
 

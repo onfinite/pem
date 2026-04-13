@@ -10,8 +10,6 @@ export const editSheetStyles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
-    minHeight: "50%",
-    maxHeight: "65%",
   },
   handleWrap: {
     alignItems: "center",
@@ -75,30 +73,5 @@ export const editSheetStyles = StyleSheet.create({
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.sm,
     flex: 1,
-  },
-  actionsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingTop: space[4],
-    paddingBottom: space[3],
-    gap: space[2],
-  },
-  doneBtn: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 10,
-    borderRadius: radii.md,
-  },
-  doneBtnText: {
-    fontFamily: fontFamily.sans.semibold,
-    fontSize: fontSize.base,
-  },
-  textBtn: {
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
-  },
-  textBtnLabel: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
   },
 });

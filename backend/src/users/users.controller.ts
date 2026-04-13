@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Patch,
@@ -21,6 +22,7 @@ import { NotificationTimeDto } from './dto/notification-time.dto';
 import { PreferencesDto } from './dto/preferences.dto';
 import { PushTokenDto } from './dto/push-token.dto';
 import { TimezoneDto } from './dto/timezone.dto';
+import { UpdateNameDto } from './dto/update-name.dto';
 import { UpdateSummaryDto } from './dto/update-summary.dto';
 import { UserMeDto } from './dto/user-me.dto';
 import { UserService } from './user.service';
@@ -65,6 +67,18 @@ export class UsersController {
   @ApiOperation({ summary: 'Get user profile summary' })
   async getSummary(@CurrentUser() user: UserRow) {
     return { summary: user.summary ?? null };
+  }
+
+  @Patch('me/name')
+  @UseGuards(ClerkAuthGuard)
+  @ApiBearerAuth('clerk')
+  @ApiOperation({ summary: 'Set preferred display name' })
+  async setName(
+    @CurrentUser() user: UserRow,
+    @Body() body: UpdateNameDto,
+  ) {
+    await this.users.setName(user.id, body.name);
+    return { ok: true, name: body.name.trim() };
   }
 
   @Patch('me/summary')
@@ -135,5 +149,14 @@ export class UsersController {
   ): Promise<{ ok: true; timezone: string }> {
     await this.users.setTimezone(user.id, body.timezone);
     return { ok: true, timezone: body.timezone };
+  }
+
+  @Delete('me')
+  @UseGuards(ClerkAuthGuard)
+  @ApiBearerAuth('clerk')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Permanently delete account and all user data' })
+  async deleteAccount(@CurrentUser() user: UserRow) {
+    await this.users.deleteAccount(user.id);
   }
 }

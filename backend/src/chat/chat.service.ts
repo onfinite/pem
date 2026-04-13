@@ -76,12 +76,16 @@ export class ChatService {
       triageCategory: TriageCategory | null;
       processingStatus: ProcessingStatus | null;
       polishedText: string | null;
+      summary: string | null;
     }>,
+    userId?: string,
   ): Promise<MessageRow | null> {
+    const conditions = [eq(messagesTable.id, messageId)];
+    if (userId) conditions.push(eq(messagesTable.userId, userId));
     const [row] = await this.db
       .update(messagesTable)
       .set(patch)
-      .where(eq(messagesTable.id, messageId))
+      .where(and(...conditions))
       .returning();
     return row ?? null;
   }
@@ -120,11 +124,16 @@ export class ChatService {
     return rows.reverse();
   }
 
-  async findMessage(messageId: string): Promise<MessageRow | null> {
+  async findMessage(
+    messageId: string,
+    userId?: string,
+  ): Promise<MessageRow | null> {
+    const conditions = [eq(messagesTable.id, messageId)];
+    if (userId) conditions.push(eq(messagesTable.userId, userId));
     const [row] = await this.db
       .select()
       .from(messagesTable)
-      .where(eq(messagesTable.id, messageId))
+      .where(and(...conditions))
       .limit(1);
     return row ?? null;
   }
@@ -173,6 +182,7 @@ export class ChatService {
       triage_category: m.triageCategory,
       processing_status: m.processingStatus,
       polished_text: m.polishedText,
+      summary: m.summary ?? null,
       metadata: m.metadata ?? null,
       parent_message_id: m.parentMessageId,
       idempotency_key: m.idempotencyKey ?? null,

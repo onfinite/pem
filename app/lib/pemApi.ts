@@ -80,6 +80,7 @@ export type ApiMessage = {
   triage_category: string | null;
   processing_status: string | null;
   polished_text: string | null;
+  summary: string | null;
   parent_message_id: string | null;
   idempotency_key?: string | null;
   created_at: string;
@@ -178,6 +179,16 @@ export async function deleteMessage(
     method: "DELETE",
     getToken,
   });
+}
+
+export async function summarizeMessage(
+  getToken: () => Promise<string | null>,
+  messageId: string,
+) {
+  return apiFetch<{ summary: string }>(
+    `/chat/messages/${messageId}/summarize`,
+    { method: "POST", getToken },
+  );
 }
 
 export type TaskCounts = {
@@ -612,6 +623,17 @@ export async function getMe(getToken: () => Promise<string | null>) {
   });
 }
 
+export async function updateUserName(
+  getToken: () => Promise<string | null>,
+  name: string,
+) {
+  return apiFetch<{ ok: boolean; name: string }>("/users/me/name", {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function setUserPushToken(
   getToken: () => Promise<string | null>,
   token: string,
@@ -800,4 +822,10 @@ export async function disconnectCalendarById(
     method: "DELETE",
     getToken,
   });
+}
+
+export async function deleteAccount(
+  getToken: () => Promise<string | null>,
+) {
+  return apiFetch<void>("/users/me", { method: "DELETE", getToken });
 }

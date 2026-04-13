@@ -99,7 +99,7 @@ const updateActionSchema = z.object({
     event_end_at: nullStr
       .optional()
       .describe('New event end ISO datetime if rescheduling'),
-  }),
+  }).describe('ONLY include fields the user asked to change. Omit everything else — omitted fields stay unchanged.'),
   reason: z.string().default(''),
 });
 
@@ -181,9 +181,9 @@ const memoryWriteSchema = z.object({
 
 /** Phase 1 (prompt chaining): structured task mutations only — higher reliability than one giant call. */
 export const pemExtractionOutputSchema = z.object({
-  creates: z.array(extractActionSchema).default([]),
-  updates: z.array(updateActionSchema).default([]),
-  completions: z.array(completeActionSchema).default([]),
+  creates: z.array(extractActionSchema).max(10).default([]),
+  updates: z.array(updateActionSchema).max(10).default([]),
+  completions: z.array(completeActionSchema).max(10).default([]),
 });
 
 /** Phase 2: reply, calendar, memory, scheduling — indices reference phase-1 creates[]. */
@@ -198,13 +198,13 @@ export const pemOrchestrationOutputSchema = z.object({
     .describe(
       "Pem's conversational response to the user. Natural, warm, concise. No markdown.",
     ),
-  calendar_writes: z.array(calendarWriteSchema).default([]),
-  memory_writes: z.array(memoryWriteSchema).default([]),
-  calendar_updates: z.array(calendarUpdateSchema).default([]),
-  calendar_deletes: z.array(calendarDeleteSchema).default([]),
-  scheduling: z.array(schedulingSchema).default([]),
-  recurrence_detections: z.array(recurrenceDetectionSchema).default([]),
-  rsvp_actions: z.array(rsvpActionSchema).default([]),
+  calendar_writes: z.array(calendarWriteSchema).max(5).default([]),
+  memory_writes: z.array(memoryWriteSchema).max(10).default([]),
+  calendar_updates: z.array(calendarUpdateSchema).max(5).default([]),
+  calendar_deletes: z.array(calendarDeleteSchema).max(3).default([]),
+  scheduling: z.array(schedulingSchema).max(10).default([]),
+  recurrence_detections: z.array(recurrenceDetectionSchema).max(10).default([]),
+  rsvp_actions: z.array(rsvpActionSchema).max(5).default([]),
   summary_update: z
     .string()
     .nullish()
@@ -238,15 +238,16 @@ LANGUAGE: The user may write in ANY language. Interpret task content in their la
 Rules for task extraction:
 - Extract EVERY actionable item as its OWN separate task. "potatoes and tomatoes" = TWO tasks, not one.
 - Use the user's natural language for task text — don't over-formalize.
-- Food items (fruits, vegetables, meat, dairy, snacks, ingredients) → list_name: "Shopping". These are things to BUY and EAT, not plant or grow. "I need potatoes" = "Buy potatoes" [Shopping]. Never assume gardening unless the user explicitly says "plant", "garden", or "grow".
+- Food items to PURCHASE (fruits, vegetables, meat, dairy, snacks, ingredients) → list_name: "Shopping". Only when the intent is to BUY. "I need potatoes" = "Buy potatoes" [Shopping]. But "drink milk before sleeping" or "eat more vegetables" are PERSONAL REMINDERS/HABITS, not shopping — do NOT assign Shopping list. Shopping is for acquiring items, not consuming them.
 - Errands (physical chores: laundry, dry cleaning, pharmacy, pick up, drop off, return) → list_name: "Errands".
-- Ideas (creative thoughts, business concepts, app ideas, side projects, hypotheticals, "what if" musings, aspirations without a concrete next step) → list_name: "Ideas". Signals: "thinking of starting…", "wouldn't it be cool if…", "what if there was…", "I have an idea for…", "maybe I should try…", "it'd be interesting to…", "I wonder if I could…", "been brainstorming about…", "might be fun to build…", "had a thought about…", "imagine if…", "here's a wild idea…", "one day I want to…", "I keep thinking about starting…". These are creative seeds — they get captured so the user never loses them. Still create a task; set tone to "idea" and list_name to "Ideas". If the idea has a timeline ("thinking of starting a podcast this summer"), also set period dates.
+- Ideas (creative thoughts, business concepts, app ideas, side projects, hypotheticals, "what if" musings, aspirations without a concrete next step) → list_name: "Ideas". Signals: "thinking of starting…", "wouldn't it be cool if…", "what if there was…", "I have an idea for…", "maybe I should try…", "it'd be interesting to…", "I wonder if I could…", "been brainstorming about…", "might be fun to build…", "had a thought about…", "imagine if…", "here's a wild idea…", "one day I want to…", "I keep thinking about starting…". These are creative seeds — they get captured so the user never loses them. Still create a task; set tone to "idea" and list_name to "Ideas". IMPORTANT: Rewrite the text as a clean, concise idea title. "Wouldn't it be cool if there was an app for errands with AI?" → "App idea: AI-powered errands app". Strip conversational filler. If the idea has a timeline ("thinking of starting a podcast this summer"), also set period dates.
 - If user mentions a specific list/project by name (e.g. "add to my Work list"), use list_name with that name. If the list doesn't exist in their current lists, set create_list: true.
 - If user says "create a new list called X" or "start a new project X", set create_list: true with list_name: "X".
 - Priority: only set when user explicitly signals it. "urgent"/"asap"/"important"/"high priority" → priority: "high". "low priority"/"whenever"/"not urgent" → priority: "low". Default is null (no priority).
 - When user says "I did X" or "X is done" or "I bought X" or "got the X" → find the matching extract and mark it done (completions).
 - When user says "never mind about X" or "forget X" → dismiss the matching extract (completions).
 - When user updates an existing task (adds detail, changes timing), update it — don't create a duplicate (updates).
+- CRITICAL — updates patch: ONLY include fields the user explicitly asked to change. If the user says "change the name to X", the patch should ONLY contain { text: "X" }. Do NOT re-emit due_at, period_start, period_end, urgency, or any other field that wasn't mentioned. Omitted fields stay unchanged — including them risks overwriting correct values with stale or wrong data.
 - Dates: "tomorrow" means the next day. "next week" starts Monday.
 - CRITICAL — Period dates for ALL timelines: Every time reference MUST set period_start and period_end. The urgency field is ONLY for "someday" (aspirational, no timeline) or "none" (default). Do NOT use urgency for timing — use period dates instead.
   - "today" → period_start: today 00:00 local, period_end: today 23:59, period_label: "today"
@@ -266,8 +267,10 @@ Rules for task extraction:
   - "later today" → period_start: now, period_end: today 23:59, period_label: "today". NO due_at.
   - "after work" → period_start: today 17:00, period_end: today 23:59, period_label: "today"
   - "this afternoon" → period_start: today 12:00, period_end: today 17:00, period_label: "today"
-  - "tonight" → period_start: today 18:00, period_end: today 23:59, period_label: "today"
+  - "tonight" / "before sleeping" / "before bed" / "before I sleep" → period_start: today 18:00, period_end: today 23:59, period_label: "today"
   - "early next week" → period_start: Monday 00:00, period_end: Wednesday 23:59, period_label: "early next week"
+  - "everyday"/"daily"/"every day at X"/"every weekday" → period_start: today, period_end: today 23:59, period_label: "today". This is a RECURRING task that starts TODAY — NOT someday. Also set recurrence_detections with freq: "daily" and appropriate by_day if weekdays-only.
+  - "every Monday"/"every week" → period_start: next occurrence, period_end: same day 23:59, period_label: day name. Also set recurrence_detections with freq: "weekly".
   - "soon"/"sometime"/"eventually"/"someday" → NO dates, urgency: "someday"
   - Specific date with no exact time (e.g. "on Friday") → period_start: that day 00:00, period_end: that day 23:59, period_label: day name
   - "by Friday" (deadline) → due_at: Friday 17:00, PLUS period_start/period_end for that day
@@ -276,6 +279,7 @@ Rules for task extraction:
 - CRITICAL — due_at rules: due_at means a HARD DEADLINE. Only set due_at when the user uses explicit deadline language: "by", "before", "deadline", "due", "must be done by", "no later than". Period-only references ("this month", "next week", "this summer") do NOT get due_at — the period_end handles the boundary. "Visit mom this month" → period only, NO due_at. "Pay rent by April 30" → due_at: April 30 17:00, PLUS period for April 30. When in doubt, do NOT set due_at. A missing due_at is safe; a wrong due_at causes false overdue alerts.
 - Be smart about deduplication. If "buy milk" already exists in open tasks, don't create it again.
 - Default to the most common-sense interpretation. People buy groceries to eat, pick up prescriptions to take, etc.
+- Implied timing: when a user says they need to do something without specifying when, use common sense. "Drink milk before sleeping" = tonight (period_label: "today"). "I need to call my mom" = today or soon, not someday. "Run at the lake everyday at 5 PM" starts TODAY. Only use urgency: "someday" for genuinely aspirational items with no implied timeline.
 - IMPORTANT: "I need to grab X", "I need to buy X", "I should get X", "don't forget X" are ALL actionable. ALWAYS create a task for these. NEVER skip extraction when the user mentions something they need to do, buy, or handle.
 
 Journal-style commitments (still create tasks):
@@ -290,9 +294,10 @@ CRITICAL — Visions vs learning/doing tasks:
 - Learning, skills, or concrete next steps: "I need to learn sales", "I should take a course on X" → CREATE a task.
 
 Journaling, venting, and emotional expression:
-- If the message is purely emotional venting, journaling, or sharing worries with NO clear action items ("I'm so stressed", "feeling overwhelmed", "had a rough day", "I'm worried about..."), set creates/updates/completions to EMPTY arrays. Do NOT force-extract tasks from emotional expression.
-- If the user shares a worry that ALSO implies an action ("I'm stressed about the dentist appointment I keep forgetting"), extract the actionable part ("Book dentist appointment") while respecting the emotional context.
-- When in doubt between "pure venting" and "venting + actionable", lean toward extracting — but never fabricate tasks that the user didn't imply.
+- If the message is PURELY emotional with NO implied action ("I'm so stressed", "feeling overwhelmed", "had a rough day"), set creates/updates/completions to EMPTY arrays.
+- CRITICAL: "I'm worried about X" is NOT pure venting when X is a concrete thing with a deadline or action. "I'm worried about missing YC's deadline" → the actionable part is the YC deadline. Update or create a task for it. "I'm worried about my health" with no concrete next step → pure venting.
+- If the user shares a worry that implies an action, ALWAYS extract the actionable part. Lean toward extracting — the user told Pem about it because they want it tracked.
+- When in doubt between "pure venting" and "venting + actionable", ALWAYS lean toward extracting. A captured task that turns out unnecessary is easy to dismiss. A missed task that the user expected Pem to catch breaks trust.
 
 If the message has no task changes, output empty arrays. Be exhaustive when there ARE actionables.
 
@@ -312,9 +317,11 @@ Identity: Most responses should make clear (naturally, not as a slogan every tim
 You know you are Pem. If someone asks "who are you?" or "what's your name?", say you're Pem and you help organize their tasks, calendar, and thoughts.
 
 Your personality:
-- Warm but efficient. Like a smart friend who actually remembers everything — within the organizing role.
-- Never robotic. Never use bullet points or markdown. Write naturally.
-- Acknowledge emotions briefly when present, then connect to something actionable if possible.
+- Calm, direct, and grounded. Like a sharp friend who keeps things organized — not a motivational speaker.
+- Never robotic. Never use bullet points or markdown. Write naturally. But keep it brief and matter-of-fact.
+- NEVER end with filler like "Let me know if there's anything else!", "Feel free to ask!", "Happy to help!", "Is there anything else you need?", or any variation. Just stop when you're done. The user knows they can talk to you.
+- NEVER use exclamation marks excessively. One per message max, and only if genuinely warranted.
+- Acknowledge emotions briefly when present, then connect to something actionable if possible. Don't over-empathize or be performative.
 - Be proactive: if the user mentions buying groceries and you know they have a shopping list, mention it.
 - The user prompt always includes an "## Addressing the user" section when their name is known — use it naturally when it fits, not every message. Never invent or swap names.
 
@@ -339,11 +346,13 @@ CRITICAL — Visions vs memory (this step):
 - If locked extraction has tasks, response_text must summarize what was organized.
 
 Rules for your response:
-- Keep it conversational. 1-4 sentences usually.
-- Summarize what you organized: "Got it — added milk to your shopping list and put the dentist on your calendar Thursday at 2." Never claim you performed an external action.
-- If you created tasks, say so explicitly ("Added to your list", "On your shopping list", "Saved to your ideas", "There's a task for...").
+- Keep it short. 1-3 sentences. Say what you did and stop.
+- Summarize what you organized: "Added milk to shopping and put the dentist on Thursday at 2." Never claim you performed an external action.
+- If you created tasks, say so plainly ("Added to your list", "On your shopping list", "Saved to ideas", "There's a task for...").
 - If the user is venting and locked extraction is empty, acknowledge only. If locked extraction has tasks, say what you organized — do not use vague "I'll keep that in mind" without naming the list changes.
 - NEVER use markdown, bold, asterisks, or bullet lists. Plain text only.
+- NEVER end with offers of help, questions back to the user, or motivational closers. Just state what you did.
+- CRITICAL — response accuracy: ONLY describe actions that actually appear in the locked extraction or your output fields. If you didn't create a task, don't say you did. If you only updated one task, don't say you "noted both." The user will check the inbox — if the response and the inbox don't match, trust is broken.
 
 Journaling, venting, and emotional support:
 - When the user shares worries, stress, fears, or emotions with NO actionable items in locked extraction, respond with genuine warmth and empathy. Acknowledge what they said specifically — don't be generic.
@@ -432,12 +441,18 @@ Recurrence rules:
 - Create the first instance AND the recurrence rule.
 - "for the next 3 months" → until field. "10 times" → count field. No mention = indefinite.
 
-Duration estimation:
-- Meeting/sync/call: 30 min. Appointment (dentist, doctor, haircut): 60 min.
-- Errand (pick up, drop off, pharmacy): 30 min. Phone call: 15 min.
-- Shopping trip: 60 min. Focus work: user's preference or 90 min.
-- Quick task (pay bill, send email): 15 min.
-- Always output duration_minutes in scheduling.
+Duration estimation (smart defaults — never ask the user):
+- Meeting / interview / 1-on-1: 60 min
+- Call / quick catch-up / standup: 30 min
+- Phone call (personal): 15 min
+- Appointment (dentist, doctor, haircut): 60 min
+- Dinner / lunch outing: 120 min
+- Errand (pick up, drop off, pharmacy): 30 min
+- Shopping trip: 60 min
+- Focus / deep work: user's preference or 90 min
+- Quick task (pay bill, send email): 15 min
+- Default when unsure: 60 min
+- Always output duration_minutes in scheduling. Just pick the best default — do not ask.
 
 Calendar blocking:
 - Specific date AND time → calendar_writes. Specific date but NO time → create task, let scheduler find slot.
@@ -451,6 +466,13 @@ Overwhelm handling:
 
 Bulk rescheduling:
 - When user says "I'm sick today", "cancel this afternoon", or indicates period unavailability, identify ALL tasks in that period, suggest new slots, and respond with a summary.
+
+Safety rules (non-negotiable):
+- NEVER delete or dismiss more than 3 calendar events in a single response. If the user asks to "delete everything", "clear my calendar", or "remove all events", explain that bulk deletions must be done in smaller batches for safety and offer to help with the first few.
+- NEVER dismiss or complete more than 5 tasks in a single response unless the user explicitly names each one. If the user says "dismiss all my tasks" or "mark everything done", ask which ones specifically rather than acting on all of them.
+- NEVER create more than 8 tasks from a single message. If extraction yields more, create the first 8 and mention the rest can be added in a follow-up.
+- If the user's request seems destructive (delete all, clear everything, remove all, start fresh), describe what you would do and ask for confirmation before acting. Respond with "Just to be safe — should I go ahead and [action]?" instead of executing immediately.
+- Prioritization queries: when the user asks for "top N tasks", "most important", or "what should I focus on", prioritize by: (1) overdue items, (2) items aligned with life_goals/aspirations from memory, (3) items due today, (4) quick wins. Synthesize a concise answer from open tasks + calendar.
 
 `;
 
@@ -499,10 +521,8 @@ function truncateForPrompt(content: string): string {
 function messageLikelyContainsTasks(content: string): boolean {
   const t = content.trim();
   if (t.length < 10) return false;
-  // Longer messages almost always contain something worth extracting
-  if (t.length > 80) return true;
-  // Minimal keyword check as a fast filter for short messages
-  return /\b(need|have to|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline)\b/i.test(
+  if (t.length > 60) return true;
+  return /\b(need|have to|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline|worried|concern|miss|missing|afraid|scared|prioritize|important|urgent|focus)\b/i.test(
     t,
   );
 }
@@ -598,6 +618,11 @@ export class PemAgentService {
       model,
       prompt,
     );
+
+    this.log.log(
+      `PemAgent extraction: creates=${extraction.creates.length} updates=${extraction.updates.length} completions=${extraction.completions.length}`,
+    );
+
     if (
       extractionIsEmpty(extraction) &&
       messageLikelyContainsTasks(params.messageContent)
@@ -609,7 +634,11 @@ export class PemAgentService {
         openai,
         agentModel,
         model,
-        `${prompt}\n\nIMPORTANT: The user message almost certainly contains at least one actionable (buy/do/call/remember/time). Populate creates, updates, or completions — do not leave all three arrays empty unless there is truly nothing to capture.`,
+        `${prompt}\n\nIMPORTANT: The user message almost certainly contains at least one actionable item (buy/do/call/remember/time/worry/deadline/concern). Populate creates, updates, or completions — do not leave all three arrays empty unless there is truly nothing to capture. "I'm worried about missing X deadline" = update or create a task about X.`,
+      );
+
+      this.log.log(
+        `PemAgent extraction retry: creates=${extraction.creates.length} updates=${extraction.updates.length} completions=${extraction.completions.length}`,
       );
     }
     if (
@@ -617,13 +646,17 @@ export class PemAgentService {
       messageLikelyContainsTasks(params.messageContent)
     ) {
       this.log.warn('PemAgent: monolithic fallback after extraction gate');
-      return this.runMonolithicPhase(
+      const mono = await this.runMonolithicPhase(
         openai,
         agentModel,
         model,
         prompt,
         fallback,
       );
+      this.log.log(
+        `PemAgent monolithic result: creates=${mono.creates.length} updates=${mono.updates.length} completions=${mono.completions.length}`,
+      );
+      return mono;
     }
 
     const orchPrompt = `${prompt}\n\n## Locked extraction\n${JSON.stringify(extraction)}`;
@@ -677,7 +710,7 @@ export class PemAgentService {
       return dt.isValid ? dt.toFormat('ccc MMM d, h:mm a') : iso;
     };
 
-    const cappedExtracts = params.openExtracts.slice(0, 40);
+    const cappedExtracts = params.openExtracts.slice(0, 60);
     const extraExtracts = params.openExtracts.length - cappedExtracts.length;
 
     const openTasksSection =
@@ -691,7 +724,9 @@ export class PemAgentService {
               return `- [${e.id}] ${parts.join(' | ')} (${e.status}, ${e.urgency})`;
             })
             .join('\n') +
-          (extraExtracts > 0 ? `\n...and ${extraExtracts} more` : '')
+          (extraExtracts > 0
+            ? `\n(${extraExtracts} more tasks not shown — ask the user to be specific if they reference one not listed)`
+            : '')
         : '(no open tasks)';
 
     const cappedEvents = params.calendarEvents.slice(0, 30);

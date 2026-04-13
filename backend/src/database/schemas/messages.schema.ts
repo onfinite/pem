@@ -49,6 +49,7 @@ export const messagesTable = pgTable(
     triageCategory: text('triage_category').$type<TriageCategory>(),
     processingStatus: text('processing_status').$type<ProcessingStatus>(),
     polishedText: text('polished_text'),
+    summary: text('summary'),
     parentMessageId: uuid('parent_message_id'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
     /** Client-supplied key for safe retries (unique per user when set). */

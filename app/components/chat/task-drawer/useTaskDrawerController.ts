@@ -276,6 +276,14 @@ export function useTaskDrawerController(
     });
   }, []);
 
+  const removeTasksByListId = useCallback((listId: string) => {
+    setTasks((prev) => {
+      const next = prev.filter((t) => t.list_id !== listId);
+      void writeOpenCache(next);
+      return next;
+    });
+  }, []);
+
   const handleDone = useCallback(
     async (id: string) => {
       pemNotificationSuccess();
@@ -490,5 +498,6 @@ export function useTaskDrawerController(
     handleEditDelete,
     refreshing,
     handleRefresh,
+    removeTasksByListId,
   };
 }

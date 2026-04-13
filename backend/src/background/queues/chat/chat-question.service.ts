@@ -2,11 +2,15 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
-import { and, eq, inArray, desc } from 'drizzle-orm';
+import { and, eq, inArray, desc, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
-import { extractsTable, type ExtractRow } from '../../../database/schemas';
+import {
+  extractsTable,
+  messagesTable,
+  type ExtractRow,
+} from '../../../database/schemas';
 import { EmbeddingsService } from '../../../embeddings/embeddings.service';
 import {
   ExtractsService,
@@ -14,6 +18,8 @@ import {
 } from '../../../extracts/extracts.service';
 import { ProfileService } from '../../../profile/profile.service';
 import { RAG_MIN_SIMILARITY, RAG_TOP_K } from '../../../chat/chat.constants';
+
+const QUESTION_RECENT_MESSAGES_LIMIT = 15;
 
 function formatBuckets(b: BriefBuckets): string {
   const lines: string[] = [];
@@ -81,27 +87,39 @@ export class ChatQuestionService {
     }
 
     try {
-      const [allOpen, buckets, ragHits, memorySection] = await Promise.all([
-        this.db
-          .select()
-          .from(extractsTable)
-          .where(
-            and(
-              eq(extractsTable.userId, userId),
-              inArray(extractsTable.status, ['inbox', 'snoozed']),
-            ),
-          )
-          .orderBy(desc(extractsTable.createdAt))
-          .limit(100),
-        this.extracts.getAskOpenTimelineBuckets(userId),
-        this.embeddings.similaritySearch(
-          userId,
-          question,
-          RAG_TOP_K,
-          RAG_MIN_SIMILARITY,
-        ),
-        this.profile.buildMemoryPromptSection(userId),
-      ]);
+      const [allOpen, buckets, ragHits, memorySection, recentMsgs] =
+        await Promise.all([
+          this.db
+            .select()
+            .from(extractsTable)
+            .where(
+              and(
+                eq(extractsTable.userId, userId),
+                inArray(extractsTable.status, ['inbox', 'snoozed']),
+              ),
+            )
+            .orderBy(desc(extractsTable.createdAt))
+            .limit(100),
+          this.extracts.getAskOpenTimelineBuckets(userId),
+          this.embeddings.similaritySearch(
+            userId,
+            question,
+            RAG_TOP_K,
+            RAG_MIN_SIMILARITY,
+          ),
+          this.profile.buildMemoryPromptSection(userId),
+          this.db
+            .select({
+              role: messagesTable.role,
+              content: messagesTable.content,
+              transcript: messagesTable.transcript,
+              createdAt: messagesTable.createdAt,
+            })
+            .from(messagesTable)
+            .where(eq(messagesTable.userId, userId))
+            .orderBy(sql`${messagesTable.createdAt} DESC`)
+            .limit(QUESTION_RECENT_MESSAGES_LIMIT),
+        ]);
 
       const allOpenBlock = formatAllOpen(allOpen);
       const timelineBlock = formatBuckets(buckets);
@@ -110,6 +128,17 @@ export class ChatQuestionService {
         ragHits.length > 0
           ? `Related past messages (by similarity):\n${ragHits
               .map((h) => `- ${h.content}`)
+              .join('\n')}`
+          : '';
+
+      const recentChatBlock =
+        recentMsgs.length > 0
+          ? `Recent conversation:\n${recentMsgs
+              .reverse()
+              .map((m) => {
+                const text = m.transcript ?? m.content ?? '';
+                return `- ${m.role}: ${text.slice(0, 300)}`;
+              })
               .join('\n')}`
           : '';
 
@@ -129,8 +158,10 @@ Never answer weather, news, sports, homework, or other general-knowledge questio
 
 If they asked for a "brief" or overview (today, tomorrow, next week, next month, or similar), give a short narrative: what matters first, what's on the calendar, what's on their lists — prioritize by dates in the data. When a month or quarter is starting, proactively mention items with period labels like "June", "Q3", "this month" so the user remembers to schedule them. Do not tell them you are "adding tasks"; this path is read-only. If a time range has little in the data, say so plainly.
 
+If they ask "what should I focus on", "top N tasks", "most important", or any prioritization question, rank by: (1) overdue items first, (2) items aligned with their goals/aspirations from memory, (3) items due today, (4) quick wins. Explain briefly why each item ranks where it does.
+
 Be warm and concise — no markdown. For lists, use natural prose (e.g. "You have: milk, onions, and tomatoes on your shopping list" or "In your ideas: starting a podcast, the fitness app concept").`,
-        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
+        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
       });
 
       return (

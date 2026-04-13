@@ -50,6 +50,13 @@
       "when": 1775882010167,
       "tag": "0006_brown_the_enforcers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775946798531,
+      "tag": "0007_light_polaris",
+      "breakpoints": true
     }
   ]
 }

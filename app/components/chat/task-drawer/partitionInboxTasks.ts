@@ -52,9 +52,16 @@ function sortByDate(items: ApiExtract[]): ApiExtract[] {
 }
 
 function isOverdue(t: ApiExtract, nowMs: number, todayStartMs: number): boolean {
+  // Guard: if the task's main anchor is in the future, never mark overdue
+  const anchor = t.event_start_at ?? t.scheduled_at ?? t.due_at ?? t.period_start;
+  if (anchor) {
+    const anchorDate = Date.parse(anchor);
+    if (Number.isFinite(anchorDate) && anchorDate >= todayStartMs) return false;
+  }
+
   const periodEnd = t.period_end ? Date.parse(t.period_end) : null;
   if (periodEnd && Number.isFinite(periodEnd)) {
-    return periodEnd < nowMs;
+    return periodEnd < todayStartMs;
   }
 
   const dueAt = t.due_at ? Date.parse(t.due_at) : null;

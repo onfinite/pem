@@ -105,8 +105,7 @@ export class ListsService {
     }
 
     await this.db
-      .update(extractsTable)
-      .set({ listId: null, updatedAt: new Date() })
+      .delete(extractsTable)
       .where(
         and(eq(extractsTable.listId, listId), eq(extractsTable.userId, userId)),
       );

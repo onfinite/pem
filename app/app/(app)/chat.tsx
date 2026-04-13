@@ -11,6 +11,7 @@ import { useChatStream } from "@/hooks/useChatStream";
 import { useMessageSearch } from "@/hooks/useMessageSearch";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import {
+  deleteMessage,
   getChatMessages,
   getTaskCounts,
   requestBrief,
@@ -337,6 +338,7 @@ export default function ChatScreen() {
         isHighlighted={item.message.id === search.highlightId}
         onRetry={handleRetry}
         onViewTasks={handleOpenDrawer}
+        onDelete={handleDelete}
       />
     );
   };
@@ -440,6 +442,18 @@ export default function ChatScreen() {
       }
     },
     [],
+  );
+
+  const handleDelete = useCallback(
+    async (messageId: string) => {
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      try {
+        await deleteMessage(getTokenRef.current, messageId);
+      } catch {
+        loadMessages();
+      }
+    },
+    [loadMessages],
   );
 
   return (

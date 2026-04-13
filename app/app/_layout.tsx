@@ -1,4 +1,6 @@
 import SplashScreenView from "@/components/views/SplashScreenView";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { pemFontSources } from "@/constants/fonts";
 import { MAX_APP_CONTENT_WIDTH } from "@/constants/layout";
@@ -78,6 +80,7 @@ function RootLayoutInner() {
           ]}
         >
           <StatusBar style={statusStyle} />
+          <OfflineBanner />
           <View style={styles.contentColumn}>
             <Slot />
           </View>
@@ -99,18 +102,15 @@ function RootLayoutInner() {
 
 export default function RootLayout() {
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <ThemeProvider>
-        {/*
-          Expo Router’s outer SafeAreaProvider sets initialMetrics only on web, so on iOS the first
-          frame can use 0 top inset — chrome draws under the status bar / Dynamic Island, then jumps.
-          This inner provider uses native initialWindowMetrics so insets are correct from frame 1.
-        */}
-        <SafeAreaProvider initialMetrics={initialWindowMetrics ?? undefined}>
-          <RootLayoutInner />
-        </SafeAreaProvider>
-      </ThemeProvider>
-    </ClerkProvider>
+    <ErrorBoundary>
+      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+        <ThemeProvider>
+          <SafeAreaProvider initialMetrics={initialWindowMetrics ?? undefined}>
+            <RootLayoutInner />
+          </SafeAreaProvider>
+        </ThemeProvider>
+      </ClerkProvider>
+    </ErrorBoundary>
   );
 }
 

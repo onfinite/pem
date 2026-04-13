@@ -15,9 +15,10 @@ type Props = {
   isHighlighted?: boolean;
   onRetry?: (message: ClientMessage) => void;
   onViewTasks?: () => void;
+  onDelete?: (messageId: string) => void;
 };
 
-export default function ChatBubble({ message, isHighlighted, onRetry, onViewTasks }: Props) {
+export default function ChatBubble({ message, isHighlighted, onRetry, onViewTasks, onDelete }: Props) {
   const { colors } = useTheme();
   const isUser = message.role === "user";
   const isBrief = message.kind === "brief";
@@ -71,15 +72,21 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
       (meta.calendar_written ?? 0) > 0);
 
   const handleLongPress = () => {
-    if (!content) return;
     pemImpactLight();
-    Alert.alert("Message", undefined, [
-      {
-        text: "Copy",
-        onPress: () => Clipboard.setStringAsync(content),
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    const buttons: { text: string; onPress?: () => void; style?: "cancel" | "destructive" }[] = [];
+    if (content) {
+      buttons.push({ text: "Copy", onPress: () => Clipboard.setStringAsync(content) });
+    }
+    if (onDelete) {
+      buttons.push({
+        text: "Delete",
+        style: "destructive",
+        onPress: () => onDelete(message.id),
+      });
+    }
+    buttons.push({ text: "Cancel", style: "cancel" });
+    if (buttons.length <= 1) return;
+    Alert.alert("Message", undefined, buttons);
   };
 
   return (

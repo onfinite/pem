@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
@@ -63,6 +64,8 @@ export type BriefBuckets = {
 
 @Injectable()
 export class ExtractsService {
+  private readonly log = new Logger(ExtractsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly calendarSync: CalendarSyncService,
@@ -480,6 +483,17 @@ export class ExtractsService {
         after: this.extractStateSnapshot(u),
       });
     }
+
+    if (row.externalEventId && row.calendarConnectionId && row.isOrganizer) {
+      this.calendarSync
+        .deleteFromGoogleCalendar(row.calendarConnectionId, row.externalEventId)
+        .catch((e) =>
+          this.log.warn(
+            `Calendar delete on dismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+          ),
+        );
+    }
+
     return u;
   }
 
@@ -857,8 +871,11 @@ export class ExtractsService {
 
     const anchor = sql`coalesce(${extractsTable.eventStartAt}, ${extractsTable.scheduledAt}, ${extractsTable.dueAt}, ${extractsTable.periodStart})`;
     const overdueCondition = sql`(
-      (${extractsTable.periodEnd} is not null and ${extractsTable.periodEnd} < ${now.toJSDate()})
-      or (${extractsTable.periodEnd} is null and ${extractsTable.dueAt} is not null and ${extractsTable.dueAt} < ${todayStart})
+      ${anchor} is not null and ${anchor} < ${todayStart}
+      and (
+        (${extractsTable.periodEnd} is not null and ${extractsTable.periodEnd} < ${todayStart})
+        or (${extractsTable.periodEnd} is null and ${extractsTable.dueAt} is not null and ${extractsTable.dueAt} < ${todayStart})
+      )
     )`;
     const openFilter = and(
       eq(extractsTable.userId, userId),
@@ -951,13 +968,14 @@ export class ExtractsService {
 
       const anchorDate = new Date(anchor);
 
-      // Overdue check — if period_end exists and is still in the future, not overdue
-      const periodEndDate = row.periodEnd ? new Date(row.periodEnd) : null;
-      const isOverdue = periodEndDate
-        ? periodEndDate < now.toJSDate()
-        : anchorDate < todayStart;
-      if (isOverdue) {
-        overdue.push(row);
+      // Overdue: anchor must be before today AND (period_end or due_at) must be past
+      const anchorBeforeToday = anchorDate < todayStart;
+      if (anchorBeforeToday) {
+        const periodEndDate = row.periodEnd ? new Date(row.periodEnd) : null;
+        const isOd = periodEndDate
+          ? periodEndDate < todayStart
+          : anchorDate < todayStart;
+        if (isOd) overdue.push(row);
       }
 
       // Period items span multiple days; non-period items use the anchor
@@ -1145,6 +1163,7 @@ export class ExtractsService {
   private buildBriefBuckets(rows: ExtractRow[], zone: string): BriefBuckets {
     const nowLux = DateTime.now().setZone(zone);
     const now = nowLux.toJSDate();
+    const todayStart = nowLux.startOf('day').toJSDate();
     const todayEnd = nowLux.endOf('day').toJSDate();
     const tomorrowEnd = nowLux.plus({ days: 1 }).endOf('day').toJSDate();
 
@@ -1178,9 +1197,10 @@ export class ExtractsService {
             row.periodStart ??
             null);
 
-      const isDueOverdue = row.dueAt && row.dueAt < now;
+      const anchorBeforeToday = anchor && anchor < todayStart;
+      const isDueOverdue = anchorBeforeToday && row.dueAt && row.dueAt < todayStart;
       const isEventOverdue =
-        row.eventEndAt && row.eventEndAt < now && row.source === 'calendar';
+        anchorBeforeToday && row.eventEndAt && row.eventEndAt < now && row.source === 'calendar';
 
       if (isDueOverdue || isEventOverdue) {
         overdue.push(row);

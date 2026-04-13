@@ -17,6 +17,7 @@ import {
 } from "@/lib/pemApi";
 import { useAuth, useClerk, useUser } from "@clerk/expo";
 import { router } from "expo-router";
+import { deleteAccount } from "@/lib/pemApi";
 import {
   Bell,
   Check,
@@ -30,7 +31,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -284,10 +287,62 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  const { getToken } = useAuth();
+
   const onSignOut = useCallback(async () => {
     await signOut();
     router.replace("/welcome");
   }, [signOut]);
+
+  const onDeleteAccount = useCallback(() => {
+    Alert.alert(
+      "Delete Account",
+      "This will permanently delete your account and all your data. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Alert.prompt?.(
+              "Type DELETE to confirm",
+              "This action is irreversible.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Confirm",
+                  style: "destructive",
+                  onPress: async (text) => {
+                    if (text?.toUpperCase() !== "DELETE") return;
+                    try {
+                      await deleteAccount(getToken);
+                      await signOut();
+                      router.replace("/welcome");
+                    } catch {}
+                  },
+                },
+              ],
+              "plain-text",
+            ) ??
+              Alert.alert("Confirm Deletion", "Are you absolutely sure?", [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Yes, Delete",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await deleteAccount(getToken);
+                      await signOut();
+                      router.replace("/welcome");
+                    } catch {}
+                  },
+                },
+              ]);
+          },
+        },
+      ],
+    );
+  }, [getToken, signOut]);
 
   return (
     <View
@@ -477,11 +532,32 @@ export default function SettingsScreen() {
 
         <CalendarSection />
 
+        <PemText variant="label" style={styles.sectionLabel}>
+          Legal
+        </PemText>
+        <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted, padding: 0, overflow: "hidden" }]}>
+          <Pressable style={styles.legalRow} onPress={() => Linking.openURL("https://heypem.com/terms")}>
+            <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>Terms of Service</PemText>
+            <ChevronRight size={16} stroke={colors.textTertiary} />
+          </Pressable>
+          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.borderMuted }} />
+          <Pressable style={styles.legalRow} onPress={() => Linking.openURL("https://heypem.com/privacy")}>
+            <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>Privacy Policy</PemText>
+            <ChevronRight size={16} stroke={colors.textTertiary} />
+          </Pressable>
+        </View>
+
         <View style={styles.signOutWrap}>
           <PemButton variant="secondary" size="md" onPress={onSignOut}>
             Sign out
           </PemButton>
         </View>
+
+        <Pressable onPress={onDeleteAccount} style={styles.deleteWrap}>
+          <PemText variant="caption" style={styles.deleteText}>
+            Delete Account
+          </PemText>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -607,8 +683,23 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
   },
+  legalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: space[4],
+    paddingHorizontal: space[5],
+  },
   signOutWrap: {
     marginTop: space[10],
     alignItems: "center",
+  },
+  deleteWrap: {
+    marginTop: space[6],
+    alignItems: "center",
+    paddingBottom: space[4],
+  },
+  deleteText: {
+    color: "#d70015",
+    textDecorationLine: "underline",
   },
 });
