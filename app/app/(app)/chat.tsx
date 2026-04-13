@@ -531,7 +531,7 @@ export default function ChatScreen() {
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
               {
-                "Dump your thoughts, ask questions, or tell me what's on your mind. I'll handle the rest."
+                "Dump your thoughts, ask questions, or tell me what's on your mind. I remember everything."
               }
             </Text>
           </View>

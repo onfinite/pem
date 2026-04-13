@@ -20,7 +20,7 @@ export function OnboardingCompleteStep({ isFinishing, onFinish }: OnboardingComp
       </PemText>
       <PemText variant="bodyMuted" style={s.body}>
         Start by dumping whatever is on your mind.{"\n"}
-        Voice or text — Pem handles the rest.
+        Voice or text — Pem remembers and handles the rest.
       </PemText>
       <Pressable
         onPress={onFinish}

@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
-import { and, eq, inArray, desc, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, desc, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
@@ -17,7 +17,12 @@ import {
   type BriefBuckets,
 } from '../../../extracts/extracts.service';
 import { ProfileService } from '../../../profile/profile.service';
-import { RAG_MIN_SIMILARITY, RAG_TOP_K } from '../../../chat/chat.constants';
+import {
+  RAG_MIN_SIMILARITY,
+  RAG_TOP_K,
+  DONE_EXTRACTS_LOOKBACK_DAYS,
+  DISMISSED_EXTRACTS_LOOKBACK_DAYS,
+} from '../../../chat/chat.constants';
 
 const QUESTION_RECENT_MESSAGES_LIMIT = 15;
 
@@ -87,39 +92,80 @@ export class ChatQuestionService {
     }
 
     try {
-      const [allOpen, buckets, ragHits, memorySection, recentMsgs] =
-        await Promise.all([
-          this.db
-            .select()
-            .from(extractsTable)
-            .where(
-              and(
-                eq(extractsTable.userId, userId),
-                inArray(extractsTable.status, ['inbox', 'snoozed']),
-              ),
-            )
-            .orderBy(desc(extractsTable.createdAt))
-            .limit(100),
-          this.extracts.getAskOpenTimelineBuckets(userId),
-          this.embeddings.similaritySearch(
-            userId,
-            question,
-            RAG_TOP_K,
-            RAG_MIN_SIMILARITY,
-          ),
-          this.profile.buildMemoryPromptSection(userId),
-          this.db
-            .select({
-              role: messagesTable.role,
-              content: messagesTable.content,
-              transcript: messagesTable.transcript,
-              createdAt: messagesTable.createdAt,
-            })
-            .from(messagesTable)
-            .where(eq(messagesTable.userId, userId))
-            .orderBy(sql`${messagesTable.createdAt} DESC`)
-            .limit(QUESTION_RECENT_MESSAGES_LIMIT),
-        ]);
+      const now = new Date();
+      const doneSince = new Date(now);
+      doneSince.setUTCDate(doneSince.getUTCDate() - DONE_EXTRACTS_LOOKBACK_DAYS);
+      const dismissedSince = new Date(now);
+      dismissedSince.setUTCDate(
+        dismissedSince.getUTCDate() - DISMISSED_EXTRACTS_LOOKBACK_DAYS,
+      );
+
+      const [
+        allOpen,
+        buckets,
+        ragHits,
+        memorySection,
+        recentMsgs,
+        doneRows,
+        dismissedRows,
+      ] = await Promise.all([
+        this.db
+          .select()
+          .from(extractsTable)
+          .where(
+            and(
+              eq(extractsTable.userId, userId),
+              inArray(extractsTable.status, ['inbox', 'snoozed']),
+            ),
+          )
+          .orderBy(desc(extractsTable.createdAt))
+          .limit(100),
+        this.extracts.getAskOpenTimelineBuckets(userId),
+        this.embeddings.similaritySearch(
+          userId,
+          question,
+          RAG_TOP_K,
+          RAG_MIN_SIMILARITY,
+        ),
+        this.profile.buildMemoryPromptSection(userId),
+        this.db
+          .select({
+            role: messagesTable.role,
+            content: messagesTable.content,
+            transcript: messagesTable.transcript,
+            createdAt: messagesTable.createdAt,
+          })
+          .from(messagesTable)
+          .where(eq(messagesTable.userId, userId))
+          .orderBy(sql`${messagesTable.createdAt} DESC`)
+          .limit(QUESTION_RECENT_MESSAGES_LIMIT),
+        this.db
+          .select()
+          .from(extractsTable)
+          .where(
+            and(
+              eq(extractsTable.userId, userId),
+              eq(extractsTable.status, 'done'),
+              isNotNull(extractsTable.doneAt),
+              gte(extractsTable.doneAt, doneSince),
+            ),
+          )
+          .orderBy(desc(extractsTable.doneAt))
+          .limit(80),
+        this.db
+          .select()
+          .from(extractsTable)
+          .where(
+            and(
+              eq(extractsTable.userId, userId),
+              eq(extractsTable.status, 'dismissed'),
+              isNotNull(extractsTable.dismissedAt),
+              gte(extractsTable.dismissedAt, dismissedSince),
+            ),
+          )
+          .orderBy(desc(extractsTable.dismissedAt))
+          .limit(40),
+      ]);
 
       const allOpenBlock = formatAllOpen(allOpen);
       const timelineBlock = formatBuckets(buckets);
@@ -142,6 +188,25 @@ export class ChatQuestionService {
               .join('\n')}`
           : '';
 
+      const doneBlock =
+        doneRows.length > 0
+          ? `Recently completed:\n${doneRows
+              .map((r) => {
+                const when = r.doneAt
+                  ? r.doneAt.toISOString().slice(0, 10)
+                  : '';
+                return `- ${r.extractText}${when ? ` (done ${when})` : ''}`;
+              })
+              .join('\n')}`
+          : '';
+
+      const dismissedBlock =
+        dismissedRows.length > 0
+          ? `Recently dismissed:\n${dismissedRows
+              .map((r) => `- ${r.extractText}`)
+              .join('\n')}`
+          : '';
+
       const openai = createOpenAI({ apiKey });
 
       const nameNote = userName ? ` The user's name is ${userName}.` : '';
@@ -152,16 +217,23 @@ export class ChatQuestionService {
       const { text } = await generateText({
         model: openai('gpt-4o'),
         maxRetries: 2,
-        system: `You are Pem.${nameNote} The user asked a question about THEIR own data in Pem. Answer using ONLY the context below (open tasks, timeline, memory, related past messages). If the context does not contain the answer, say you don't have that in Pem yet — do not invent facts.
+        system: `You are Pem.${nameNote} The user asked a question about THEIR own data in Pem. Answer using ONLY the context below (open tasks, completed tasks, timeline, memory, related past messages, recent conversation). If the context does not contain the answer, say so honestly and invite them to tell you — "I don't have anything about that yet. Tell me and I'll remember it for next time." Do not invent facts.
 
 Never answer weather, news, sports, homework, or other general-knowledge questions from this path (those should not reach you). If the question is clearly not about their tasks, calendar, or what they told Pem, say you're only set up to help with what they've saved in Pem.
+
+Recall and memory questions — "do you remember X?", "have we talked about Y?", "what do you know about Z?", "who is X?", "did I mention X?":
+- Search the memory block, user summary, related past messages, recent conversation, and completed tasks. Piece together everything you know.
+- If you have partial information, share what you have and note what you're not sure about.
+- If you truly have nothing, say: "I don't have anything about that yet. Tell me about it and I'll remember for next time." This teaches the user that Pem is their memory.
 
 If they asked for a "brief" or overview (today, tomorrow, next week, next month, or similar), give a short narrative: what matters first, what's on the calendar, what's on their lists — prioritize by dates in the data. When a month or quarter is starting, proactively mention items with period labels like "June", "Q3", "this month" so the user remembers to schedule them. Do not tell them you are "adding tasks"; this path is read-only. If a time range has little in the data, say so plainly.
 
 If they ask "what should I focus on", "top N tasks", "most important", or any prioritization question, rank by: (1) overdue items first, (2) items aligned with their goals/aspirations from memory, (3) items due today, (4) quick wins. Explain briefly why each item ranks where it does.
 
+If they ask "did I already do X?" or "have I finished Y?", check the recently completed section. If it's there, confirm it. If not, check open tasks.
+
 Be warm and concise — no markdown. For lists, use natural prose (e.g. "You have: milk, onions, and tomatoes on your shopping list" or "In your ideas: starting a podcast, the fitness app concept").`,
-        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
+        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${doneBlock ? `${doneBlock}\n\n` : ''}${dismissedBlock ? `${dismissedBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
       });
 
       return (

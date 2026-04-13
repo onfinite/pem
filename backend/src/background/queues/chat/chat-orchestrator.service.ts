@@ -881,8 +881,9 @@ export class ChatOrchestratorService {
       }
     }
 
-    // Memory writes
+    // Memory writes — skip entries with empty notes
     for (const mw of output.memory_writes) {
+      if (!mw.note) continue;
       await this.profile.saveFromAgent(
         userId,
         mw.memory_key,

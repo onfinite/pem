@@ -53,15 +53,15 @@ export default function WelcomeScreen() {
             Dump your thoughts.
           </PemText>
           <PemText variant="brandItalic" style={styles.heroLine2}>
-            Pem organizes them.
+            Pem takes it from there.
           </PemText>
         </Animated.View>
 
         <Animated.View style={{ opacity: anims[2] }}>
           <PemText variant="bodyMuted" style={styles.heroBody}>
-            Say or type whatever is on your mind. Pem pulls out what matters, sorts
-            it into your inbox, and you come back when you are ready. Not another
-            todo list — relief, with you always taking the final step.
+            Say or type whatever is on your mind. Pem remembers, organizes, and
+            keeps track — so you don't have to. Not another todo list — relief,
+            with you always taking the final step.
           </PemText>
         </Animated.View>
 

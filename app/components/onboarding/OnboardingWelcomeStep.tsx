@@ -13,7 +13,7 @@ export function OnboardingWelcomeStep() {
       <PemText variant="bodyMuted" style={s.body}>
         Your trusted companion for a clear mind.{"\n"}
         Dump your thoughts — voice or text.{"\n"}
-        Pem organizes, plans, and keeps track.
+        Pem remembers, organizes, and keeps track.
       </PemText>
     </View>
   );

@@ -42,6 +42,7 @@ Rules:
 - If the message is ONLY "ok", "thanks", "got it", "hi", "hey", emoji-only, or similar 1-3 word small talk with ZERO informational content → trivial
 - If the message asks for weather, news, facts about the world, homework answers, or anything NOT stored in Pem → off_topic
 - If the message is ONLY a question that could be answered from the user's tasks, lists, calendar, or memory in Pem (e.g. "what's on my list", "did I say milk", "what's tomorrow") → question_only
+- Recall / memory questions — the user asks about something they previously told Pem, or asks Pem to recall a person, situation, topic, or past conversation: "do you remember X?", "have we talked about Y?", "what do you know about Z?", "did I mention X?", "what did I say about Y?", "who is X?", "what's the deal with Y?" → question_only (these are lookups against Pem's stored data, not new dumps)
 - If the user only asks for a summary / overview / "brief" of their day or a future window using ONLY their Pem data (e.g. "Brief me only.", "Brief me only on tomorrow.", "what's my week look like" as an overview, not mixed with new to-dos) → question_only
 - If the message contains ANY of the following → needs_agent (unless the ENTIRE message is only a brief/overview request as above):
   - Things to do, buy, grab, pick up, handle, or remember ("I need to grab diapers", "don't forget milk")
