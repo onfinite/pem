@@ -26,7 +26,7 @@ const isDev = (process.env.ENV ?? process.env.NODE_ENV ?? 'dev') === 'dev';
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: isDev ? 10_000 : 200,
+        limit: isDev ? 10_000 : 600,
       },
     ]),
     BackgroundModule,

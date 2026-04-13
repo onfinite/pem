@@ -1,7 +1,7 @@
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
 
-const MAX_429_RETRIES = 5;
-const RETRY_BASE_MS = 1500;
+const MAX_429_RETRIES = 3;
+const RETRY_BASE_MS = 500;
 
 export async function apiFetch<T>(
   path: string,

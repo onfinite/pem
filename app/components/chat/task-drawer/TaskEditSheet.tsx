@@ -367,7 +367,7 @@ export function TaskEditSheet({
 
             {isExternal && (
               <View style={[s.banner, { backgroundColor: colors.secondarySurface }]}>
-                <Text style={[s.bannerText, { color: colors.textTertiary }]}>This event was created by someone else</Text>
+                <Text style={[s.bannerText, { color: colors.textTertiary }]}>This event is on your calendar</Text>
               </View>
             )}
           </ScrollView>
