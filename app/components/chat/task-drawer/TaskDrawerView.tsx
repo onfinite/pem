@@ -159,7 +159,7 @@ const TaskDrawerView = forwardRef<
         onClose={c.closeTaskEdit}
         onSave={c.handleEditSave}
         onDone={c.handleEditDone}
-        onDelete={c.handleEditDelete}
+        onDismiss={c.handleEditDismiss}
       />
     </Modal>
   );

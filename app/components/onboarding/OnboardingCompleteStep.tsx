@@ -1,8 +1,10 @@
 import PemText from "@/components/ui/PemText";
 import { pemAmber } from "@/constants/theme";
-import { MessageCircle } from "lucide-react-native";
-import { Pressable, Text, View } from "react-native";
+import { space } from "@/constants/typography";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { onboardingStyles as s } from "./onboarding.styles";
+
+const pemLogo = require("@/assets/images/pem-icon-1024-transparent.png");
 
 interface OnboardingCompleteStepProps {
   isFinishing: boolean;
@@ -12,15 +14,13 @@ interface OnboardingCompleteStepProps {
 export function OnboardingCompleteStep({ isFinishing, onFinish }: OnboardingCompleteStepProps) {
   return (
     <View style={s.centered}>
-      <View style={s.iconCircle}>
-        <MessageCircle size={36} color={pemAmber} />
-      </View>
+      <Image source={pemLogo} style={local.logo} />
       <PemText variant="display" style={s.heading}>
         You're all set
       </PemText>
       <PemText variant="bodyMuted" style={s.body}>
         Start by dumping whatever is on your mind.{"\n"}
-        Voice or text — Pem remembers and handles the rest.
+        Pem takes it from there.
       </PemText>
       <Pressable
         onPress={onFinish}
@@ -34,3 +34,11 @@ export function OnboardingCompleteStep({ isFinishing, onFinish }: OnboardingComp
     </View>
   );
 }
+
+const local = StyleSheet.create({
+  logo: {
+    width: 72,
+    height: 72,
+    marginBottom: space[2],
+  },
+});

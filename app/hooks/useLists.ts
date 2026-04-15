@@ -37,10 +37,27 @@ export function useLists() {
 
   const addList = useCallback(
     async (name: string) => {
-      await createList(getToken, { name });
-      await loadLists();
+      const now = new Date().toISOString();
+      const optimistic: ApiList = {
+        id: `temp-${Date.now()}`,
+        user_id: "",
+        name,
+        color: null,
+        icon: null,
+        is_default: false,
+        sort_order: lists.length,
+        open_count: 0,
+        created_at: now,
+        updated_at: now,
+      };
+      setLists((prev) => [...prev, optimistic]);
+      try {
+        await createList(getToken, { name });
+      } finally {
+        await loadLists();
+      }
     },
-    [getToken, loadLists],
+    [getToken, loadLists, lists.length],
   );
 
   const removeList = useCallback(

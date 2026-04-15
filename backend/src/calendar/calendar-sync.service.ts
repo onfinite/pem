@@ -10,8 +10,10 @@ import {
   contactsTable,
   extractsTable,
   logsTable,
+  messagesTable,
   type CalendarConnectionRow,
 } from '../database/schemas';
+import { ChatEventsService } from '../background/chat-events/chat-events.service';
 import { CalendarConnectionService } from './calendar-connection.service';
 import {
   GoogleCalendarService,
@@ -21,12 +23,16 @@ import {
 @Injectable()
 export class CalendarSyncService {
   private readonly log = new Logger(CalendarSyncService.name);
+  private readonly contactSyncWarned = new Set<string>();
+  private readonly lastContactSync = new Map<string, number>();
+  private static readonly CONTACT_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly config: ConfigService,
     private readonly connections: CalendarConnectionService,
     private readonly google: GoogleCalendarService,
+    private readonly chatEvents: ChatEventsService,
   ) {}
 
   async syncAllForUser(userId: string): Promise<{ synced: boolean }> {
@@ -135,7 +141,7 @@ export class CalendarSyncService {
       }
 
       for (const event of result.events) {
-        await this.upsertCalendarExtract(conn, event);
+        const upsertResult = await this.upsertCalendarExtract(conn, event);
         for (const att of event.attendees) {
           if (att.self || !att.email) continue;
           await this.upsertContact(
@@ -143,6 +149,17 @@ export class CalendarSyncService {
             att.email,
             att.name,
             event.start,
+          );
+        }
+        if (upsertResult.isNewInvite && upsertResult.extractId) {
+          await this.sendInviteNotification(
+            conn.userId,
+            upsertResult.extractId,
+            event,
+          ).catch((e) =>
+            this.log.warn(
+              `Invite notification failed: ${e instanceof Error ? e.message : String(e)}`,
+            ),
           );
         }
       }
@@ -165,6 +182,25 @@ export class CalendarSyncService {
         eventCount: result.events.length,
         incremental: !!conn.syncCursor,
       });
+
+      const lastSync = this.lastContactSync.get(connectionId) ?? 0;
+      const contactSyncDue =
+        Date.now() - lastSync > CalendarSyncService.CONTACT_SYNC_INTERVAL_MS;
+      if (contactSyncDue) {
+        await this.syncContacts(conn)
+          .then(() => {
+            this.lastContactSync.set(connectionId, Date.now());
+            this.contactSyncWarned.delete(connectionId);
+          })
+          .catch((e) => {
+            if (!this.contactSyncWarned.has(connectionId)) {
+              this.contactSyncWarned.add(connectionId);
+              this.log.warn(
+                `Contact sync failed for ${connectionId}: ${e instanceof Error ? e.message : 'unknown'}`,
+              );
+            }
+          });
+      }
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : 'Unknown calendar sync error';
@@ -280,6 +316,38 @@ export class CalendarSyncService {
     }
   }
 
+  /** Update RSVP status on a Google Calendar event. */
+  async rsvpOnGoogle(
+    connectionId: string,
+    externalEventId: string,
+    response: 'accepted' | 'declined' | 'tentative',
+  ): Promise<void> {
+    const conn = await this.connections.findById(connectionId);
+    if (!conn || conn.provider !== 'google') return;
+    if (!conn.googleAccessToken || !conn.googleRefreshToken) return;
+
+    const result = await this.google.rsvpEvent(
+      conn.googleAccessToken,
+      conn.googleRefreshToken,
+      externalEventId,
+      response,
+    );
+
+    if (result.newAccessToken) {
+      await this.connections.updateGoogleTokens(
+        conn.id,
+        result.newAccessToken,
+        new Date(Date.now() + 3600_000),
+      );
+    }
+
+    await this.logCalendarOp(conn.userId, 'calendar_rsvp', {
+      connectionId,
+      externalEventId,
+      response,
+    });
+  }
+
   /** Write a new event to the user's primary Google Calendar. */
   async writeToGoogleCalendar(
     userId: string,
@@ -287,8 +355,12 @@ export class CalendarSyncService {
       summary: string;
       start: Date;
       end: Date;
+      isAllDay?: boolean;
       location?: string;
       description?: string;
+      attendees?: { email: string }[];
+      recurrence?: string[];
+      reminderMinutes?: number;
     },
   ): Promise<{ eventId: string; connectionId: string } | null> {
     const primary = await this.connections.getPrimary(userId);
@@ -329,6 +401,7 @@ export class CalendarSyncService {
       end?: Date;
       location?: string;
       description?: string;
+      attendees?: { email: string }[];
     },
   ): Promise<void> {
     const conn = await this.connections.findById(connectionId);
@@ -343,18 +416,23 @@ export class CalendarSyncService {
       body.start = { dateTime: updates.start.toISOString() };
       body.end = { dateTime: (updates.end ?? updates.start).toISOString() };
     }
+    if (updates.attendees) {
+      body.attendees = updates.attendees.map((a) => ({ email: a.email }));
+    }
 
-    const res = await fetch(
+    const patchUrl = new URL(
       `https://www.googleapis.com/calendar/v3/calendars/primary/events/${externalEventId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${conn.googleAccessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      },
     );
+    if (updates.attendees) patchUrl.searchParams.set('sendUpdates', 'all');
+
+    const res = await fetch(patchUrl.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${conn.googleAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
     if (!res.ok) {
       const txt = await res.text();
@@ -421,10 +499,57 @@ export class CalendarSyncService {
     }
   }
 
+  /** Import contacts from Google People API into the contacts table. */
+  private async syncContacts(conn: CalendarConnectionRow): Promise<void> {
+    if (!conn.googleAccessToken || !conn.googleRefreshToken) return;
+
+    const result = await this.google.fetchContacts(
+      conn.googleAccessToken,
+      conn.googleRefreshToken,
+    );
+
+    if (result.newAccessToken) {
+      await this.connections.updateGoogleTokens(
+        conn.id,
+        result.newAccessToken,
+        new Date(Date.now() + 3600_000),
+      );
+    }
+
+    for (const c of result.contacts) {
+      try {
+        await this.db
+          .insert(contactsTable)
+          .values({
+            userId: conn.userId,
+            email: c.email,
+            name: c.name,
+            meetingCount: 0,
+          })
+          .onConflictDoUpdate({
+            target: [contactsTable.userId, contactsTable.email],
+            set: {
+              name: sql`COALESCE(${c.name}, ${contactsTable.name})`,
+              updatedAt: new Date(),
+            },
+          });
+      } catch {
+        // individual upsert failure is non-fatal
+      }
+    }
+
+    this.log.log(
+      `Synced ${result.contacts.length} contacts for user ${conn.userId}`,
+    );
+  }
+
   private async upsertCalendarExtract(
     conn: CalendarConnectionRow,
     event: GoogleEvent,
-  ): Promise<void> {
+  ): Promise<{
+    isNewInvite: boolean;
+    extractId: string | null;
+  }> {
     if (event.status === 'cancelled') {
       const cancelled = await this.db
         .update(extractsTable)
@@ -451,7 +576,7 @@ export class CalendarSyncService {
           },
         );
       }
-      return;
+      return { isNewInvite: false, extractId: null };
     }
 
     const [existing] = await this.db
@@ -489,6 +614,8 @@ export class CalendarSyncService {
           externalEventId: event.id,
           calendarConnectionId: conn.id,
           isOrganizer: event.isOrganizer ?? false,
+          rsvpStatus: event.selfRsvpStatus ?? null,
+          pemNote: event.description?.trim() || null,
           status: isPast ? 'done' : 'inbox',
           doneAt: isPast ? now : null,
           updatedAt: now,
@@ -507,6 +634,7 @@ export class CalendarSyncService {
           event_end_at: event.end.toISOString(),
         },
       );
+      return { isNewInvite: false, extractId: existing.id };
     } else {
       const [inserted] = await this.db
         .insert(extractsTable)
@@ -524,9 +652,11 @@ export class CalendarSyncService {
           externalEventId: event.id,
           calendarConnectionId: conn.id,
           isOrganizer: event.isOrganizer ?? false,
+          rsvpStatus: event.selfRsvpStatus ?? null,
           eventStartAt: event.start,
           eventEndAt: event.end,
           eventLocation: event.location,
+          pemNote: event.description?.trim() || null,
           doneAt: isPast ? now : null,
           updatedAt: now,
         })
@@ -546,6 +676,76 @@ export class CalendarSyncService {
           },
         );
       }
+
+      const isNewInvite =
+        !isPast && !event.isOrganizer && !!inserted;
+      return { isNewInvite, extractId: inserted?.id ?? null };
+    }
+  }
+
+  private async sendInviteNotification(
+    userId: string,
+    extractId: string,
+    event: GoogleEvent,
+  ): Promise<void> {
+    const organizer = event.organizerName || event.organizerEmail || 'Someone';
+    const time = event.start.toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    const parts = [`${organizer} invited you to "${event.summary}" on ${time}.`];
+    if (event.location) parts.push(`Location: ${event.location}`);
+    if (event.description) {
+      const desc = event.description.length > 200
+        ? event.description.slice(0, 200) + '...'
+        : event.description;
+      parts.push(desc);
+    }
+
+    const content = parts.join('\n');
+    const [msg] = await this.db
+      .insert(messagesTable)
+      .values({
+        userId,
+        role: 'pem',
+        kind: 'text',
+        content,
+        processingStatus: 'done',
+        metadata: {
+          type: 'calendar_invite',
+          extract_id: extractId,
+          event_summary: event.summary,
+          event_start: event.start.toISOString(),
+          event_end: event.end.toISOString(),
+          event_location: event.location,
+          organizer_name: event.organizerName,
+          organizer_email: event.organizerEmail,
+          self_rsvp_status: event.selfRsvpStatus,
+        },
+      })
+      .returning();
+
+    if (msg) {
+      await this.chatEvents.publish(userId, 'pem_message', {
+        message: {
+          id: msg.id,
+          role: msg.role,
+          kind: msg.kind,
+          content: msg.content,
+          voice_url: null,
+          transcript: null,
+          triage_category: null,
+          processing_status: msg.processingStatus,
+          polished_text: null,
+          summary: null,
+          parent_message_id: null,
+          metadata: msg.metadata,
+          created_at: msg.createdAt.toISOString(),
+        },
+      });
     }
   }
 

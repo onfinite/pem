@@ -14,10 +14,12 @@ import {
   getMe,
   setNotificationTime,
   setSchedulingPreferences,
+  triggerCalendarSync,
   updateUserName,
 } from "@/lib/pemApi";
 import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
 import { useAuth } from "@clerk/expo";
+import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -64,11 +66,16 @@ export default function OnboardingScreen() {
 
   const handleConnectGoogle = useCallback(async () => {
     try {
-      const { url } = await getGoogleAuthUrl(tokenRef.current);
-      await WebBrowser.openBrowserAsync(url);
-      setCalConnected(true);
+      const appRedirect = Linking.createURL("calendar/connected");
+      const { url } = await getGoogleAuthUrl(tokenRef.current, appRedirect);
+      const result = await WebBrowser.openAuthSessionAsync(url, appRedirect);
+      if (result.type === "success") {
+        setCalConnected(true);
+        triggerCalendarSync(tokenRef.current).catch(() => {});
+        setTimeout(goNext, 600);
+      }
     } catch {}
-  }, []);
+  }, [goNext]);
 
   const handleSetTime = useCallback(async (time: string) => {
     setSelectedTime(time);
@@ -142,8 +149,8 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  dots: { flexDirection: "row", justifyContent: "center", gap: 8, paddingVertical: space[4] },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dots: { flexDirection: "row", justifyContent: "center", gap: 8, paddingVertical: space[5] },
+  dot: { width: 10, height: 10, borderRadius: 5 },
   pages: { flexDirection: "row", width: SCREEN_W * STEPS, flex: 1 },
   page: { justifyContent: "center", alignItems: "center", paddingHorizontal: space[6] },
   bottomBar: { alignItems: "center", paddingTop: space[3] },

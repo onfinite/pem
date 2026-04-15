@@ -91,6 +91,15 @@ export type ApiMessage = {
     calendar_written?: number;
     calendar_updated?: number;
     calendar_deleted?: number;
+    type?: string;
+    extract_id?: string;
+    event_summary?: string;
+    event_start?: string;
+    event_end?: string;
+    event_location?: string | null;
+    organizer_name?: string | null;
+    organizer_email?: string | null;
+    self_rsvp_status?: string | null;
   } | null;
 };
 
@@ -471,6 +480,18 @@ export async function patchExtractDismiss(
   });
 }
 
+export async function patchExtractRsvp(
+  getToken: () => Promise<string | null>,
+  id: string,
+  response: "accepted" | "declined" | "tentative",
+) {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/rsvp`, {
+    method: "PATCH",
+    getToken,
+    body: JSON.stringify({ response }),
+  });
+}
+
 // ── Brief ────────────────────────────────────────────────
 
 export type BriefResponse = {
@@ -486,7 +507,7 @@ export type BriefResponse = {
 };
 
 export async function getBrief(getToken: () => Promise<string | null>) {
-  return apiFetch<BriefResponse>("/inbox/brief", { method: "GET", getToken });
+  return apiFetch<BriefResponse>("/extracts/brief", { method: "GET", getToken });
 }
 
 export async function requestBrief(getToken: () => Promise<string | null>) {

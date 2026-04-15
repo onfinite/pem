@@ -1,5 +1,5 @@
 import PemText from "@/components/ui/PemText";
-import { pemAmber } from "@/constants/theme";
+import { amber, pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, radii, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import { User } from "lucide-react-native";
@@ -18,7 +18,7 @@ export function OnboardingNameStep({ name, onChangeName, onSubmit }: OnboardingN
   return (
     <View style={s.centered}>
       <View style={s.iconCircle}>
-        <User size={36} color={pemAmber} />
+        <User size={40} color={pemAmber} />
       </View>
       <PemText variant="display" style={s.heading}>
         What should we call you?
@@ -31,7 +31,7 @@ export function OnboardingNameStep({ name, onChangeName, onSubmit }: OnboardingN
           local.nameInput,
           {
             color: colors.textPrimary,
-            borderColor: name.trim() ? pemAmber : colors.borderMuted,
+            borderColor: name.trim() ? amber[300] : colors.borderMuted,
             backgroundColor: colors.cardBackground,
           },
         ]}

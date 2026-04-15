@@ -1,8 +1,10 @@
 import { space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
+import { CalendarDays } from "lucide-react-native";
 import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
+import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
 import { TaskItemMeta } from "./TaskItemMeta";
 import { itemStyles } from "./taskItem.styles";
 
@@ -41,32 +43,34 @@ export const TaskItemRow = memo(function TaskItemRow({
         compact && { paddingVertical: space[2] },
       ]}
     >
-      <Pressable
-        onPress={() => onDone(item.id)}
-        disabled={noManualComplete}
-        hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-        style={({ pressed }) => [
-          itemStyles.checkboxHit,
-          pressed && !noManualComplete && { opacity: 0.65 },
-        ]}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: false, disabled: noManualComplete }}
-        accessibilityLabel={
-          noManualComplete
-            ? "Not completable"
-            : "Mark done"
-        }
-      >
-        <View
-          style={[
-            itemStyles.checkboxOuter,
-            {
-              borderColor,
-              opacity: noManualComplete ? 0.45 : 1,
-            },
+      {isCalendarBacked ? (
+        <View style={itemStyles.checkboxHit}>
+          <CalendarDays size={18} color={CALENDAR_EVENT_DOT_COLOR} />
+        </View>
+      ) : (
+        <Pressable
+          onPress={() => onDone(item.id)}
+          disabled={noManualComplete}
+          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+          style={({ pressed }) => [
+            itemStyles.checkboxHit,
+            pressed && !noManualComplete && { opacity: 0.65 },
           ]}
-        />
-      </Pressable>
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: false, disabled: noManualComplete }}
+          accessibilityLabel={noManualComplete ? "Not completable" : "Mark done"}
+        >
+          <View
+            style={[
+              itemStyles.checkboxOuter,
+              {
+                borderColor,
+                opacity: noManualComplete ? 0.45 : 1,
+              },
+            ]}
+          />
+        </Pressable>
+      )}
 
       <View style={itemStyles.rowMain}>
         <Pressable

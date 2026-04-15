@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, eq, ne, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, ne, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -117,20 +117,37 @@ export class ListsService {
 
   async seedDefaults(userId: string): Promise<void> {
     const existing = await this.db
-      .select({ name: listsTable.name })
+      .select({ id: listsTable.id, name: listsTable.name })
       .from(listsTable)
       .where(
         and(eq(listsTable.userId, userId), eq(listsTable.isDefault, true)),
-      );
+      )
+      .orderBy(listsTable.createdAt);
 
-    const existingNames = new Set(existing.map((r) => r.name.toLowerCase()));
+    const seen = new Map<string, string>();
+    const dupeIds: string[] = [];
+    for (const r of existing) {
+      const key = r.name.toLowerCase();
+      if (seen.has(key)) {
+        dupeIds.push(r.id);
+      } else {
+        seen.set(key, r.id);
+      }
+    }
+    if (dupeIds.length > 0) {
+      await this.db
+        .delete(listsTable)
+        .where(inArray(listsTable.id, dupeIds));
+    }
+
+    const existingNames = new Set(seen.keys());
     const missing = DEFAULT_LISTS.filter(
       (l) => !existingNames.has(l.name.toLowerCase()),
     );
 
     if (missing.length === 0) return;
 
-    const maxSort = existing.length;
+    const maxSort = seen.size;
     await this.db.insert(listsTable).values(
       missing.map((l, i) => ({
         userId,

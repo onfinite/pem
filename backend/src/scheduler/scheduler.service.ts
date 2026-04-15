@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, gte, lte, ne, or, isNotNull } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
@@ -9,6 +9,8 @@ import {
   usersTable,
   type UserPreferences,
 } from '../database/schemas';
+import { CalendarConnectionService } from '../calendar/calendar-connection.service';
+import { GoogleCalendarService } from '../calendar/google-calendar.service';
 
 export type TimeSlot = {
   start: DateTime;
@@ -20,7 +22,13 @@ export type TimeSlot = {
 
 @Injectable()
 export class SchedulerService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  private readonly log = new Logger(SchedulerService.name);
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly calendarConnections: CalendarConnectionService,
+    private readonly googleCalendar: GoogleCalendarService,
+  ) {}
 
   async getFreeSlots(
     userId: string,
@@ -143,7 +151,7 @@ export class SchedulerService {
         ),
       );
 
-    return rows
+    const localBlocks = rows
       .map((r) => {
         if (r.eventStartAt && r.eventEndAt) {
           return {
@@ -161,6 +169,51 @@ export class SchedulerService {
         return null;
       })
       .filter((b): b is NonNullable<typeof b> => b !== null);
+
+    const googleBlocks = await this.getGoogleBusyBlocks(
+      userId,
+      from,
+      to,
+    );
+
+    return [...localBlocks, ...googleBlocks];
+  }
+
+  private async getGoogleBusyBlocks(
+    userId: string,
+    from: DateTime,
+    to: DateTime,
+  ): Promise<{ start: DateTime; end: DateTime }[]> {
+    try {
+      const primary = await this.calendarConnections.getPrimary(userId);
+      if (!primary || primary.provider !== 'google') return [];
+      if (!primary.googleAccessToken || !primary.googleRefreshToken) return [];
+
+      const result = await this.googleCalendar.queryFreeBusy(
+        primary.googleAccessToken,
+        primary.googleRefreshToken,
+        from.toJSDate(),
+        to.toJSDate(),
+      );
+
+      if (result.newAccessToken) {
+        await this.calendarConnections.updateGoogleTokens(
+          primary.id,
+          result.newAccessToken,
+          new Date(Date.now() + 3600_000),
+        );
+      }
+
+      return result.busyBlocks.map((b) => ({
+        start: DateTime.fromJSDate(b.start),
+        end: DateTime.fromJSDate(b.end),
+      }));
+    } catch (e) {
+      this.log.debug(
+        `Google free/busy query failed: ${e instanceof Error ? e.message : 'unknown'}`,
+      );
+      return [];
+    }
   }
 
   private getDayStart(day: DateTime, prefs: UserPreferences): DateTime {

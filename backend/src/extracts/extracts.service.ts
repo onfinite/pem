@@ -65,6 +65,8 @@ export type BriefBuckets = {
 @Injectable()
 export class ExtractsService {
   private readonly log = new Logger(ExtractsService.name);
+  private readonly lastWake = new Map<string, number>();
+  private static readonly WAKE_INTERVAL_MS = 60_000;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
@@ -183,6 +185,9 @@ export class ExtractsService {
   }
 
   async wakeAndAutoComplete(userId: string): Promise<void> {
+    const last = this.lastWake.get(userId) ?? 0;
+    if (Date.now() - last < ExtractsService.WAKE_INTERVAL_MS) return;
+    this.lastWake.set(userId, Date.now());
     await this.wakeSnoozed(userId);
     await this.autoCompletePastEvents(userId);
   }
@@ -484,14 +489,32 @@ export class ExtractsService {
       });
     }
 
-    if (row.externalEventId && row.calendarConnectionId && row.isOrganizer) {
-      this.calendarSync
-        .deleteFromGoogleCalendar(row.calendarConnectionId, row.externalEventId)
-        .catch((e) =>
-          this.log.warn(
-            `Calendar delete on dismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
-          ),
-        );
+    if (row.externalEventId && row.calendarConnectionId) {
+      const isOwnEvent = row.isOrganizer || row.source !== 'calendar';
+      if (isOwnEvent) {
+        this.calendarSync
+          .deleteFromGoogleCalendar(
+            row.calendarConnectionId,
+            row.externalEventId,
+          )
+          .catch((e) =>
+            this.log.warn(
+              `Calendar delete on dismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+            ),
+          );
+      } else {
+        this.calendarSync
+          .rsvpOnGoogle(
+            row.calendarConnectionId,
+            row.externalEventId,
+            'declined',
+          )
+          .catch((e) =>
+            this.log.warn(
+              `Calendar RSVP decline on dismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+            ),
+          );
+      }
     }
 
     return u;
@@ -538,6 +561,57 @@ export class ExtractsService {
       before: this.extractStateSnapshot(row),
       after: this.extractStateSnapshot(u),
     });
+
+    if (row.externalEventId && row.calendarConnectionId && !row.isOrganizer) {
+      this.calendarSync
+        .rsvpOnGoogle(
+          row.calendarConnectionId,
+          row.externalEventId,
+          'accepted',
+        )
+        .catch((e) =>
+          this.log.warn(
+            `Calendar RSVP accept on undismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+          ),
+        );
+    }
+
+    return u;
+  }
+
+  async rsvp(
+    userId: string,
+    id: string,
+    response: 'accepted' | 'declined' | 'tentative',
+  ): Promise<ExtractRow> {
+    const row = await this.findForUser(userId, id);
+    if (!row) throw new NotFoundException('Extract not found');
+
+    const now = new Date();
+    const [u] = await this.db
+      .update(extractsTable)
+      .set({ rsvpStatus: response, updatedAt: now })
+      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
+      .returning();
+    if (!u) throw new NotFoundException('Extract not found');
+
+    if (row.externalEventId && row.calendarConnectionId) {
+      this.calendarSync
+        .rsvpOnGoogle(row.calendarConnectionId, row.externalEventId, response)
+        .catch((e) =>
+          this.log.warn(
+            `Calendar RSVP ${response} failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+          ),
+        );
+    }
+
+    if (response === 'declined') {
+      await this.db
+        .update(extractsTable)
+        .set({ status: 'dismissed', dismissedAt: now })
+        .where(eq(extractsTable.id, id));
+    }
+
     return u;
   }
 

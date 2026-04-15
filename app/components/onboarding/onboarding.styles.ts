@@ -1,29 +1,29 @@
-import { pemAmber } from "@/constants/theme";
+import { amber, pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, radii, space } from "@/constants/typography";
 import { StyleSheet } from "react-native";
 
 export const onboardingStyles = StyleSheet.create({
   centered: {
     alignItems: "center",
-    maxWidth: 340,
+    maxWidth: 360,
   },
   iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: space[4],
-    backgroundColor: pemAmber + "18",
+    marginBottom: space[5],
+    backgroundColor: amber[100],
   },
   heading: {
-    marginTop: space[4],
+    marginTop: space[5],
     textAlign: "center",
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 28,
+    lineHeight: 34,
   },
   body: {
-    marginTop: space[3],
+    marginTop: space[4],
     textAlign: "center",
     lineHeight: 22,
   },
@@ -57,11 +57,11 @@ export const onboardingStyles = StyleSheet.create({
   chip: {
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
   },
   chipText: {
     fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.base,
   },
 });

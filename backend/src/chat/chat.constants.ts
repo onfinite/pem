@@ -19,8 +19,8 @@ export const CHAT_JOB_ID_PREFIX = 'chat-msg-';
 /** Delay for questions/trivial — process immediately (no batching needed). */
 export const CHAT_JOB_DELAY_MS_QUESTION = 0;
 
-/** Delay for dumps/commands — short buffer to allow rapid-fire messages to batch. */
-export const CHAT_JOB_DELAY_MS_DUMP = 3_000;
+/** Delay for dumps/commands — process immediately; rapid-fire batching is handled by mergeRapidMessages in the worker. */
+export const CHAT_JOB_DELAY_MS_DUMP = 0;
 
 /** Legacy alias — used when triage is unavailable (falls back to dump delay). */
 export const CHAT_JOB_DELAY_MS = CHAT_JOB_DELAY_MS_DUMP;

@@ -22,7 +22,7 @@ export function OnboardingWorkStyleStep({ selected, onSelect }: OnboardingWorkSt
   return (
     <View style={s.centered}>
       <View style={s.iconCircle}>
-        <Briefcase size={36} color={pemAmber} />
+        <Briefcase size={40} color={pemAmber} />
       </View>
       <PemText variant="display" style={s.heading}>
         How do you work?

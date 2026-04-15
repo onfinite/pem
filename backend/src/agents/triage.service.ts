@@ -8,10 +8,10 @@ const triageCategorySchema = z.object({
   category: z
     .enum(['trivial', 'question_only', 'off_topic', 'needs_agent'])
     .describe(
-      `trivial: greetings, thanks, acknowledgments, small talk — no processing needed.
-question_only: user asks something answerable ONLY from THEIR Pem data — open tasks, shopping list, ideas list, calendar, memory, what they said before in this app. NOT weather, news, trivia, homework, or the wider internet.
-off_topic: general knowledge, weather, sports scores, news, "what is...", math/coding homework, unrelated debates, or chit-chat that is not about the user's life or Pem data — Pem should not engage as a general assistant.
-needs_agent: dumping thoughts, commands to add/update/complete tasks, journaling, venting, things to buy/do/remember, memory triggers ("remember that..."), scheduling, mixed question+task — full agent.`,
+      `trivial: ONLY pure acknowledgments with zero content — "ok", "thanks", "got it", emoji-only, thumbs up. Nothing else is trivial.
+question_only: user asks something answerable from THEIR Pem data — open tasks, shopping list, ideas list, calendar, memory, what they said before. NOT weather, news, trivia, homework, or the wider internet.
+off_topic: requests for factual internet knowledge that Pem genuinely cannot answer — weather forecasts, sports scores, stock prices, math/coding homework, Wikipedia-style facts. NOT personal sharing, NOT questions about Pem, NOT conversation.
+needs_agent: everything else — dumping thoughts, commands, journaling, venting, sharing, conversation, questions about Pem itself ("who are you?", "what can you do?"), things to buy/do/remember, scheduling, mixed content, personal sharing, feelings, opinions. When in doubt → needs_agent.`,
     ),
   reasoning: z.string().describe('One sentence why this category was chosen.'),
 });
@@ -36,30 +36,19 @@ export class TriageService {
         model: openai(model),
         output: Output.object({ schema: triageCategorySchema }),
         temperature: 0,
-        system: `You classify messages sent to Pem, an AI life assistant that organizes the user's tasks, calendar, thoughts, and memory — not a general-purpose chatbot.
+        system: `You classify messages sent to Pem, an AI life organizer and friend.
 
 Rules:
-- If the message is ONLY "ok", "thanks", "got it", "hi", "hey", emoji-only, or similar 1-3 word small talk with ZERO informational content → trivial
-- If the message asks for weather, news, facts about the world, homework answers, or anything NOT stored in Pem → off_topic
-- If the message is ONLY a question that could be answered from the user's tasks, lists, calendar, or memory in Pem (e.g. "what's on my list", "did I say milk", "what's tomorrow") → question_only
-- Recall / memory questions — the user asks about something they previously told Pem, or asks Pem to recall a person, situation, topic, or past conversation: "do you remember X?", "have we talked about Y?", "what do you know about Z?", "did I mention X?", "what did I say about Y?", "who is X?", "what's the deal with Y?" → question_only (these are lookups against Pem's stored data, not new dumps)
-- If the user only asks for a summary / overview / "brief" of their day or a future window using ONLY their Pem data (e.g. "Brief me only.", "Brief me only on tomorrow.", "what's my week look like" as an overview, not mixed with new to-dos) → question_only
-- If the message contains ANY of the following → needs_agent (unless the ENTIRE message is only a brief/overview request as above):
-  - Things to do, buy, grab, pick up, handle, or remember ("I need to grab diapers", "don't forget milk")
-  - Learning or skill commitments in journal voice ("I'll need to learn sales", "I should study for X", "need to get better at Y")
-  - Reminders, plans, scheduling, commands ("cancel X", "add Y to calendar")
-  - Journaling, emotional dumping, venting
-  - Personal goals, visions, aspirations, life context ("my goal is to become X", "I want to be Y")
-  - Ideas, brainstorms, creative thoughts ("thinking of starting…", "wouldn't it be cool if…", "what if there was…")
-  - Preferences, habits, facts about themselves ("I'm vegetarian", "I live in SF")
-  - Memory requests: "remember that...", "keep in mind...", "note that...", "add to your knowledgebase...", "don't forget that...", "FYI...", "just so you know...", "for future reference...", "save this...", "know that..."
-  - Mixed content with both questions and tasks
-  - ANY sentence longer than a few words that shares information about the user's life
-- When in doubt between trivial and needs_agent, choose needs_agent
-- When in doubt between question_only and needs_agent, choose needs_agent
-- When in doubt between off_topic and question_only: if it needs the internet or world facts → off_topic; if it needs only their saved Pem data → question_only
-- People sometimes ask rhetorical questions while dumping thoughts — that is needs_agent, not question_only
-- IMPORTANT: "trivial" is ONLY for pure greetings and acknowledgments with zero content. If the user shares ANYTHING about their life, plans, feelings, or goals, that is needs_agent.`,
+- trivial is EXTREMELY narrow: ONLY "ok", "thanks", "got it", "cool", emoji-only, thumbs up — pure acknowledgments with ZERO informational or conversational content. "hi" and "hey" are NOT trivial — they are conversation starters → needs_agent.
+- Questions about Pem itself ("who are you?", "who r u?", "what can you do?", "what's your name?", "how do you work?") → needs_agent. These are NEVER trivial or off_topic.
+- Personal sharing, feelings, venting, opinions, stories, conversation → needs_agent. Pem is a friend and listener.
+- Commands to modify tasks/calendar ("clear my afternoon", "cancel X", "reschedule Y", "delete Z") → needs_agent.
+- Recall / memory questions ("do you remember X?", "what were we talking about last month?", "what do you know about Z?", "who is X?") → question_only.
+- Brief/overview requests about their own data ("what's my week look like", "brief me") → question_only.
+- Pure data lookups about their tasks/lists/calendar ("what's on my list?", "what's tomorrow?") → question_only.
+- Requests for factual internet knowledge Pem genuinely cannot answer (weather forecasts, stock prices, sports scores, math homework, Wikipedia facts) → off_topic.
+- Dumps, things to buy/do/remember, scheduling, journaling, ideas, preferences, life context → needs_agent.
+- When in doubt → needs_agent. Always.`,
         prompt: `Classify this message:\n"""${content.slice(0, 2000)}"""`,
         maxRetries: 2,
         providerOptions: { openai: { strictJsonSchema: false } },

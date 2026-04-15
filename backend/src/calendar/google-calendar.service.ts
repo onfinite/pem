@@ -16,9 +16,13 @@ export type GoogleEvent = {
   start: Date;
   end: Date;
   location: string | null;
+  description: string | null;
   status: string;
   attendees: GoogleEventAttendee[];
   isOrganizer: boolean;
+  organizerEmail: string | null;
+  organizerName: string | null;
+  selfRsvpStatus: string | null;
 };
 
 @Injectable()
@@ -46,7 +50,11 @@ export class GoogleCalendarService {
     return client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
-      scope: ['https://www.googleapis.com/auth/calendar'],
+      include_granted_scopes: true,
+      scope: [
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/contacts.readonly',
+      ],
       state,
     });
   }
@@ -138,6 +146,7 @@ export class GoogleCalendarService {
         singleEvents: true,
         orderBy: 'startTime',
         maxResults: 250,
+        showDeleted: true,
       };
 
       if (isPrimary && syncToken) {
@@ -166,6 +175,7 @@ export class GoogleCalendarService {
             singleEvents: true,
             orderBy: 'startTime',
             maxResults: 250,
+            showDeleted: true,
             timeMin: now.toISOString(),
             timeMax: twoWeeks.toISOString(),
           });
@@ -185,13 +195,26 @@ export class GoogleCalendarService {
     };
   }
 
+  private static readonly SKIP_CALENDAR_SUFFIXES = [
+    '#holiday@group.v.calendar.google.com',
+    '#contacts@group.v.calendar.google.com',
+    '#weeknum@group.v.calendar.google.com',
+    '#weather@group.v.calendar.google.com',
+  ];
+
   private async listUserCalendarIds(
     cal: ReturnType<typeof google.calendar>,
   ): Promise<string[]> {
     try {
       const { data } = await cal.calendarList.list({ minAccessRole: 'reader' });
       const ids = (data.items ?? [])
-        .filter((c) => !c.deleted)
+        .filter((c) => {
+          if (c.deleted) return false;
+          const id = c.id ?? '';
+          return !GoogleCalendarService.SKIP_CALENDAR_SUFFIXES.some((s) =>
+            id.endsWith(s),
+          );
+        })
         .map((c) => c.id!)
         .filter(Boolean);
       return ids.length > 0 ? ids : ['primary'];
@@ -233,23 +256,30 @@ export class GoogleCalendarService {
         if (selfAttendee?.responseStatus === 'declined') return false;
         return true;
       })
-      .map((e) => ({
-        id: e.id!,
-        summary: e.summary ?? null,
-        start: new Date(e.start!.dateTime ?? e.start!.date!),
-        end: new Date(
-          e.end?.dateTime ?? e.end?.date ?? e.start!.dateTime ?? e.start!.date!,
-        ),
-        location: e.location ?? null,
-        status: e.status ?? 'confirmed',
-        attendees: (e.attendees ?? []).map((a) => ({
-          email: a.email ?? '',
-          name: a.displayName ?? null,
-          self: a.self ?? false,
-          responseStatus: a.responseStatus ?? 'needsAction',
-        })),
-        isOrganizer: e.organizer?.self === true,
-      }));
+      .map((e) => {
+        const selfAttendee = e.attendees?.find((a) => a.self);
+        return {
+          id: e.id!,
+          summary: e.summary ?? null,
+          start: new Date(e.start!.dateTime ?? e.start!.date!),
+          end: new Date(
+            e.end?.dateTime ?? e.end?.date ?? e.start!.dateTime ?? e.start!.date!,
+          ),
+          location: e.location ?? null,
+          description: e.description ?? null,
+          status: e.status ?? 'confirmed',
+          attendees: (e.attendees ?? []).map((a) => ({
+            email: a.email ?? '',
+            name: a.displayName ?? null,
+            self: a.self ?? false,
+            responseStatus: a.responseStatus ?? 'needsAction',
+          })),
+          isOrganizer: e.organizer?.self === true,
+          organizerEmail: e.organizer?.email ?? null,
+          organizerName: e.organizer?.displayName ?? null,
+          selfRsvpStatus: selfAttendee?.responseStatus ?? null,
+        };
+      });
   }
 
   /** Create an event on Google Calendar. Returns the created event ID. */
@@ -260,9 +290,12 @@ export class GoogleCalendarService {
       summary: string;
       start: Date;
       end: Date;
+      isAllDay?: boolean;
       location?: string;
       description?: string;
       attendees?: { email: string }[];
+      recurrence?: string[];
+      reminderMinutes?: number;
     },
   ): Promise<{ eventId: string; newAccessToken: string | null }> {
     const client = this.getOAuthClient();
@@ -277,20 +310,86 @@ export class GoogleCalendarService {
     });
 
     const cal = google.calendar({ version: 'v3', auth: client });
+    const hasGuests = event.attendees && event.attendees.length > 0;
+
+    const requestBody: calendar_v3.Schema$Event = {
+      summary: event.summary,
+      location: event.location,
+      description: event.description,
+      attendees: event.attendees,
+      recurrence: event.recurrence,
+    };
+
+    if (event.reminderMinutes != null) {
+      requestBody.reminders = {
+        useDefault: false,
+        overrides: [{ method: 'popup', minutes: event.reminderMinutes }],
+      };
+    }
+
+    if (event.isAllDay) {
+      const toDateStr = (d: Date) => d.toISOString().slice(0, 10);
+      requestBody.start = { date: toDateStr(event.start) };
+      const endExclusive = new Date(event.end);
+      endExclusive.setDate(endExclusive.getDate() + 1);
+      requestBody.end = { date: toDateStr(endExclusive) };
+    } else {
+      requestBody.start = { dateTime: event.start.toISOString() };
+      requestBody.end = { dateTime: event.end.toISOString() };
+    }
+
     const { data } = await cal.events.insert({
       calendarId: 'primary',
-      requestBody: {
-        summary: event.summary,
-        start: { dateTime: event.start.toISOString() },
-        end: { dateTime: event.end.toISOString() },
-        location: event.location,
-        description: event.description,
-        attendees: event.attendees,
-      },
+      sendUpdates: hasGuests ? 'all' : 'none',
+      requestBody,
     });
 
     if (!data.id) throw new Error('Google Calendar did not return event ID');
     return { eventId: data.id, newAccessToken };
+  }
+
+  /** Fetch the user's Google Contacts via People API. */
+  async fetchContacts(
+    accessToken: string,
+    refreshToken: string,
+  ): Promise<{
+    contacts: { email: string; name: string | null }[];
+    newAccessToken: string | null;
+  }> {
+    const client = this.getOAuthClient();
+    client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    let newAccessToken: string | null = null;
+    client.on('tokens', (tokens) => {
+      if (tokens.access_token) newAccessToken = tokens.access_token;
+    });
+
+    const people = google.people({ version: 'v1', auth: client });
+    const contacts: { email: string; name: string | null }[] = [];
+    let pageToken: string | undefined;
+
+    do {
+      const res = await people.people.connections.list({
+        resourceName: 'people/me',
+        pageSize: 1000,
+        personFields: 'names,emailAddresses',
+        pageToken,
+      });
+
+      for (const person of res.data.connections ?? []) {
+        const email = person.emailAddresses?.[0]?.value;
+        if (!email) continue;
+        const name = person.names?.[0]?.displayName ?? null;
+        contacts.push({ email: email.toLowerCase(), name });
+      }
+
+      pageToken = res.data.nextPageToken ?? undefined;
+    } while (pageToken);
+
+    return { contacts, newAccessToken };
   }
 
   /** Update an existing event on Google Calendar. */
@@ -330,6 +429,44 @@ export class GoogleCalendarService {
     });
 
     return { newAccessToken };
+  }
+
+  /** Query Google Calendar free/busy for the primary calendar. */
+  async queryFreeBusy(
+    accessToken: string,
+    refreshToken: string,
+    timeMin: Date,
+    timeMax: Date,
+  ): Promise<{
+    busyBlocks: { start: Date; end: Date }[];
+    newAccessToken: string | null;
+  }> {
+    const client = this.getOAuthClient();
+    client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    let newAccessToken: string | null = null;
+    client.on('tokens', (tokens) => {
+      if (tokens.access_token) newAccessToken = tokens.access_token;
+    });
+
+    const cal = google.calendar({ version: 'v3', auth: client });
+    const { data } = await cal.freebusy.query({
+      requestBody: {
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        items: [{ id: 'primary' }],
+      },
+    });
+
+    const busy = data.calendars?.primary?.busy ?? [];
+    const busyBlocks = busy
+      .filter((b) => b.start && b.end)
+      .map((b) => ({ start: new Date(b.start!), end: new Date(b.end!) }));
+
+    return { busyBlocks, newAccessToken };
   }
 
   /** Update RSVP status for the authenticated user on an event. */

@@ -10,6 +10,7 @@ import type { DrizzleDb } from '../../../database/database.module';
 import {
   messagesTable,
   extractsTable,
+  contactsTable,
   logsTable,
   usersTable,
   listsTable,
@@ -45,6 +46,30 @@ function parseIsoDate(s: string | null | undefined): Date | null {
 
 function normalizeDedupeKey(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+const RRULE_DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const;
+
+function buildRrule(rule: {
+  freq: string;
+  interval?: number;
+  by_day?: number[];
+  by_month_day?: number;
+  until?: string | null;
+  count?: number;
+}): string {
+  const parts = [`FREQ=${rule.freq.toUpperCase()}`];
+  if (rule.interval && rule.interval > 1) parts.push(`INTERVAL=${rule.interval}`);
+  if (rule.by_day?.length) {
+    parts.push(`BYDAY=${rule.by_day.map((d) => RRULE_DAYS[d] ?? 'MO').join(',')}`);
+  }
+  if (rule.by_month_day != null) parts.push(`BYMONTHDAY=${rule.by_month_day}`);
+  if (rule.until) {
+    const u = rule.until.replace(/[-:]/g, '').replace(/\.\d+/, '').replace('Z', '');
+    parts.push(`UNTIL=${u}Z`);
+  }
+  if (rule.count) parts.push(`COUNT=${rule.count}`);
+  return `RRULE:${parts.join(';')}`;
 }
 
 const SAFETY_CAPS = {
@@ -288,6 +313,7 @@ export class ChatOrchestratorService {
         todayCalendarSection: ctx.todayCalendarSection,
         userActivityLine: ctx.userActivityLine,
         userLists: ctx.userLists,
+        contacts: ctx.contacts,
       });
 
       clearTimeout(slowStatusTimer);
@@ -458,18 +484,26 @@ export class ChatOrchestratorService {
     );
 
     const calendarEvents: {
+      id: string;
       summary: string;
       start_at: string;
       end_at: string;
       location: string | null;
+      description: string | null;
+      is_organizer: boolean;
+      source: string;
     }[] = [];
     const calendarExtracts = openRows.filter((r) => r.eventStartAt);
     for (const e of calendarExtracts) {
       calendarEvents.push({
+        id: e.id,
         summary: e.extractText,
         start_at: e.eventStartAt!.toISOString(),
         end_at: e.eventEndAt?.toISOString() ?? e.eventStartAt!.toISOString(),
         location: e.eventLocation,
+        description: e.pemNote,
+        is_organizer: e.isOrganizer ?? true,
+        source: e.source ?? 'dump',
       });
     }
 
@@ -520,6 +554,28 @@ export class ChatOrchestratorService {
       /* lists table may not exist yet in some envs */
     }
 
+    let contacts: {
+      email: string;
+      name: string | null;
+      meetingCount: number;
+      lastMetAt: Date | null;
+    }[] = [];
+    try {
+      contacts = await this.db
+        .select({
+          email: contactsTable.email,
+          name: contactsTable.name,
+          meetingCount: contactsTable.meetingCount,
+          lastMetAt: contactsTable.lastMetAt,
+        })
+        .from(contactsTable)
+        .where(eq(contactsTable.userId, userId))
+        .orderBy(desc(contactsTable.meetingCount))
+        .limit(100);
+    } catch {
+      /* contacts table may not exist yet in some envs */
+    }
+
     return {
       tz: userRow?.timezone ?? null,
       openRows,
@@ -536,6 +592,7 @@ export class ChatOrchestratorService {
       todayCalendarSection,
       userActivityLine,
       userLists,
+      contacts,
     };
   }
 
@@ -706,6 +763,18 @@ export class ChatOrchestratorService {
       });
     }
 
+    // Pre-compute recurrence rules keyed by create_index for calendar writes
+    const recurrenceByIndex = new Map<number, string[]>();
+    for (const rec of output.recurrence_detections) {
+      if (rec.create_index < 0 || rec.create_index >= output.creates.length) {
+        this.log.warn(
+          `recurrence create_index ${rec.create_index} out of bounds (creates.length=${output.creates.length}) — skipping`,
+        );
+        continue;
+      }
+      recurrenceByIndex.set(rec.create_index, [buildRrule(rec.rule)]);
+    }
+
     // Calendar writes
     for (const cw of output.calendar_writes) {
       try {
@@ -713,12 +782,34 @@ export class ChatOrchestratorService {
         const endAt = new Date(cw.end_at);
         if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()))
           continue;
+
+        if (
+          cw.linked_new_item_index != null &&
+          (cw.linked_new_item_index < 0 ||
+            cw.linked_new_item_index >= output.creates.length)
+        ) {
+          this.log.warn(
+            `linked_new_item_index ${cw.linked_new_item_index} out of bounds (creates.length=${output.creates.length}) — unlinking`,
+          );
+          cw.linked_new_item_index = null;
+        }
+
+        const rrule =
+          cw.linked_new_item_index != null
+            ? recurrenceByIndex.get(cw.linked_new_item_index)
+            : undefined;
         const result = await this.calendarSync.writeToGoogleCalendar(userId, {
           summary: cw.summary,
           start: startAt,
           end: endAt,
+          isAllDay: cw.is_all_day ?? false,
           location: cw.location ?? undefined,
           description: cw.description ?? undefined,
+          attendees: cw.attendees?.length
+            ? cw.attendees.map((a) => ({ email: a.email }))
+            : undefined,
+          recurrence: rrule,
+          reminderMinutes: cw.reminder_minutes ?? undefined,
         });
         const linkedExtract =
           cw.linked_new_item_index != null
@@ -729,6 +820,7 @@ export class ChatOrchestratorService {
             eventStartAt: startAt,
             eventEndAt: endAt,
             eventLocation: cw.location ?? null,
+            isOrganizer: true,
             updatedAt: new Date(),
           };
           if (result) {
@@ -762,6 +854,9 @@ export class ChatOrchestratorService {
             end: cu.end_at ? new Date(cu.end_at) : undefined,
             location: cu.location ?? undefined,
             description: cu.description ?? undefined,
+            attendees: cu.attendees?.length
+              ? cu.attendees.map((a) => ({ email: a.email }))
+              : undefined,
           },
         );
 
@@ -859,7 +954,7 @@ export class ChatOrchestratorService {
         .where(eq(extractsTable.id, row.id));
     }
 
-    // Apply RSVP actions
+    // Apply RSVP actions — update local DB and sync to Google Calendar
     for (const rsvp of output.rsvp_actions) {
       try {
         await this.db
@@ -874,6 +969,21 @@ export class ChatOrchestratorService {
               eq(extractsTable.userId, userId),
             ),
           );
+
+        const row = await this.extracts.findForUser(userId, rsvp.extract_id);
+        if (row?.externalEventId && row.calendarConnectionId) {
+          await this.calendarSync
+            .rsvpOnGoogle(
+              row.calendarConnectionId,
+              row.externalEventId,
+              rsvp.response,
+            )
+            .catch((e) =>
+              this.log.warn(
+                `Google RSVP failed for ${rsvp.extract_id}: ${e instanceof Error ? e.message : 'unknown'}`,
+              ),
+            );
+        }
       } catch (e) {
         this.log.warn(
           `RSVP action failed: ${e instanceof Error ? e.message : 'unknown'}`,
@@ -944,9 +1054,13 @@ export class ChatOrchestratorService {
     item: ExtractAction,
     tz: string | null,
   ): Promise<ExtractRow | null> {
+    const now = new Date();
     const dueAt = parseIsoDate(item.due_at);
-    const pStart = parseIsoDate(item.period_start);
+    let pStart = parseIsoDate(item.period_start);
     const pEnd = parseIsoDate(item.period_end);
+
+    if (pStart && pStart < now) pStart = now;
+
     const tzPending =
       !tz && (!!item.due_at?.trim() || !!item.period_start?.trim());
 
@@ -1155,19 +1269,13 @@ export class ChatOrchestratorService {
   private trivialResponse(content: string): string {
     const lower = content.toLowerCase().trim();
     if (lower.includes('thank') || lower.includes('thx'))
-      return "You're welcome!";
-    if (
-      lower.includes('hi') ||
-      lower.includes('hey') ||
-      lower.includes('hello')
-    )
-      return "Hey! What's on your mind?";
-    return 'Got it!';
+      return "Anytime.";
+    return 'Got it.';
   }
 
   private async generateOffTopicRedirect(userMessage: string): Promise<string> {
     const fallback =
-      "I wish I could help with that! I'm better at organizing your tasks, calendar, and thoughts though. What's on your mind?";
+      "I don't have access to that kind of info, but if there's something you need to remember or plan around it, I'm here.";
     try {
       const apiKey = this.config.get<string>('openai.apiKey');
       if (!apiKey) return fallback;
@@ -1175,7 +1283,7 @@ export class ChatOrchestratorService {
       const { text } = await generateText({
         model: openai('gpt-4o-mini'),
         maxOutputTokens: 256,
-        system: `You are Pem, a warm and friendly AI life organizer. The user asked something outside your scope. Acknowledge what they asked with warmth and light humor. Express that you wish you could help. Naturally steer back to what you do: organize their tasks, calendar, thoughts, and memory. Be brief (1-2 sentences max). Sound like a friend, not a robot. Never be dismissive. No markdown.`,
+        system: `You are Pem — the place people dump whatever's on their mind so their head stays clear. You organize their tasks, calendar, and memory. The user asked something you genuinely can't answer (weather, sports, trivia, etc.). Be honest and natural — like a friend would say "I don't know that one." If there's a related way you CAN help (set a reminder, note it, add to their list), mention it briefly. 1-2 sentences. No markdown. No filler endings ("let me know", "feel free to ask"). Don't be defensive — just be real.`,
         prompt: userMessage.slice(0, 500),
       });
       return text?.trim() || fallback;

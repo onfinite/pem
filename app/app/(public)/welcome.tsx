@@ -1,14 +1,15 @@
-import PemLogoRow from "@/components/brand/PemLogoRow";
 import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
 import ScreenScroll from "@/components/layout/ScreenScroll";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
-import { fontFamily, fontSize, space } from "@/constants/typography";
+import { space } from "@/constants/typography";
 import { useAuth } from "@clerk/expo";
 import { Redirect } from "expo-router";
 import { Shield } from "lucide-react-native";
 import { useEffect, useRef } from "react";
-import { Animated, Linking, Pressable, StyleSheet, View } from "react-native";
+import { Animated, Image, Linking, StyleSheet, View } from "react-native";
+
+const pemLogo = require("@/assets/images/pem-icon-1024-transparent.png");
 
 const TERMS_URL = "https://heypem.com/terms";
 const PRIVACY_URL = "https://heypem.com/privacy";
@@ -20,7 +21,7 @@ export default function WelcomeScreen() {
   const { colors } = useTheme();
   const { isLoaded, isSignedIn } = useAuth();
 
-  const anims = useRef([...Array(5)].map(() => new Animated.Value(0))).current;
+  const anims = useRef([...Array(4)].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     const animations = anims.map((a, i) =>
@@ -44,8 +45,8 @@ export default function WelcomeScreen() {
       contentStyle={styles.scrollInner}
     >
       <View style={styles.column}>
-        <Animated.View style={{ opacity: anims[0] }}>
-          <PemLogoRow size="large" />
+        <Animated.View style={[styles.logoWrap, { opacity: anims[0] }]}>
+          <Image source={pemLogo} style={styles.logo} />
         </Animated.View>
 
         <Animated.View style={{ opacity: anims[1] }}>
@@ -57,22 +58,14 @@ export default function WelcomeScreen() {
           </PemText>
         </Animated.View>
 
-        <Animated.View style={{ opacity: anims[2] }}>
-          <PemText variant="bodyMuted" style={styles.heroBody}>
-            Say or type whatever is on your mind. Pem remembers, organizes, and
-            keeps track — so you don't have to. Not another todo list — relief,
-            with you always taking the final step.
-          </PemText>
-        </Animated.View>
-
-        <Animated.View style={[styles.trustRow, { opacity: anims[3] }]}>
+        <Animated.View style={[styles.trustRow, { opacity: anims[2] }]}>
           <Shield size={14} color={colors.textTertiary} />
           <PemText variant="caption" style={{ color: colors.textTertiary }}>
             Your thoughts stay private. Always.
           </PemText>
         </Animated.View>
 
-        <Animated.View style={[styles.authBlock, { opacity: anims[4] }]}>
+        <Animated.View style={[styles.authBlock, { opacity: anims[3] }]}>
           <SocialSignInButtons />
           <PemText variant="caption" style={[styles.legal, { color: colors.textTertiary }]}>
             By continuing, you agree to our{" "}
@@ -112,6 +105,13 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     alignItems: "center",
   },
+  logoWrap: {
+    alignItems: "center",
+  },
+  logo: {
+    width: 120,
+    height: 120,
+  },
   heroLine1: {
     marginTop: space[8],
     textAlign: "center",
@@ -123,11 +123,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 28,
     lineHeight: 34,
-  },
-  heroBody: {
-    marginTop: space[6],
-    textAlign: "center",
-    paddingHorizontal: space[2],
   },
   trustRow: {
     flexDirection: "row",

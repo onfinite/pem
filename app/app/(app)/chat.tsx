@@ -12,12 +12,14 @@ import { useMessageSearch } from "@/hooks/useMessageSearch";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import {
   deleteMessage,
+  getBrief,
   getChatMessages,
   getTaskCounts,
   requestBrief,
   sendChatMessage,
   sendVoiceMessage,
   type ApiMessage,
+  type BriefResponse,
   type TaskCounts,
 } from "@/lib/pemApi";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -29,6 +31,7 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
+  Image,
   Keyboard,
   Platform,
   Pressable,
@@ -37,6 +40,34 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { radii } from "@/constants/typography";
+
+const pemLogo = require("@/assets/images/pem-icon-1024-transparent.png");
+
+const EXAMPLE_PROMPTS = [
+  "I need to cancel my gym membership",
+  "Schedule a dentist appointment this week",
+  "What's on my calendar tomorrow?",
+];
+
+function buildHeaderSummary(brief: BriefResponse | null): {
+  text: string;
+  isOverdue: boolean;
+} {
+  if (!brief) return { text: "", isOverdue: false };
+
+  const overdueCount = brief.overdue.length;
+  const todayCount = brief.today.length;
+
+  if (overdueCount > 0) {
+    return { text: `${overdueCount} overdue`, isOverdue: true };
+  }
+  if (todayCount > 0) {
+    return { text: `${todayCount} open`, isOverdue: false };
+  }
+  return { text: "", isOverdue: false };
+}
 
 const CACHE_KEY = "@pem/chat_messages_v1";
 const CACHE_LIMIT = 50;
@@ -86,6 +117,7 @@ export default function ChatScreen() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [taskCounts, setTaskCounts] = useState<TaskCounts | null>(null);
+  const [briefData, setBriefData] = useState<BriefResponse | null>(null);
   const drawerRef = useRef<TaskDrawerHandle>(null);
   const search = useMessageSearch(getToken);
 
@@ -115,8 +147,12 @@ export default function ChatScreen() {
     clearTimeout(countsTimerRef.current);
     countsTimerRef.current = setTimeout(async () => {
       try {
-        const c = await getTaskCounts(getTokenRef.current);
+        const [c, b] = await Promise.all([
+          getTaskCounts(getTokenRef.current),
+          getBrief(getTokenRef.current),
+        ]);
         setTaskCounts(c);
+        setBriefData(b);
       } catch { /* non-critical */ }
     }, 800);
   }, []);
@@ -216,6 +252,7 @@ export default function ChatScreen() {
         processing_status: null,
         polished_text: null,
         parent_message_id: null,
+        summary: null,
         created_at: new Date().toISOString(),
         _clientStatus: "sending",
       };
@@ -233,6 +270,7 @@ export default function ChatScreen() {
               : m,
           ),
         );
+        setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
       } catch (e) {
         console.warn("Failed to send message:", e);
         setMessages((prev) =>
@@ -260,6 +298,7 @@ export default function ChatScreen() {
         processing_status: null,
         polished_text: null,
         parent_message_id: null,
+        summary: null,
         created_at: new Date().toISOString(),
         _clientStatus: "sending",
         _localUri: audioUri,
@@ -280,6 +319,7 @@ export default function ChatScreen() {
                 : m,
             ),
           );
+          setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
         })
         .catch((e) => {
           console.warn("Failed to send voice:", e);
@@ -475,24 +515,27 @@ export default function ChatScreen() {
             hitSlop={12}
           >
             <CalendarDays size={22} color={colors.textSecondary} />
-            {taskCounts && taskCounts.total_open > 0 && (
+            {briefData && (briefData.overdue.length > 0 || briefData.today.length > 0) && (
               <View style={[styles.headerDot, {
-                backgroundColor: taskCounts.overdue > 0 ? colors.error : pemAmber,
+                backgroundColor: briefData.overdue.length > 0 ? colors.error : pemAmber,
               }]} />
             )}
           </Pressable>
           <Pressable onPress={handleOpenDrawer} style={styles.headerCenter} hitSlop={8}>
-            {taskCounts && taskCounts.total_open > 0 ? (
-              <Text style={[styles.headerBadge, {
-                color: taskCounts.overdue > 0 ? colors.error : colors.textTertiary,
-              }]}>
-                {taskCounts.overdue > 0
-                  ? `${taskCounts.overdue} overdue`
-                  : taskCounts.today > 0
-                    ? `${taskCounts.today} today`
-                    : `${taskCounts.total_open} open`}
-              </Text>
-            ) : null}
+            {(() => {
+              const summary = buildHeaderSummary(briefData);
+              if (!summary.text) return null;
+              return (
+                <Text
+                  style={[styles.headerBadge, {
+                    color: summary.isOverdue ? colors.error : colors.textSecondary,
+                  }]}
+                  numberOfLines={1}
+                >
+                  {summary.text}
+                </Text>
+              );
+            })()}
           </Pressable>
           <View style={styles.headerRight}>
             <Pressable onPress={search.handleOpen} hitSlop={12}>
@@ -526,14 +569,26 @@ export default function ChatScreen() {
           </View>
         ) : messages.length === 0 ? (
           <View style={styles.emptyContainer}>
+            <Image source={pemLogo} style={styles.emptyLogo} />
             <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-              {"Hey! I'm Pem."}
+              What's on your mind?
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              {
-                "Dump your thoughts, ask questions, or tell me what's on your mind. I remember everything."
-              }
+              Try one of these to get started
             </Text>
+            <View style={styles.emptyChips}>
+              {EXAMPLE_PROMPTS.map((prompt) => (
+                <Pressable
+                  key={prompt}
+                  onPress={() => handleSend(prompt)}
+                  style={[styles.emptyChip, { borderColor: colors.borderMuted, backgroundColor: colors.cardBackground }]}
+                >
+                  <Text style={[styles.emptyChipText, { color: colors.textPrimary }]}>
+                    {prompt}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         ) : (
           <FlatList
@@ -659,11 +714,12 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: "center",
+    paddingHorizontal: space[4],
   },
   headerBadge: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.xs,
-    marginTop: 1,
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.sm,
+    textAlign: "center",
   },
   headerRight: {
     position: "absolute",
@@ -680,7 +736,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: space[8],
+    paddingHorizontal: space[6],
+  },
+  emptyLogo: {
+    width: 56,
+    height: 56,
+    marginBottom: space[4],
   },
   emptyTitle: {
     fontFamily: fontFamily.display.semibold,
@@ -690,9 +751,25 @@ const styles = StyleSheet.create({
   },
   emptySubtitle: {
     fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.base,
+    fontSize: fontSize.sm,
     textAlign: "center",
-    lineHeight: 22,
+    marginBottom: space[5],
+  },
+  emptyChips: {
+    width: "100%",
+    maxWidth: 320,
+    gap: space[2],
+  },
+  emptyChip: {
+    paddingHorizontal: space[4],
+    paddingVertical: space[3],
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  emptyChipText: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.sm,
+    textAlign: "center",
   },
   listContent: {
     paddingVertical: space[2],

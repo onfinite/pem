@@ -1,8 +1,9 @@
 import type { ApiExtract } from "@/lib/pemApi";
 
 /**
- * Extracts that mirror Google Calendar should not be manually marked done in the UI;
- * completion is driven when the event time passes (server) or via reschedule in chat.
+ * True when the extract originated from or is linked to a Google Calendar event.
+ * Used for visual differentiation (calendar icon in meta row) — NOT for
+ * blocking completion or dismissal.
  */
 export function isCalendarBackedExtract(item: ApiExtract): boolean {
   return (

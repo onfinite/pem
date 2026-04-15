@@ -2,6 +2,7 @@ import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, radii, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
+import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   CalendarDays,
@@ -14,7 +15,6 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Dimensions,
   Modal,
   Platform,
@@ -95,7 +95,7 @@ function formatDateSummary(extract: ApiExtract, datePatch: Record<string, unknow
 }
 
 export function TaskEditSheet({
-  visible, extract, lists, onClose, onSave, onDone, onDelete,
+  visible, extract, lists, onClose, onSave, onDone, onDismiss,
 }: TaskEditSheetProps) {
   const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
@@ -140,13 +140,9 @@ export function TaskEditSheet({
     if (extract) onDone(extract.id);
   }, [extract, onDone]);
 
-  const handleDelete = useCallback(() => {
-    if (!extract) return;
-    Alert.alert("Delete task", "Are you sure? This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => onDelete(extract.id) },
-    ]);
-  }, [extract, onDelete]);
+  const handleDismiss = useCallback(() => {
+    if (extract) onDismiss(extract.id);
+  }, [extract, onDismiss]);
 
   const handlePreset = useCallback((key: string) => {
     mergePatch(buildDatePatch(key));
@@ -197,9 +193,10 @@ export function TaskEditSheet({
 
   if (!visible || !extract) return null;
 
-  const isExternal = !extract.is_organizer && !!extract.external_event_id;
-  const isIdea = extract.tone === "idea";
+  const isSyncedFromCalendar = extract.source === "calendar" && !!extract.external_event_id;
+  const isInvite = isSyncedFromCalendar && !extract.is_organizer;
   const isCalendarEvent = extract.source === "calendar" || !!extract.external_event_id;
+  const isIdea = extract.tone === "idea";
   const canComplete = !isIdea && !isCalendarEvent;
   const isDone = extract.status === "done";
   const dateSummary = formatDateSummary(extract, patch);
@@ -233,14 +230,18 @@ export function TaskEditSheet({
           >
             {/* Title */}
             <View style={local.titleRow}>
-              {canComplete && (
+              {isCalendarEvent ? (
+                <View style={local.calendarIcon}>
+                  <CalendarDays size={20} color={CALENDAR_EVENT_DOT_COLOR} />
+                </View>
+              ) : canComplete ? (
                 <Pressable
                   onPress={handleDone}
                   style={[local.circle, { borderColor: isDone ? pemAmber : colors.textTertiary, backgroundColor: isDone ? pemAmber : "transparent" }]}
                 >
                   {isDone && <Text style={local.checkmark}>✓</Text>}
                 </Pressable>
-              )}
+              ) : null}
               <TextInput
                 style={[local.titleInput, { color: colors.textPrimary }]}
                 value={text}
@@ -365,9 +366,11 @@ export function TaskEditSheet({
 
             <DraftSection extract={extract} />
 
-            {isExternal && (
+            {isSyncedFromCalendar && (
               <View style={[s.banner, { backgroundColor: colors.secondarySurface }]}>
-                <Text style={[s.bannerText, { color: colors.textTertiary }]}>This event is on your calendar</Text>
+                <Text style={[s.bannerText, { color: colors.textTertiary }]}>
+                  {isInvite ? "You were invited to this event" : "Synced from your calendar"}
+                </Text>
               </View>
             )}
           </ScrollView>
@@ -376,11 +379,9 @@ export function TaskEditSheet({
             <Pressable onPress={handleSave} style={[local.saveBtn, { backgroundColor: pemAmber }]}>
               <Text style={local.saveBtnText}>Save</Text>
             </Pressable>
-            {!isCalendarEvent && (
-              <Pressable onPress={handleDelete} hitSlop={8}>
-                <Text style={[local.deleteText, { color: colors.error }]}>Delete</Text>
-              </Pressable>
-            )}
+            <Pressable onPress={handleDismiss} hitSlop={8}>
+              <Text style={[local.dismissText, { color: colors.textTertiary }]}>Dismiss</Text>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -414,6 +415,13 @@ const local = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  calendarIcon: {
+    width: 24,
+    height: 24,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 4,
@@ -517,7 +525,7 @@ const local = StyleSheet.create({
     fontSize: fontSize.base,
     color: "#fff",
   },
-  deleteText: {
+  dismissText: {
     fontFamily: fontFamily.sans.medium,
     fontSize: fontSize.sm,
   },

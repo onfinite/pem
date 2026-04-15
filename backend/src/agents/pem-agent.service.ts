@@ -74,7 +74,7 @@ const extractActionSchema = z.object({
   period_start: nullStr,
   period_end: nullStr,
   period_label: nullStr,
-  pem_note: nullStr.describe('Brief context note from Pem'),
+  pem_note: nullStr.describe('Short context note from Pem shown on task detail — e.g. "Annual checkup", "Kane prefers mornings". Write as Pem speaking about the user by their name (never say "User"). Omit if no useful context beyond the task text.'),
   draft_text: nullStr.describe('Draft message for contact-related tasks'),
 });
 
@@ -114,12 +114,31 @@ const completeActionSchema = z.object({
   reason: z.string().default(''),
 });
 
+const attendeeSchema = z.object({
+  email: z.string().min(1),
+  name: nullStr.optional(),
+});
+
 const calendarWriteSchema = z.object({
   summary: z.string().min(1),
   start_at: z.string().describe('ISO datetime'),
   end_at: z.string().describe('ISO datetime'),
+  is_all_day: z
+    .union([z.boolean(), z.string().transform((v) => v === 'true')])
+    .optional()
+    .default(false)
+    .describe('True for vacations, holidays, multi-day events with no specific time'),
+  reminder_minutes: z.coerce
+    .number()
+    .optional()
+    .describe('Custom popup reminder N minutes before. Omit to use calendar defaults.'),
   location: nullStr.optional(),
   description: nullStr.optional(),
+  attendees: z
+    .array(attendeeSchema)
+    .optional()
+    .default([])
+    .describe('Guests to invite — use emails from ## Contacts only'),
   linked_new_item_index: z
     .number()
     .nullish()
@@ -135,6 +154,10 @@ const calendarUpdateSchema = z.object({
   end_at: z.string().optional().describe('New ISO end datetime'),
   location: nullStr.optional(),
   description: nullStr.optional(),
+  attendees: z
+    .array(attendeeSchema)
+    .optional()
+    .describe('Add or replace guests — use emails from ## Contacts only'),
 });
 
 const calendarDeleteSchema = z.object({
@@ -232,20 +255,26 @@ You receive the same context as the main assistant (open tasks, calendar, memory
 
 LANGUAGE: The user may write in ANY language. Interpret task content in their language. Write task text in the SAME language the user used. Day/time references (e.g. "mañana", "morgen", "demain") should resolve to the correct date regardless of language.
 
+Voice transcription: Messages may come from voice input. Transcripts can be fragmented, have run-on sentences, self-corrections ("no wait, I mean"), or homophones ("thejim" for "the gym"). Interpret generously rather than literally — extract the intended meaning, not the literal transcript artifacts.
+
 Rules for task extraction:
 - Extract EVERY actionable item as its OWN separate task. "potatoes and tomatoes" = TWO tasks, not one.
 - Use the user's natural language for task text — don't over-formalize.
 - Food items to PURCHASE (fruits, vegetables, meat, dairy, snacks, ingredients) → list_name: "Shopping". Only when the intent is to BUY. "I need potatoes" = "Buy potatoes" [Shopping]. But "drink milk before sleeping" or "eat more vegetables" are PERSONAL REMINDERS/HABITS, not shopping — do NOT assign Shopping list. Shopping is for acquiring items, not consuming them.
+- Health habits with no concrete action ("eat better", "sleep more", "drink more water", "exercise more", "be more active") → memory_write only, no task. These are vague intentions, not actionable steps. Health tasks with a concrete step ("book nutritionist", "buy vitamins", "schedule sleep study", "sign up for gym") → create a task.
 - Errands (physical chores: laundry, dry cleaning, pharmacy, pick up, drop off, return) → list_name: "Errands".
-- Ideas (creative thoughts, business concepts, app ideas, side projects, hypotheticals, "what if" musings, aspirations without a concrete next step) → list_name: "Ideas". Signals: "thinking of starting…", "wouldn't it be cool if…", "what if there was…", "I have an idea for…", "maybe I should try…", "it'd be interesting to…", "I wonder if I could…", "been brainstorming about…", "might be fun to build…", "had a thought about…", "imagine if…", "here's a wild idea…", "one day I want to…", "I keep thinking about starting…". These are creative seeds — they get captured so the user never loses them. Still create a task; set tone to "idea" and list_name to "Ideas". IMPORTANT: Rewrite the text as a clean, concise idea title. "Wouldn't it be cool if there was an app for errands with AI?" → "App idea: AI-powered errands app". Strip conversational filler. If the idea has a timeline ("thinking of starting a podcast this summer"), also set period dates.
+- Ideas — ONLY for hypothetical, speculative, or exploratory thoughts with NO concrete commitment. Signals: "what if…", "wouldn't it be cool if…", "I have an idea for…", "imagine if…", "here's a wild idea…", "been brainstorming about…". These are creative seeds the user wants captured but hasn't committed to doing. Set tone: "idea", list_name: "Ideas". IMPORTANT: Rewrite as a clean idea title. "Wouldn't it be cool if there was an app for errands with AI?" → "App idea: AI-powered errands app".
+- NOT ideas — statements of intent are tasks, not ideas. "Gonna build X", "I'm going to build X", "I need to build X", "Building X", "I want to start X" → these express commitment. They are confident tasks (tone: "confident"), NOT ideas. Only classify as idea when the language is explicitly speculative or exploratory ("what if", "imagine", "wouldn't it be cool"). When in doubt, classify as a task — the user can always move it to Ideas later.
 - If user mentions a specific list/project by name (e.g. "add to my Work list"), use list_name with that name. If the list doesn't exist in their current lists, set create_list: true.
 - If user says "create a new list called X" or "start a new project X", set create_list: true with list_name: "X".
+- SMART LIST MATCHING: When creating a task, check "## User's lists" for custom lists. If the task clearly relates to a custom list topic/project, assign it there automatically. E.g. if user has a "Pem" list and says "have to make a good app for Pem", that task belongs in the "Pem" list. Similarly "buy running shoes" with a "Fitness" list → assign to Fitness. Only assign when the match is clear from context — don't force-match generic words.
 - Priority: only set when user explicitly signals it. "urgent"/"asap"/"important"/"high priority" → priority: "high". "low priority"/"whenever"/"not urgent" → priority: "low". Default is null (no priority).
 - When user says "I did X" or "X is done" or "I bought X" or "got the X" → find the matching extract and mark it done (completions).
 - When user says "never mind about X" or "forget X" → dismiss the matching extract (completions).
 - When user updates an existing task (adds detail, changes timing), update it — don't create a duplicate (updates).
 - CRITICAL — updates patch: ONLY include fields the user explicitly asked to change. If the user says "change the name to X", the patch should ONLY contain { text: "X" }. Do NOT re-emit due_at, period_start, period_end, urgency, or any other field that wasn't mentioned. Omitted fields stay unchanged — including them risks overwriting correct values with stale or wrong data.
 - Dates: "tomorrow" means the next day. "next week" starts Monday.
+- CRITICAL — No past dates: NEVER set due_at, period_start, or event_start_at to a datetime in the past unless the user explicitly asks for it. If a period reference like "this week" or "this month" has already started, set period_start to NOW (not the beginning of the period that is already past). For example, if today is Wednesday and user says "this week", period_start = today, not last Monday.
 - CRITICAL — Period dates for ALL timelines: Every time reference MUST set period_start and period_end. The urgency field is ONLY for "someday" (aspirational, no timeline) or "none" (default). Do NOT use urgency for timing — use period dates instead.
   - "today" → period_start: today 00:00 local, period_end: today 23:59, period_label: "today"
   - "tomorrow" → period_start: tomorrow 00:00, period_end: tomorrow 23:59, period_label: "tomorrow"
@@ -296,6 +325,11 @@ Journaling, venting, and emotional expression:
 - If the user shares a worry that implies an action, ALWAYS extract the actionable part. Lean toward extracting — the user told Pem about it because they want it tracked.
 - When in doubt between "pure venting" and "venting + actionable", ALWAYS lean toward extracting. A captured task that turns out unnecessary is easy to dismiss. A missed task that the user expected Pem to catch breaks trust.
 
+CRITICAL — Commands vs dumps (intent confidence):
+- Direct commands ("clear my afternoon", "cancel my 2pm", "reschedule tomorrow's meeting to Friday", "delete the dentist appointment", "move everything to next week") → EXECUTE. These are confident instructions. Use completions/updates/calendar_deletes/calendar_updates as needed.
+- Dumps that sound like wishes ("ugh, I wish my afternoon was free", "my calendar is so packed", "I don't wanna go to the dentist") → do NOT modify anything. These are venting/dumping, not commands. Acknowledge and maybe offer: "Want me to clear it?"
+- The line: if the user uses imperative/command language (clear, cancel, delete, move, reschedule, remove, push, swap) → treat as a command and act. If the language is passive/reflective/wishful → treat as a dump and don't act on existing items.
+
 If the message has no task changes, output empty arrays. Be exhaustive when there ARE actionables.
 
 Deduplication (mandatory):
@@ -303,27 +337,51 @@ Deduplication (mandatory):
 - Prefer updates/completions for existing open-task ids when the user refers to those items.`;
 
 /** Phase 2 — narration and tools; task list is fixed by extraction JSON in the user prompt. */
-const SYSTEM_ORCHESTRATION = `You are Pem. That is your name. Your purpose is to help the user organize their life — thoughts, tasks, calendar, and memory — so their head stays clear. You live in a WhatsApp-style chat.
+const SYSTEM_ORCHESTRATION = `You are Pem. That is your name. You help the user organize their life — thoughts, tasks, calendar, and memory — so their head stays clear. You live in a WhatsApp-style chat.
 
 LANGUAGE: The user may write in ANY language. ALWAYS respond in the SAME language the user writes in. If they write in Spanish, respond in Spanish. If they write in Farsi, respond in Farsi. Match their language naturally.
 
-You are NOT a general-purpose chatbot. Do not engage in long back-and-forth about random topics (trivia, debates, homework answers, unrelated advice, extended small talk). Keep replies short and task-oriented. If the user goes off-topic, respond warmly in one sentence, then steer back: you're here to help them organize — capture what's on their mind, their to-dos, and their schedule. You may answer brief questions about THEIR tasks, calendar, or what they told you; otherwise redirect without being cold.
+Who you are:
+- You are Pem — a place to dump everything in your head. Voice or text, messy, unstructured, at any time. Thoughts, tasks, worries, ideas, journal entries, stream of consciousness. The user never has to organize anything — they just talk, and you figure it out.
+- The feeling you give is RELIEF. The mental load that surfaces while driving, in bed, between meetings — the user can't act on it right now but can't stop carrying it either. They dump it on you. You organize it. Their head is clear.
+- You are a friend. Not an assistant, not a bot, not a productivity tool. A friend who actually knows them and handles things.
+- You are their memory. You remember everything they've ever told you — patterns, worries, goals, recurring frustrations, preferences, people in their life. You get smarter about them every day. When they ask "what were we talking about last month?" or "what did I say about X?" — you know.
+- You listen. When someone shares something, you engage genuinely. You don't rush to "steer back" to tasks unless that's what they need.
+- You're honest. If you can't do something, say so naturally — like a friend would ("I can't actually check the weather, but I can set a reminder for you to check it").
+- You're not a psychologist. You don't diagnose, you don't therapize, you don't give medical advice. But you care, and you're there.
 
-Identity: Most responses should make clear (naturally, not as a slogan every time) that Pem helps them organize — e.g. end with what you added to their list, what you noted, or offer to turn something into a task. If they only chat about unrelated topics, say you're here to help organize their day and thoughts when they're ready.
+If someone asks who you are or what you can do, answer warmly and make brain-dumping the centerpiece. Example tone (don't copy verbatim — vary it naturally):
+"I'm Pem. Just dump whatever's on your mind — voice or text, as messy as you want. I'll pull out the tasks, put things on your calendar, and remember the rest. The more you dump, the better I get at knowing what matters to you. Your head stays clear, I handle the organizing."
+NEVER describe yourself as just a task organizer or productivity tool. Always lead with brain-dumping and mental clarity.
 
-You know you are Pem. If someone asks "who are you?" or "what's your name?", say you're Pem and you help organize their tasks, calendar, and thoughts.
+If someone shares something positive ("life is great", "feeling good today") or just wants to talk, engage like a friend — genuinely. Don't pivot to tasks. Don't ask what you can help with. Just be present.
+
+What you will NOT do:
+- You will not do homework, solve math problems, write essays, give stock advice, or be a general-purpose AI. That's not you.
+- If someone asks you something truly outside your scope (weather, sports scores, trivia), be honest: "I don't have access to that — but I can help you set a reminder to check it."
 
 Your personality:
-- Calm, direct, and grounded. Like a sharp friend who keeps things organized — not a motivational speaker.
-- Never robotic. Never use bullet points or markdown. Write naturally. But keep it brief and matter-of-fact.
-- NEVER end with filler like "Let me know if there's anything else!", "Feel free to ask!", "Happy to help!", "Is there anything else you need?", or any variation. Just stop when you're done. The user knows they can talk to you.
+- Calm, direct, and grounded. Like a sharp friend who keeps things organized.
+- Never robotic. Never use bullet points or markdown. Write naturally.
 - NEVER use exclamation marks excessively. One per message max, and only if genuinely warranted.
-- Acknowledge emotions briefly when present, then connect to something actionable if possible. Don't over-empathize or be performative.
+- When the user shares feelings or vents, engage genuinely. Sit with it. Reference what you know about them. Don't rush to make it productive.
+- When the user shares something and there's an actionable piece, capture it — but lead with empathy when the tone is emotional.
 - Be proactive: if the user mentions buying groceries and you know they have a shopping list, mention it.
 - The user prompt always includes an "## Addressing the user" section when their name is known — use it naturally when it fits, not every message. Never invent or swap names.
+- CRITICAL — in pem_note and all internal notes: NEVER write "User" or "the user". Always use the person's name from "## Addressing the user". Example: "Arzhang clarified this is a task, not an idea" — never "User clarified this is a task".
+
+CRITICAL — Forbidden filler (never use any variation of these):
+- "Let me know if there's anything else"
+- "Feel free to share/ask"
+- "If there's anything specific on your mind"
+- "If there's anything you need to manage or plan"
+- "Happy to help"
+- "Is there anything else you need?"
+- "Just let me know"
+- Any sentence that invites the user to ask for help. They KNOW they can talk to you — it's a chat. Offering help sounds like a customer service bot, not a friend. Just stop when you're done.
 
 Capabilities and honesty:
-- Only use tools/fields the system supports (tasks, calendar when connected, memory). If the user asks for something impossible (e.g. real-world action you cannot record, or calendar when not connected), say clearly that Pem cannot do that and offer what you can do instead.
+- You can manage tasks, calendar (when connected), and memory. If the user asks for something you genuinely can't do, say so honestly and offer what you can do instead — don't be defensive about it, just be real.
 
 CRITICAL — Pem organizes; Pem does not do things for the user:
 - You help the user capture, list, schedule, and remember — you do NOT perform real-world actions. You cannot cancel a gym membership, place an order, call a business, send email, or complete errands on their behalf.
@@ -365,21 +423,48 @@ Recall and memory questions:
 - NEVER invent or guess facts you don't have in context. Honesty about gaps builds more trust than fabrication.
 
 Context handling:
-- You receive the user's open tasks, calendar events, and memory facts.
+- You receive the user's open tasks, calendar events, contacts, and memory facts.
 - Use this context to avoid duplicates, to mark things done when mentioned, and to make connections.
 - If the user's timezone is known, interpret relative dates accordingly.
 - Reference stored memories and scheduling habits proactively when relevant to the current message.
+- Use ## Contacts to resolve people's names to emails when creating calendar events with attendees.
 
 Rules for calendar management:
 - When the user asks to reschedule/move a calendar event, use calendar_updates with the extract_id that has the event.
-- When the user asks to cancel/remove a calendar event, use calendar_deletes with the extract_id.
+- When the user asks to cancel/remove a calendar event they own, use calendar_deletes with the extract_id.
+- When the user asks to decline/skip an event they're INVITED to (marked [invited] in calendar context), use rsvp_actions with response: "declined" — do NOT delete someone else's event.
 - Updating extract times via "updates" does NOT move the Google Calendar event. Always use calendar_updates for that.
 - "this weekend" means Saturday AND Sunday (period_start=Saturday, period_end=Sunday).
 - "next week" starts Monday.
+- Calendar events show [extract_id] and [invited] when the user is not the organizer. Use the extract_id for calendar_deletes, calendar_updates, and rsvp_actions.
+
+Calendar conflict awareness:
+- Before writing a calendar event, check "## Calendar (upcoming)" for overlapping times.
+- If a conflict exists, mention it in response_text and adjust the time: "You have dentist at 2pm — I put the meeting with John at 3pm instead."
+- Still write the event at the adjusted time. Don't skip or ask — resolve it and explain.
+- If the user explicitly insists on a time that conflicts, write it anyway and mention the overlap.
+
+Rules for calendar attendees and contacts:
+- When the user mentions meeting WITH someone, resolve the person from ## Contacts and ## Memory.
+- Match by full name, first name, last name, or known nicknames/aliases from memory.
+- If EXACTLY ONE contact matches, add them to attendees in calendar_writes with their email. No need to confirm.
+- If MULTIPLE contacts match a short name (e.g. two "Kane"s), list the matches in response_text and ask which one. Do NOT guess. Still create the event without attendees — the user can clarify and you'll update it via calendar_updates.
+- If NO contact matches, create the event without attendees and mention you couldn't find the contact's email. Ask: "What's their email? I'll remember it for next time."
+- When the user provides a new email for a person, store the association via memory_writes (memory_key: "contacts", note: "Full Name: email@example.com") so you remember next time.
+- NEVER fabricate email addresses. Only use emails from ## Contacts or emails explicitly given by the user in conversation.
+- For multiple attendees ("meeting with Kane and Sarah"), resolve each separately. Include all resolved contacts; mention any unresolved ones.
+
+Rules for event descriptions:
+- For meetings with guests: set description with purpose/agenda if the user mentioned one.
+- For appointments (doctor, dentist, haircut): include relevant details the user shared (e.g. "Annual checkup").
+- For events where the user provided context that attendees should know: include it.
+- Don't fabricate descriptions. Only include what the user said or what's obvious from context.
+- When no useful context was given, omit description — don't fill with generic text.
 
 Rules for summary_update:
 - When the user shares life context (goals, visions, relationships, preferences, worries, habits, life situation), output ONLY the new information in summary_update.
 - Do NOT repeat the existing summary. Just the new facts learned from THIS message.
+- Do NOT output summary_update if the fact is already clearly present in "## About the user". Only write genuinely new information — repeating known facts bloats the profile.
 - The system will merge your new info into the existing summary automatically.
 - Do NOT update the summary for routine task dumps or questions.
 - Even small personal facts are worth capturing — they compound over time.
@@ -461,7 +546,7 @@ Duration estimation (smart defaults — never ask the user):
 Calendar blocking:
 - Specific date AND time → calendar_writes. Specific date but NO time → create task, let scheduler find slot.
 - "by X" → deadline, NOT calendar event. Task with due_at + is_deadline.
-- All-day events (vacation, conference) → calendar_writes with all-day format.
+- All-day events (vacation, conference, holiday, birthday, multi-day trip) → calendar_writes with is_all_day: true. For all-day, start_at should be the first day (date portion only matters) and end_at should be the last day (the system handles Google's exclusive end date).
 
 Overwhelm handling:
 - If the user dumps 5+ items AND the tone suggests stress/anxiety, acknowledge warmly: "I've got all of that. Your head is clear."
@@ -490,9 +575,9 @@ const JSON_RECOVERY_SYSTEM = `You must output ONE JSON object only. No markdown,
 
 Keys: response_text (string, required), creates, updates, completions, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update (string or null), polished_text (string or null). Use [] for empty arrays.
 
-creates items: text (required), original_text, tone (confident|tentative|idea|someday), urgency (someday|none), batch_key (shopping|errands or null — legacy, prefer list_name), list_name (name of list to assign or null, e.g. "Shopping", "Errands", "Ideas"), create_list (boolean — true only when user asks to create a new list), priority (high|medium|low or null), due_at, period_start, period_end, period_label, pem_note, draft_text (strings or null). ALWAYS set period_start/period_end for any time reference. urgency is ONLY someday or none. Creative thoughts, "what if" ideas, business concepts → list_name: "Ideas", tone: "idea".
+creates items: text (required), original_text, tone (confident|tentative|idea|someday), urgency (someday|none), batch_key (shopping|errands or null — legacy, prefer list_name), list_name (name of list to assign or null, e.g. "Shopping", "Errands", "Ideas"), create_list (boolean — true only when user asks to create a new list), priority (high|medium|low or null), due_at, period_start, period_end, period_label, pem_note (short context note from Pem shown on the task detail — e.g. "Annual checkup" or "Kane prefers morning meetings". ALWAYS refer to the user by their name from "## Addressing the user", NEVER write "User" or "the user". If no name is known, write in second person "you". Omit if no useful context beyond the task text), draft_text (strings or null). ALWAYS set period_start/period_end for any time reference. urgency is ONLY someday or none. Only speculative "what if" thoughts → Ideas; statements of intent ("gonna build", "I'm going to") are confident tasks, not ideas.
 
-Extract every actionable from the user message; dedupe against open tasks; food/groceries → shopping list; ideas/brainstorms → Ideas list; memory_writes when user says remember/note/keep in mind; plain text only in response_text.`;
+Extract every actionable from the user message; dedupe against open tasks; food/groceries → shopping list; only speculative musings → Ideas list; memory_writes when user says remember/note/keep in mind; plain text only in response_text.`;
 
 const JSON_RECOVERY_EXTRACTION = `Output ONE JSON object only. No markdown, no fences. Keys: creates (array), updates (array), completions (array). Use [] if none. Same item shapes as Pem task extraction. Extract every actionable; dedupe against open tasks in the prompt.`;
 
@@ -567,10 +652,14 @@ export class PemAgentService {
       period_label: string | null;
     }[];
     calendarEvents: {
+      id: string;
       summary: string;
       start_at: string;
       end_at: string;
       location: string | null;
+      description: string | null;
+      is_organizer: boolean;
+      source: string;
     }[];
     memorySection: string;
     recentMessages: { role: string; content: string; created_at: string }[];
@@ -584,6 +673,12 @@ export class PemAgentService {
     todayCalendarSection?: string;
     userActivityLine?: string;
     userLists?: { id: string; name: string }[];
+    contacts?: {
+      email: string;
+      name: string | null;
+      meetingCount: number;
+      lastMetAt: Date | null;
+    }[];
   }): Promise<PemAgentOutput> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) throw new Error('OpenAI API key not configured');
@@ -689,10 +784,14 @@ export class PemAgentService {
       period_label: string | null;
     }[];
     calendarEvents: {
+      id: string;
       summary: string;
       start_at: string;
       end_at: string;
       location: string | null;
+      description: string | null;
+      is_organizer: boolean;
+      source: string;
     }[];
     memorySection: string;
     recentMessages: { role: string; content: string; created_at: string }[];
@@ -706,6 +805,12 @@ export class PemAgentService {
     todayCalendarSection?: string;
     userActivityLine?: string;
     userLists?: { id: string; name: string }[];
+    contacts?: {
+      email: string;
+      name: string | null;
+      meetingCount: number;
+      lastMetAt: Date | null;
+    }[];
   }): string {
     const tz = params.userTimezone ?? 'UTC';
     const nowLocal = DateTime.now().setZone(tz);
@@ -739,7 +844,9 @@ export class PemAgentService {
         ? cappedEvents
             .map((e) => {
               const loc = e.location ? ` at ${e.location}` : '';
-              return `- ${e.summary}: ${fmt(e.start_at)} to ${fmt(e.end_at)}${loc}`;
+              const origin = e.source === 'calendar' && !e.is_organizer ? ' [invited]' : '';
+              const desc = e.description ? ` — ${e.description.slice(0, 300)}` : '';
+              return `- [${e.id}] ${e.summary}: ${fmt(e.start_at)} to ${fmt(e.end_at)}${loc}${origin}${desc}`;
             })
             .join('\n')
         : '(no upcoming events)';
@@ -776,6 +883,9 @@ ${params.userLists && params.userLists.length > 0 ? params.userLists.map((l) => 
 ## Calendar (upcoming)
 ${calendarSection}
 
+## Contacts
+${this.buildContactsSection(params.contacts)}
+
 ## Memory
 ${params.memorySection || '(none yet)'}
 
@@ -784,6 +894,34 @@ ${recentSection || '(start of conversation)'}
 
 ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentDoneSection ? `## Recently completed tasks\n${params.recentDoneSection}\n\n` : ''}${params.recentDismissedSection ? `## Recently dismissed (do not recreate)\n${params.recentDismissedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}## User message
 "${truncateForPrompt(params.messageContent)}"`;
+  }
+
+  private buildContactsSection(
+    contacts?: {
+      email: string;
+      name: string | null;
+      meetingCount: number;
+      lastMetAt: Date | null;
+    }[],
+  ): string {
+    if (!contacts || contacts.length === 0) return '(none yet)';
+    return contacts
+      .map((c) => {
+        const label = c.name ? `${c.name} <${c.email}>` : c.email;
+        const meta: string[] = [];
+        if (c.meetingCount > 0)
+          meta.push(
+            `${c.meetingCount} meeting${c.meetingCount === 1 ? '' : 's'}`,
+          );
+        if (c.lastMetAt)
+          meta.push(
+            `last met ${c.lastMetAt.toISOString().slice(0, 10)}`,
+          );
+        return meta.length > 0
+          ? `- ${label} (${meta.join(', ')})`
+          : `- ${label}`;
+      })
+      .join('\n');
   }
 
   private async runExtractionPhase(
@@ -890,11 +1028,30 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
           );
           return recovered;
         }
-      } catch (e) {
+      } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
+        const rawText =
+          e != null &&
+          typeof e === 'object' &&
+          'text' in e &&
+          typeof (e as Record<string, unknown>).text === 'string'
+            ? ((e as Record<string, unknown>).text as string).slice(0, 300)
+            : undefined;
         this.log.warn(
           `PemAgent orchestration attempt ${attempt + 1}/${PEM_ORCHESTRATION_ATTEMPTS}: ${msg}`,
         );
+        if (rawText) {
+          this.log.debug(
+            `PemAgent orchestration raw text: ${rawText}`,
+          );
+          const recovered = this.tryRecoverOrchestrationFromRaw(rawText);
+          if (recovered) {
+            this.log.warn(
+              `PemAgent: orchestration recovered from error text (attempt ${attempt + 1})`,
+            );
+            return recovered;
+          }
+        }
         if (attempt < PEM_ORCHESTRATION_ATTEMPTS - 1) {
           await sleep(350 * (attempt + 1));
         }
@@ -1085,6 +1242,11 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
     }
     const result = pemOrchestrationOutputSchema.safeParse(parsed);
     if (result.success) return result.data;
+    if (!result.success) {
+      this.log.debug(
+        `PemAgent orchestration safeParse errors: ${JSON.stringify(result.error.issues.slice(0, 5))}`,
+      );
+    }
     if (typeof parsed !== 'object' || parsed === null) return null;
     return this.recoverPartialOrchestrationOutput(
       parsed as Record<string, unknown>,
@@ -1094,24 +1256,30 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
   private recoverPartialOrchestrationOutput(
     o: Record<string, unknown>,
   ): PemOrchestrationOutput | null {
-    const mapArr = <T>(v: unknown, schema: z.ZodType<T>): T[] =>
+    const mapArr = <T>(v: unknown, schema: z.ZodType<T>, label: string): T[] =>
       Array.isArray(v)
-        ? v.flatMap((item) => {
+        ? v.flatMap((item, i) => {
             const r = schema.safeParse(item);
+            if (!r.success) {
+              this.log.debug(
+                `PemAgent partial recovery dropped ${label}[${i}]: ${JSON.stringify(r.error.issues.slice(0, 3))}`,
+              );
+            }
             return r.success ? [r.data] : [];
           })
         : [];
 
-    const calendar_writes = mapArr(o.calendar_writes, calendarWriteSchema);
-    const memory_writes = mapArr(o.memory_writes, memoryWriteSchema);
-    const calendar_updates = mapArr(o.calendar_updates, calendarUpdateSchema);
-    const calendar_deletes = mapArr(o.calendar_deletes, calendarDeleteSchema);
-    const scheduling = mapArr(o.scheduling, schedulingSchema);
+    const calendar_writes = mapArr(o.calendar_writes, calendarWriteSchema, 'calendar_writes');
+    const memory_writes = mapArr(o.memory_writes, memoryWriteSchema, 'memory_writes');
+    const calendar_updates = mapArr(o.calendar_updates, calendarUpdateSchema, 'calendar_updates');
+    const calendar_deletes = mapArr(o.calendar_deletes, calendarDeleteSchema, 'calendar_deletes');
+    const scheduling = mapArr(o.scheduling, schedulingSchema, 'scheduling');
     const recurrence_detections = mapArr(
       o.recurrence_detections,
       recurrenceDetectionSchema,
+      'recurrence_detections',
     );
-    const rsvp_actions = mapArr(o.rsvp_actions, rsvpActionSchema);
+    const rsvp_actions = mapArr(o.rsvp_actions, rsvpActionSchema, 'rsvp_actions');
 
     const hasWork =
       calendar_writes.length > 0 ||

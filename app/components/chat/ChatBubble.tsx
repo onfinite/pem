@@ -7,6 +7,7 @@ import { AlertCircle, Check, CheckCheck, ListTodo } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef } from "react";
 import { Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import InviteRsvpActions from "./InviteRsvpActions";
 import { MarkdownText } from "./MarkdownText";
 import VoiceBubble from "./VoiceBubble";
 
@@ -147,6 +148,19 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
             </Text>
           </Pressable>
         )}
+
+        {!isUser &&
+          meta?.type === "calendar_invite" &&
+          typeof meta.extract_id === "string" && (
+            <InviteRsvpActions
+              extractId={meta.extract_id}
+              currentStatus={
+                typeof meta.self_rsvp_status === "string"
+                  ? meta.self_rsvp_status
+                  : null
+              }
+            />
+          )}
 
         <View style={styles.metaRow}>
           <Text style={[styles.time, { color: tickColor }]}>{time}</Text>

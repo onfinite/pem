@@ -18,6 +18,7 @@ import {
 import { useAuth, useClerk, useUser } from "@clerk/expo";
 import { router } from "expo-router";
 import { deleteAccount } from "@/lib/pemApi";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   Bell,
   Check,
@@ -31,7 +32,6 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Modal,
@@ -53,10 +53,6 @@ const THEME_OPTIONS: { value: ThemePreference; label: string; Icon: typeof Sun }
   { value: "system", label: "System", Icon: Monitor },
 ];
 
-const NOTIF_TIMES = [
-  "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00",
-];
-
 function formatTime12(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
@@ -64,13 +60,26 @@ function formatTime12(hhmm: string): string {
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+function hhmmToDate(hhmm: string): Date {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
+function dateToHhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const SUMMARY_MAX_CHARS = 2000;
+
 function SummaryCard() {
   const { colors } = useTheme();
   const { getToken } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   const [summary, setSummary] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -80,15 +89,22 @@ function SummaryCard() {
       .catch(() => {});
   }, []);
 
+  const handleOpen = useCallback(() => {
+    setDraft(summary ?? "");
+    setOpen(true);
+  }, [summary]);
+
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
       await updateUserSummary(getTokenRef.current, draft);
       setSummary(draft);
-      setEditing(false);
+      setOpen(false);
     } catch { /* ignore */ }
     setSaving(false);
   }, [draft]);
+
+  const remaining = SUMMARY_MAX_CHARS - draft.length;
 
   return (
     <>
@@ -98,7 +114,8 @@ function SummaryCard() {
       <PemText variant="caption" style={styles.sectionHint}>
         Pem updates this from your conversations. You can edit it too.
       </PemText>
-      <View
+      <Pressable
+        onPress={handleOpen}
         style={[
           styles.card,
           {
@@ -108,7 +125,11 @@ function SummaryCard() {
         ]}
       >
         {summary ? (
-          <PemText variant="body" style={{ color: colors.textSecondary, lineHeight: 20 }}>
+          <PemText
+            variant="body"
+            numberOfLines={3}
+            style={{ color: colors.textSecondary, lineHeight: 20 }}
+          >
             {summary}
           </PemText>
         ) : (
@@ -116,24 +137,26 @@ function SummaryCard() {
             No summary yet — Pem will learn about you from your conversations.
           </PemText>
         )}
-        <Pressable
-          onPress={() => {
-            setDraft(summary ?? "");
-            setEditing(true);
-          }}
-          style={{ marginTop: space[3], alignSelf: "flex-start" }}
-          hitSlop={8}
+        <PemText
+          variant="body"
+          style={{ color: pemAmber, marginTop: space[3] }}
         >
-          <PemText variant="body" style={{ color: pemAmber }}>Edit</PemText>
-        </Pressable>
-      </View>
+          {summary ? "Read more" : "Add"}
+        </PemText>
+      </Pressable>
 
-      <Modal visible={editing} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={open} animationType="slide" presentationStyle="pageSheet">
         <View style={[styles.screen, { backgroundColor: colors.pageBackground, paddingTop: space[8] }]}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: space[4], paddingVertical: space[3] }}>
-            <Pressable onPress={() => setEditing(false)} hitSlop={8}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: space[4], paddingVertical: space[3] }}>
+            <Pressable onPress={() => setOpen(false)} hitSlop={8}>
               <PemText variant="body" style={{ color: colors.textSecondary }}>Cancel</PemText>
             </Pressable>
+            <PemText
+              variant="caption"
+              style={{ color: remaining < 100 ? colors.error : colors.textTertiary }}
+            >
+              {remaining} remaining
+            </PemText>
             <Pressable onPress={handleSave} disabled={saving} hitSlop={8}>
               <PemText variant="body" style={{ color: pemAmber }}>
                 {saving ? "Saving..." : "Save"}
@@ -149,13 +172,14 @@ function SummaryCard() {
               paddingHorizontal: space[4],
               paddingTop: space[3],
               textAlignVertical: "top",
+              lineHeight: 22,
             }}
             multiline
             value={draft}
             onChangeText={setDraft}
             placeholder="Tell Pem about yourself — goals, preferences, life situation..."
             placeholderTextColor={colors.textTertiary}
-            maxLength={2000}
+            maxLength={SUMMARY_MAX_CHARS}
             autoFocus
           />
         </View>
@@ -165,12 +189,12 @@ function SummaryCard() {
 }
 
 function NotificationTimeCard() {
-  const { colors } = useTheme();
+  const { colors, resolved } = useTheme();
   const { getToken } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   const [currentTime, setCurrentTime] = useState("07:00");
-  const [expanded, setExpanded] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   useEffect(() => {
     getMe(getTokenRef.current)
@@ -178,12 +202,12 @@ function NotificationTimeCard() {
       .catch(() => {});
   }, []);
 
-  const handleSelect = useCallback(async (time: string) => {
-    setCurrentTime(time);
-    setExpanded(false);
-    try {
-      await setNotificationTime(getTokenRef.current, time);
-    } catch { /* ignore */ }
+  const handleTimeChange = useCallback((_: unknown, date?: Date) => {
+    if (Platform.OS === "android") setShowPicker(false);
+    if (!date) return;
+    const hhmm = dateToHhmm(date);
+    setCurrentTime(hhmm);
+    setNotificationTime(getTokenRef.current, hhmm).catch(() => {});
   }, []);
 
   return (
@@ -195,7 +219,7 @@ function NotificationTimeCard() {
         When Pem sends your daily brief notification.
       </PemText>
       <Pressable
-        onPress={() => setExpanded((p) => !p)}
+        onPress={() => setShowPicker((p) => !p)}
         style={[
           styles.card,
           {
@@ -215,10 +239,10 @@ function NotificationTimeCard() {
           size={18}
           stroke={colors.textSecondary}
           strokeWidth={1.5}
-          style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
+          style={{ transform: [{ rotate: showPicker ? "90deg" : "0deg" }] }}
         />
       </Pressable>
-      {expanded && (
+      {showPicker && (
         <View
           style={[
             styles.card,
@@ -226,30 +250,18 @@ function NotificationTimeCard() {
               backgroundColor: colors.cardBackground,
               borderColor: colors.borderMuted,
               marginTop: space[2],
-              padding: space[2],
+              alignItems: "center",
             },
           ]}
         >
-          {NOTIF_TIMES.map((t) => (
-            <Pressable
-              key={t}
-              onPress={() => handleSelect(t)}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                paddingVertical: space[2],
-                paddingHorizontal: space[3],
-                borderRadius: radii.md,
-              }}
-            >
-              <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>
-                {formatTime12(t)}
-              </PemText>
-              {t === currentTime && (
-                <Check size={18} stroke={pemAmber} strokeWidth={2.5} />
-              )}
-            </Pressable>
-          ))}
+          <DateTimePicker
+            value={hhmmToDate(currentTime)}
+            mode="time"
+            display="spinner"
+            themeVariant={resolved}
+            onChange={handleTimeChange}
+            minuteInterval={5}
+          />
         </View>
       )}
     </>
@@ -294,55 +306,22 @@ export default function SettingsScreen() {
     router.replace("/welcome");
   }, [signOut]);
 
-  const onDeleteAccount = useCallback(() => {
-    Alert.alert(
-      "Delete Account",
-      "This will permanently delete your account and all your data. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            Alert.prompt?.(
-              "Type DELETE to confirm",
-              "This action is irreversible.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Confirm",
-                  style: "destructive",
-                  onPress: async (text) => {
-                    if (text?.toUpperCase() !== "DELETE") return;
-                    try {
-                      await deleteAccount(getToken);
-                      await signOut();
-                      router.replace("/welcome");
-                    } catch {}
-                  },
-                },
-              ],
-              "plain-text",
-            ) ??
-              Alert.alert("Confirm Deletion", "Are you absolutely sure?", [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Delete",
-                  style: "destructive",
-                  onPress: async () => {
-                    try {
-                      await deleteAccount(getToken);
-                      await signOut();
-                      router.replace("/welcome");
-                    } catch {}
-                  },
-                },
-              ]);
-          },
-        },
-      ],
-    );
-  }, [getToken, signOut]);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const isDeleteConfirmed = deleteConfirmText.toUpperCase() === "DELETE";
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!isDeleteConfirmed || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteAccount(getToken);
+      await signOut();
+      router.replace("/welcome");
+    } catch {
+      setIsDeleting(false);
+    }
+  }, [isDeleteConfirmed, isDeleting, getToken, signOut]);
 
   return (
     <View
@@ -553,12 +532,48 @@ export default function SettingsScreen() {
           </PemButton>
         </View>
 
-        <Pressable onPress={onDeleteAccount} style={styles.deleteWrap}>
+        <Pressable onPress={() => { setDeleteModalVisible(true); setDeleteConfirmText(""); }} style={styles.deleteWrap}>
           <PemText variant="caption" style={styles.deleteText}>
             Delete Account
           </PemText>
         </Pressable>
       </ScrollView>
+
+      <Modal visible={deleteModalVisible} transparent animationType="fade">
+        <View style={styles.deleteOverlay}>
+          <View style={[styles.deleteCard, { backgroundColor: colors.cardBackground }]}>
+            <PemText variant="title" style={{ textAlign: "center", marginBottom: space[3] }}>
+              Delete Account
+            </PemText>
+            <PemText variant="bodyMuted" style={{ textAlign: "center", marginBottom: space[5], lineHeight: 22 }}>
+              This will permanently delete all your data including tasks, calendar connections, memories, and chat history. This action is irreversible.
+            </PemText>
+            <TextInput
+              style={[styles.deleteInput, { color: colors.textPrimary, borderColor: deleteConfirmText ? (isDeleteConfirmed ? "#d70015" : colors.borderMuted) : colors.borderMuted, backgroundColor: colors.secondarySurface }]}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              placeholder="Type DELETE to confirm"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+            <Pressable
+              onPress={handleConfirmDelete}
+              disabled={!isDeleteConfirmed || isDeleting}
+              style={[styles.deleteBtn, (!isDeleteConfirmed || isDeleting) && { opacity: 0.35 }]}
+            >
+              {isDeleting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <PemText style={styles.deleteBtnText}>Delete my account</PemText>
+              )}
+            </Pressable>
+            <Pressable onPress={() => setDeleteModalVisible(false)} style={{ marginTop: space[3] }}>
+              <PemText variant="body" style={{ textAlign: "center", color: colors.textTertiary }}>Cancel</PemText>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -701,5 +716,42 @@ const styles = StyleSheet.create({
   deleteText: {
     color: "#d70015",
     textDecorationLine: "underline",
+  },
+  deleteOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: space[6],
+  },
+  deleteCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: radii.lg,
+    padding: space[6],
+    alignItems: "center",
+  },
+  deleteInput: {
+    width: "100%",
+    paddingHorizontal: space[4],
+    paddingVertical: 14,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.base,
+    textAlign: "center",
+    marginBottom: space[4],
+  },
+  deleteBtn: {
+    width: "100%",
+    backgroundColor: "#d70015",
+    paddingVertical: 14,
+    borderRadius: radii.md,
+    alignItems: "center",
+  },
+  deleteBtnText: {
+    fontFamily: fontFamily.sans.semibold,
+    fontSize: fontSize.base,
+    color: "#fff",
   },
 });

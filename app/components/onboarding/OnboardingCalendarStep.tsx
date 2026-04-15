@@ -17,7 +17,7 @@ export function OnboardingCalendarStep({ isConnected, onConnect, onSkip }: Onboa
   return (
     <View style={s.centered}>
       <View style={s.iconCircle}>
-        <CalendarDays size={36} color={pemAmber} />
+        <CalendarDays size={40} color={pemAmber} />
       </View>
       <PemText variant="display" style={s.heading}>
         Connect your calendar

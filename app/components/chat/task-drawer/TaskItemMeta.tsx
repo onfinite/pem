@@ -1,10 +1,9 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { openNativeMapsForPlace } from "@/lib/placeLinks";
-import { Calendar, Clock, ExternalLink, MapPin } from "lucide-react-native";
+import { Clock, ExternalLink, MapPin } from "lucide-react-native";
 import { useCallback, useMemo } from "react";
 import { Pressable, View, Text } from "react-native";
-import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
 import { itemStyles } from "./taskItem.styles";
 
 function capitalize(s: string): string {
@@ -116,23 +115,6 @@ export function TaskItemMeta({
           {durationLine}
           {item.is_deadline ? " · Deadline" : ""}
         </Text>
-      )}
-      {isCalendarBacked && (
-        <View
-          style={[
-            itemStyles.sourceBadge,
-            { backgroundColor: CALENDAR_EVENT_DOT_COLOR + "22" },
-          ]}
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel="Synced from calendar"
-        >
-          <Calendar
-            size={12}
-            color={CALENDAR_EVENT_DOT_COLOR}
-            strokeWidth={2}
-          />
-        </View>
       )}
       {item.event_location && (
         <Pressable

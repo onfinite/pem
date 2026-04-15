@@ -267,11 +267,37 @@ export function useTaskDrawerController(
     });
     setCalData((prev) => {
       if (!prev) return prev;
+      const removed =
+        prev.items.find((t) => t.id === id) ??
+        prev.overdue.find((t) => t.id === id);
+      const dotMap = { ...prev.dot_map };
+      if (removed) {
+        const anchor =
+          removed.event_start_at ?? removed.due_at ?? removed.period_start;
+        if (anchor) {
+          const dateKey = anchor.slice(0, 10);
+          const entry = dotMap[dateKey];
+          if (entry) {
+            const isEvent =
+              removed.source === "calendar" || !!removed.external_event_id;
+            const updated = {
+              tasks: isEvent ? entry.tasks : Math.max(0, entry.tasks - 1),
+              events: isEvent ? Math.max(0, entry.events - 1) : entry.events,
+            };
+            if (updated.tasks === 0 && updated.events === 0) {
+              delete dotMap[dateKey];
+            } else {
+              dotMap[dateKey] = updated;
+            }
+          }
+        }
+      }
       return {
         ...prev,
         items: prev.items.filter((t) => t.id !== id),
         overdue: prev.overdue.filter((t) => t.id !== id),
         undated: prev.undated.filter((t) => t.id !== id),
+        dot_map: dotMap,
       };
     });
   }, []);
@@ -299,11 +325,13 @@ export function useTaskDrawerController(
           if (prev.some((x) => x.id === id)) return prev;
           return [doneRow, ...prev];
         });
+        fetchCalendar(calMonth);
       } catch {
         fetchTasks();
+        fetchCalendar(calMonth);
       }
     },
-    [getToken, removeItem, fetchTasks, onCountsChanged, tasks],
+    [getToken, removeItem, fetchTasks, fetchCalendar, calMonth, onCountsChanged, tasks],
   );
 
   const handleUndo = useCallback(
@@ -319,11 +347,13 @@ export function useTaskDrawerController(
         }
         onCountsChanged?.();
         fetchTasks();
+        fetchCalendar(calMonth);
       } catch {
         fetchTasks();
+        fetchCalendar(calMonth);
       }
     },
-    [getToken, fetchTasks, onCountsChanged, undoItem],
+    [getToken, fetchTasks, fetchCalendar, calMonth, onCountsChanged, undoItem],
   );
 
   const handleUndoExpire = useCallback(
@@ -383,26 +413,15 @@ export function useTaskDrawerController(
       try {
         await patchExtractDismiss(getToken, id);
         onCountsChanged?.();
+        fetchCalendar(calMonth);
       } catch {
         fetchTasks();
+        fetchCalendar(calMonth);
       }
     },
-    [closeTaskEdit, removeItem, getToken, onCountsChanged, fetchTasks, tasks],
+    [closeTaskEdit, removeItem, getToken, onCountsChanged, fetchTasks, fetchCalendar, calMonth, tasks],
   );
 
-  const handleEditDelete = useCallback(
-    async (id: string) => {
-      closeTaskEdit();
-      removeItem(id);
-      try {
-        await patchExtractDismiss(getToken, id);
-        onCountsChanged?.();
-      } catch {
-        fetchTasks();
-      }
-    },
-    [closeTaskEdit, removeItem, getToken, onCountsChanged, fetchTasks],
-  );
 
   const markedDates = useMemo(
     () => buildMarkedDates(calData, selectedDate),
@@ -495,7 +514,6 @@ export function useTaskDrawerController(
     handleEditSave,
     handleEditDone,
     handleEditDismiss,
-    handleEditDelete,
     refreshing,
     handleRefresh,
     removeTasksByListId,

@@ -2,7 +2,6 @@ import { pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { memo } from "react";
-import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
 import { TaskItemRow } from "./TaskItemRow";
 import { useTaskItemDisplay } from "./useTaskItemDisplay";
 
@@ -20,11 +19,7 @@ export const TaskItem = memo(function TaskItem({
   const { colors } = useTheme();
   const meta = useTaskItemDisplay(item);
 
-  const borderColor = meta.noManualComplete
-    ? colors.textTertiary
-    : meta.isCalendarBacked
-      ? CALENDAR_EVENT_DOT_COLOR
-      : pemAmber;
+  const borderColor = meta.noManualComplete ? colors.textTertiary : pemAmber;
 
   return (
     <TaskItemRow
