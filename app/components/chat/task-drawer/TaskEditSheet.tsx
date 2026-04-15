@@ -15,6 +15,7 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Dimensions,
   Modal,
   Platform,
@@ -141,7 +142,11 @@ export function TaskEditSheet({
   }, [extract, onDone]);
 
   const handleDismiss = useCallback(() => {
-    if (extract) onDismiss(extract.id);
+    if (!extract) return;
+    Alert.alert("Dismiss", "Are you sure you want to dismiss this?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Dismiss", style: "destructive", onPress: () => onDismiss(extract.id) },
+    ]);
   }, [extract, onDismiss]);
 
   const handlePreset = useCallback((key: string) => {

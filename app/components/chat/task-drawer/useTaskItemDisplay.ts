@@ -9,13 +9,14 @@ export function useTaskItemDisplay(item: ApiExtract) {
     item.due_at ??
     item.period_start;
 
+  const isCalendarBacked = isCalendarBackedExtract(item);
+
   const isOverdue = useMemo(() => {
+    if (isCalendarBacked) return false;
     if (item.period_end) return new Date(item.period_end) < new Date();
     if (displayAnchor) return new Date(displayAnchor) < new Date();
     return false;
-  }, [displayAnchor, item.period_end]);
-
-  const isCalendarBacked = isCalendarBackedExtract(item);
+  }, [isCalendarBacked, displayAnchor, item.period_end]);
   const isIdea = item.tone === "idea";
   const noManualComplete = isCalendarBacked || isIdea;
 

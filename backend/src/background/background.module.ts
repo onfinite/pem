@@ -21,6 +21,7 @@ import { ChatProcessor } from './queues/chat/chat.processor';
 import { ChatQuestionService } from './queues/chat/chat-question.service';
 import { ReminderCronService } from './queues/reminder/reminder-cron.service';
 import { RecurrenceCronService } from './queues/scheduler/recurrence-cron.service';
+import { WeeklyReflectionProcessor } from './queues/weekly/weekly-reflection.processor';
 
 @Global()
 @Module({
@@ -71,6 +72,7 @@ import { RecurrenceCronService } from './queues/scheduler/recurrence-cron.servic
     CalendarCronService,
     RecurrenceCronService,
     ReminderCronService,
+    WeeklyReflectionProcessor,
   ],
   exports: [BullModule, ChatEventsModule, ChatQuestionService, BriefCronService],
 })

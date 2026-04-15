@@ -233,8 +233,15 @@ export const pemOrchestrationOutputSchema = z.object({
       'If the user revealed important life context (goals, visions, relationships, preferences, worries, habits, life situation), provide ONLY the new information learned from this message. Do NOT repeat the existing summary — just the new facts. Keep under 200 tokens. The system merges this into the existing profile automatically.',
     ),
   polished_text: nullStr.describe(
-    'Cleaned up version of the user message for the thought log',
+    'Cleaned up version of the user message for the thought log. For voice messages over 500 words, write a 2-3 sentence summary of what the user said — not a cleaned transcript.',
   ),
+  detected_theme: z
+    .string()
+    .nullish()
+    .transform((v) => (v && v.trim() ? v.trim() : null))
+    .describe(
+      'If this dump connects to a recurring pattern across past messages, name the theme in 1-2 words (e.g. "finances", "work stress", "health"). Null if no clear pattern.',
+    ),
 });
 
 export const pemAgentOutputSchema = pemExtractionOutputSchema.merge(
@@ -401,13 +408,25 @@ CRITICAL — Visions vs memory (this step):
 - If locked extraction has tasks, response_text must summarize what was organized.
 
 Rules for your response:
-- Keep it short. 1-3 sentences. Say what you did and stop.
-- Summarize what you organized: "Added milk to shopping and put the dentist on Thursday at 2." Never claim you performed an external action.
-- If you created tasks, say so plainly ("Added to your list", "On your shopping list", "Saved to ideas", "There's a task for...").
+- Acknowledge the emotional arc of long dumps. If it sounds heavy, lead with that: "That was a lot to carry." Then state what you organized.
 - If the user is venting and locked extraction is empty, acknowledge only. If locked extraction has tasks, say what you organized — do not use vague "I'll keep that in mind" without naming the list changes.
-- NEVER use markdown, bold, asterisks, or bullet lists. Plain text only.
 - NEVER end with offers of help, questions back to the user, or motivational closers. Just state what you did.
 - CRITICAL — response accuracy: ONLY describe actions that actually appear in the locked extraction or your output fields. If you didn't create a task, don't say you did. If you only updated one task, don't say you "noted both." The user will check the inbox — if the response and the inbox don't match, trust is broken.
+
+Response formatting — adapt to complexity:
+- 1-2 items extracted: Plain text, one sentence. "Added milk to shopping and put the dentist on Thursday at 2."
+- 3+ items extracted: Start with a short lead sentence, then a bullet list of what you captured. Use "—" for bullets. Example:
+  "Got all of that — here's what I pulled out:
+  — Cancel gym membership
+  — Buy groceries (shopping list)
+  — Dentist Thursday at 2pm
+  — Call mom back"
+- For long voice dumps (500+ words), always lead with a count: "Got seven things from that." If it sounded heavy, acknowledge first: "That was a lot. Here's what I picked up:" then bullets.
+- For calendar events, include the time in the bullet: "— Meeting with John, Thursday 3pm"
+- For list assignments, note the list: "— Potatoes (shopping)" or "— Fix the leak (errands)"
+- Bullets should be the ACTUAL task text from locked extraction — not paraphrased. Short and clean.
+- Do NOT use markdown bold (**), headers (#), or numbered lists. Just "—" dashes for bullets and plain text.
+- Keep the lead sentence warm and natural. The bullets are the structure.
 
 Journaling, venting, and emotional support:
 - When the user shares worries, stress, fears, or emotions with NO actionable items in locked extraction, respond with genuine warmth and empathy. Acknowledge what they said specifically — don't be generic.
@@ -428,6 +447,11 @@ Context handling:
 - If the user's timezone is known, interpret relative dates accordingly.
 - Reference stored memories and scheduling habits proactively when relevant to the current message.
 - Use ## Contacts to resolve people's names to emails when creating calendar events with attendees.
+
+Connection surfacing:
+- If "## Related past context" shows the user has talked about something similar before, mention the connection naturally in ONE sentence. Example: "This connects to the budget thing you brought up last week." Don't force connections where none exist.
+- If multiple recent dumps point to the same underlying concern (visible in related context or memory), name the pattern. Example: "A few things lately all point to finances." If 3+ related items exist, offer to create a focus list.
+- Set detected_theme when you spot a recurring pattern — a 1-2 word label like "finances", "work stress", "health". Null if no pattern.
 
 Rules for calendar management:
 - When the user asks to reschedule/move a calendar event, use calendar_updates with the extract_id that has the event.
@@ -627,6 +651,7 @@ const DEFAULT_ORCHESTRATION: PemOrchestrationOutput = {
   rsvp_actions: [],
   summary_update: null,
   polished_text: null,
+  detected_theme: null,
 };
 
 @Injectable()
@@ -640,6 +665,7 @@ export class PemAgentService {
 
   async run(params: {
     messageContent: string;
+    isLongVoiceMemo?: boolean;
     userTimezone: string | null;
     openExtracts: {
       id: string;
@@ -702,6 +728,7 @@ export class PemAgentService {
       rsvp_actions: [],
       summary_update: null,
       polished_text: null,
+      detected_theme: null,
     };
 
     const baseModel = openai(agentModel);
@@ -772,6 +799,7 @@ export class PemAgentService {
 
   private buildUserPrompt(params: {
     messageContent: string;
+    isLongVoiceMemo?: boolean;
     userTimezone: string | null;
     openExtracts: {
       id: string;
@@ -892,7 +920,7 @@ ${params.memorySection || '(none yet)'}
 ## Recent conversation
 ${recentSection || '(start of conversation)'}
 
-${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentDoneSection ? `## Recently completed tasks\n${params.recentDoneSection}\n\n` : ''}${params.recentDismissedSection ? `## Recently dismissed (do not recreate)\n${params.recentDismissedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}## User message
+${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentDoneSection ? `## Recently completed tasks\n${params.recentDoneSection}\n\n` : ''}${params.recentDismissedSection ? `## Recently dismissed (do not recreate)\n${params.recentDismissedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}${params.isLongVoiceMemo ? `## Note: This is a long voice memo (500+ words). Keep response to 3 sentences max. polished_text should be a 2-3 sentence summary, not a cleaned transcript.\n\n` : ''}## User message
 "${truncateForPrompt(params.messageContent)}"`;
   }
 
@@ -1321,6 +1349,8 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
         typeof o.summary_update === 'string' ? o.summary_update : null,
       polished_text:
         typeof o.polished_text === 'string' ? o.polished_text : null,
+      detected_theme:
+        typeof o.detected_theme === 'string' ? o.detected_theme : null,
     };
   }
 
@@ -1487,6 +1517,8 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
         typeof o.summary_update === 'string' ? o.summary_update : null,
       polished_text:
         typeof o.polished_text === 'string' ? o.polished_text : null,
+      detected_theme:
+        typeof o.detected_theme === 'string' ? o.detected_theme : null,
     };
   }
 }

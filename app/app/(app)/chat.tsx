@@ -66,7 +66,7 @@ function buildHeaderSummary(brief: BriefResponse | null): {
   if (todayCount > 0) {
     return { text: `${todayCount} open`, isOverdue: false };
   }
-  return { text: "", isOverdue: false };
+  return { text: "All clear today", isOverdue: false };
 }
 
 const CACHE_KEY = "@pem/chat_messages_v1";

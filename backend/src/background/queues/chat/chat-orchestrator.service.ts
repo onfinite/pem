@@ -296,8 +296,12 @@ export class ChatOrchestratorService {
         );
       }, 5_000);
 
+      const wordCount = content.split(/\s+/).length;
+      const isLongVoiceMemo = msg.kind === 'voice' && wordCount > 500;
+
       const agentOutputRaw = await this.pemAgent.run({
         messageContent: content,
+        isLongVoiceMemo,
         userTimezone: ctx.tz,
         openExtracts: ctx.openExtracts,
         calendarEvents: ctx.calendarEvents,
@@ -349,11 +353,16 @@ export class ChatOrchestratorService {
         metadata,
       );
 
-      // Save polished text on user message
       if (agentOutput.polished_text) {
+        const updateFields: Record<string, string> = {
+          polishedText: agentOutput.polished_text,
+        };
+        if (msg.kind === 'voice' && !msg.summary) {
+          updateFields.summary = agentOutput.polished_text;
+        }
         await this.db
           .update(messagesTable)
-          .set({ polishedText: agentOutput.polished_text })
+          .set(updateFields)
           .where(eq(messagesTable.id, messageId));
       }
 
@@ -400,7 +409,7 @@ export class ChatOrchestratorService {
       .limit(1);
     const tz = userRow?.timezone ?? 'UTC';
 
-    const openRows = await this.db
+    const allOpenRows = await this.db
       .select()
       .from(extractsTable)
       .where(
@@ -410,6 +419,13 @@ export class ChatOrchestratorService {
           ne(extractsTable.status, 'dismissed'),
         ),
       );
+
+    const now = new Date();
+    const openRows = allOpenRows.filter((r) => {
+      const isCalEvent = r.source === 'calendar' || !!r.externalEventId;
+      if (isCalEvent && r.eventEndAt && r.eventEndAt < now) return false;
+      return true;
+    });
 
     const openExtracts = openRows.map((r) => ({
       id: r.id,
@@ -422,7 +438,6 @@ export class ChatOrchestratorService {
       period_label: r.periodLabel,
     }));
 
-    const now = new Date();
     const doneSince = new Date(now);
     doneSince.setUTCDate(doneSince.getUTCDate() - DONE_EXTRACTS_LOOKBACK_DAYS);
     const dismissedSince = new Date(now);
@@ -998,6 +1013,15 @@ export class ChatOrchestratorService {
         userId,
         mw.memory_key,
         mw.note,
+        messageId,
+      );
+    }
+
+    if (output.detected_theme) {
+      await this.profile.saveFromAgent(
+        userId,
+        'recurring_theme',
+        output.detected_theme,
         messageId,
       );
     }

@@ -4,6 +4,7 @@ import { and, desc, eq, ilike, isNotNull, lt, or } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
+  extractsTable,
   messagesTable,
   type MessageRow,
   type MessageRole,
@@ -189,4 +190,24 @@ export class ChatService {
       created_at: m.createdAt.toISOString(),
     };
   }
+
+  async getMessageExtracts(userId: string, messageId: string) {
+    return this.db
+      .select({
+        id: extractsTable.id,
+        text: extractsTable.extractText,
+        status: extractsTable.status,
+        tone: extractsTable.tone,
+        batchKey: extractsTable.batchKey,
+        listId: extractsTable.listId,
+      })
+      .from(extractsTable)
+      .where(
+        and(
+          eq(extractsTable.userId, userId),
+          eq(extractsTable.messageId, messageId),
+        ),
+      );
+  }
+
 }

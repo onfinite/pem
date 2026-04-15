@@ -18,6 +18,8 @@ import { EmbeddingsService } from '../../../embeddings/embeddings.service';
 import { ExtractsService } from '../../../extracts/extracts.service';
 import { ProfileService } from '../../../profile/profile.service';
 import { PushService } from '../../../push/push.service';
+import { GoogleCalendarService } from '../../../calendar/google-calendar.service';
+import { calendarConnectionsTable } from '../../../database/schemas';
 
 function buildBriefSystem(timeOfDay: string, dayOfWeek: string): string {
   return `You are Pem, writing a brief to the user. This is a message in their chat — like getting a text from a trusted friend who manages their day.
@@ -41,6 +43,8 @@ Rules:
 - If the day is light, say so cheerfully.
 - When a new month or quarter is starting (first few days), mention items the user saved for "this month", the month name, etc. — gently nudge to schedule them.
 - When memory or past context is relevant to today's tasks, weave it in naturally — e.g. "I know you're aiming for X, so prioritizing Y today makes sense." Only reference past context when it adds value; don't force it.
+- If the user has mentioned something repeatedly (visible in "Recurring concerns" or memory), acknowledge it briefly — not as a task, but as awareness. One sentence max. Example: "The money thing keeps coming up." Don't therapize. Just show you noticed.
+- If something feels emotionally heavy based on context, acknowledge it warmly at the end. A single human sentence — "I know the Denver thing is weighing on you" — not a paragraph.
 - Keep it under 200 words.`;
 }
 
@@ -55,6 +59,7 @@ export class BriefCronService {
     private readonly embeddings: EmbeddingsService,
     private readonly profile: ProfileService,
     private readonly extracts: ExtractsService,
+    private readonly googleCal: GoogleCalendarService,
   ) {}
 
   @Cron('0 * * * *')
@@ -148,10 +153,7 @@ export class BriefCronService {
       return null;
     }
 
-    const autoCompleted =
-      await this.extracts.autoCompletePastEvents(userId);
-
-    const openExtracts = await this.db
+    const allOpen = await this.db
       .select()
       .from(extractsTable)
       .where(
@@ -163,6 +165,12 @@ export class BriefCronService {
       );
 
     const now = new Date();
+    const openExtracts = allOpen.filter((r) => {
+      const isCalEvent = r.source === 'calendar' || !!r.externalEventId;
+      if (isCalEvent && r.eventEndAt && r.eventEndAt < now) return false;
+      return true;
+    });
+
     const luxNow = DateTime.now().setZone(timezone);
     const todayStr = luxNow.toISODate();
     const todayStart = luxNow.startOf('day').toJSDate();
@@ -233,6 +241,24 @@ export class BriefCronService {
 
     const calendarItems = openExtracts.filter((e) => e.eventStartAt);
 
+    let birthdayNames: string[] = [];
+    try {
+      const [conn] = await this.db
+        .select()
+        .from(calendarConnectionsTable)
+        .where(eq(calendarConnectionsTable.userId, userId))
+        .limit(1);
+      if (conn?.googleAccessToken && conn?.googleRefreshToken) {
+        const result = await this.googleCal.fetchTodayBirthdays(
+          conn.googleAccessToken,
+          conn.googleRefreshToken,
+        );
+        birthdayNames = result.names;
+      }
+    } catch {
+      /* birthday fetch is best-effort */
+    }
+
     const doneYesterday = await this.db
       .select()
       .from(extractsTable)
@@ -275,14 +301,25 @@ export class BriefCronService {
     }
 
     let ragSection = '';
+    let worriesSection = '';
     try {
-      const ragResults = await this.embeddings.similaritySearch(
-        userId,
-        'What is the user working toward? Goals, plans, priorities, upcoming commitments',
-        5,
-      );
+      const [ragResults, worryResults] = await Promise.all([
+        this.embeddings.similaritySearch(
+          userId,
+          'What is the user working toward? Goals, plans, priorities, upcoming commitments',
+          5,
+        ),
+        this.embeddings.similaritySearch(
+          userId,
+          'What is the user worried about, stressed about, or keeps mentioning repeatedly?',
+          5,
+        ),
+      ]);
       if (ragResults.length > 0) {
         ragSection = ragResults.map((r) => `- ${r.content.slice(0, 200)}`).join('\n');
+      }
+      if (worryResults.length > 0) {
+        worriesSection = worryResults.map((r) => `- ${r.content.slice(0, 200)}`).join('\n');
       }
     } catch (e) {
       this.log.warn(
@@ -290,21 +327,16 @@ export class BriefCronService {
       );
     }
 
-    const autoCompletedLine =
-      autoCompleted.length > 0
-        ? `\nAuto-completed calendar events (already past): ${autoCompleted.join(', ')}`
-        : '';
-
     const context = `Today's date: ${dateDisplay}
 
-Completed yesterday: ${doneYesterday.length > 0 ? doneYesterday.map((e) => e.extractText).join(', ') : 'nothing'}${autoCompletedLine}
+Completed yesterday: ${doneYesterday.length > 0 ? doneYesterday.map((e) => e.extractText).join(', ') : 'nothing'}
 
 Overdue: ${overdue.length > 0 ? overdue.map((e) => `${e.extractText} (due ${e.dueAt?.toLocaleDateString()})`).join(', ') : 'none'}
 
 Today: ${todayItems.length > 0 ? todayItems.map((e) => e.extractText).join(', ') : 'nothing specific'}
 
 Calendar today: ${calendarTodayStr}
-
+${birthdayNames.length > 0 ? `\nBirthdays today: ${birthdayNames.join(', ')}. Mention this warmly — wish them a happy birthday naturally.\n` : ''}
 This week: ${thisWeekItems.length > 0 ? thisWeekItems.map((e) => e.extractText).join(', ') : 'nothing'}
 
 ${monthItems.length > 0 ? `This month you mentioned: ${monthItems.map((e) => `${e.extractText}${e.periodLabel ? ` (${e.periodLabel})` : ''}`).join(', ')}. Would any of these benefit from being scheduled?` : ''}${monthStartNudge}
@@ -312,7 +344,8 @@ ${monthItems.length > 0 ? `This month you mentioned: ${monthItems.map((e) => `${
 ${listCountsLine || 'No list items'}
 
 ${memorySection ? `## What I know about this user\n${memorySection}` : ''}
-${ragSection ? `## Recent relevant context\n${ragSection}` : ''}`;
+${ragSection ? `## Recent relevant context\n${ragSection}` : ''}
+${worriesSection ? `## Recurring concerns\n${worriesSection}` : ''}`;
 
     const timeOfDay =
       luxNow.hour < 12

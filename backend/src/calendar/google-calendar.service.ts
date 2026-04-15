@@ -195,6 +195,48 @@ export class GoogleCalendarService {
     };
   }
 
+  async fetchTodayBirthdays(
+    accessToken: string,
+    refreshToken: string,
+  ): Promise<{ names: string[]; newAccessToken: string | null }> {
+    const client = this.getOAuthClient();
+    client.setCredentials({ access_token: accessToken, refresh_token: refreshToken });
+
+    let newAccessToken: string | null = null;
+    client.on('tokens', (tokens) => {
+      if (tokens.access_token) newAccessToken = tokens.access_token;
+    });
+
+    const cal = google.calendar({ version: 'v3', auth: client });
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+
+    try {
+      const { data } = await cal.calendarList.list({ minAccessRole: 'reader' });
+      const birthdayCal = (data.items ?? []).find((c) =>
+        (c.id ?? '').endsWith('#contacts@group.v.calendar.google.com'),
+      );
+      if (!birthdayCal?.id) return { names: [], newAccessToken };
+
+      const { data: events } = await cal.events.list({
+        calendarId: birthdayCal.id,
+        singleEvents: true,
+        timeMin: dayStart.toISOString(),
+        timeMax: dayEnd.toISOString(),
+        maxResults: 50,
+      });
+
+      const names = (events.items ?? [])
+        .map((e) => e.summary?.replace(/'s birthday$/i, '').trim() ?? '')
+        .filter(Boolean);
+
+      return { names, newAccessToken };
+    } catch {
+      return { names: [], newAccessToken };
+    }
+  }
+
   private static readonly SKIP_CALENDAR_SUFFIXES = [
     '#holiday@group.v.calendar.google.com',
     '#contacts@group.v.calendar.google.com',

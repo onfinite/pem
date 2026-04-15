@@ -287,6 +287,16 @@ export class ChatController {
     return { ok: true };
   }
 
+  @Get('messages/:id/extracts')
+  @ApiOperation({ summary: 'Get extracts linked to a specific message' })
+  async getMessageExtracts(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const extracts = await this.chat.getMessageExtracts(user.id, id);
+    return { extracts };
+  }
+
   @Get('messages/search')
   @ApiOperation({ summary: 'Search chat messages' })
   async searchMessages(

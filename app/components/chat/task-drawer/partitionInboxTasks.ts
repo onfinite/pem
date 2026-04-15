@@ -1,4 +1,5 @@
 import type { ApiExtract } from "@/lib/pemApi";
+import { isCalendarBackedExtract } from "./calendarExtract";
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -109,13 +110,22 @@ export function partitionInboxTasks(tasks: ApiExtract[]): InboxPartition {
   for (const t of tasks) {
     if (t.urgency === "someday") { someday.push(t); continue; }
 
+    const calBacked = isCalendarBackedExtract(t);
+    const eventEnd = t.event_end_at ? Date.parse(t.event_end_at) : null;
+    if (calBacked && eventEnd && eventEnd < nowMs) continue;
+
     const ms = anchorMs(t);
     if (ms === null) { someday.push(t); continue; }
 
-    if (isOverdue(t, nowMs, todayStartMs)) {
+    const pStart = t.period_start ? Date.parse(t.period_start) : null;
+    const pEnd = t.period_end ? Date.parse(t.period_end) : null;
+    const periodCoversToday =
+      pStart != null && pEnd != null && pStart <= todayEnd && pEnd >= todayStartMs;
+
+    if (!calBacked && isOverdue(t, nowMs, todayStartMs)) {
       ensureBucket("overdue", "Overdue");
       buckets.overdue.items.push(t);
-    } else if (ms <= todayEnd) {
+    } else if (periodCoversToday || ms <= todayEnd) {
       ensureBucket("today", "Today");
       buckets.today.items.push(t);
     } else if (ms <= tomorrowEnd) {

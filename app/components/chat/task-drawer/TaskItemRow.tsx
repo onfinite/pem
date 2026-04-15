@@ -96,8 +96,6 @@ export const TaskItemRow = memo(function TaskItemRow({
               timeStr={timeStr}
               dateStr={dateStr}
               urgencyLabel={urgencyLabel}
-              isCalendarBacked={isCalendarBacked}
-              noManualComplete={noManualComplete}
             />
           </View>
         </Pressable>

@@ -14,7 +14,7 @@ import { usersTable } from './users.schema';
 export const MESSAGE_ROLES = ['user', 'pem'] as const;
 export type MessageRole = (typeof MESSAGE_ROLES)[number];
 
-export const MESSAGE_KINDS = ['text', 'voice', 'brief'] as const;
+export const MESSAGE_KINDS = ['text', 'voice', 'brief', 'reflection'] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
 export const TRIAGE_CATEGORIES = [

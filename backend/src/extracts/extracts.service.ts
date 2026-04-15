@@ -155,41 +155,11 @@ export class ExtractsService {
     }
   }
 
-  async autoCompletePastEvents(userId: string): Promise<string[]> {
-    const now = new Date();
-    const completed = await this.db
-      .update(extractsTable)
-      .set({ status: 'done', doneAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(extractsTable.userId, userId),
-          eq(extractsTable.status, 'inbox'),
-          eq(extractsTable.source, 'calendar'),
-          isNotNull(extractsTable.eventEndAt),
-          lt(extractsTable.eventEndAt, now),
-        ),
-      )
-      .returning({ id: extractsTable.id, text: extractsTable.extractText });
-
-    for (const row of completed) {
-      await this.db.insert(logsTable).values({
-        userId,
-        type: 'extract',
-        extractId: row.id,
-        pemNote: 'Auto-completed (past calendar event)',
-        isAgent: true,
-        payload: { op: 'auto_complete_past_event' },
-      });
-    }
-    return completed.map((r) => r.text);
-  }
-
-  async wakeAndAutoComplete(userId: string): Promise<void> {
+  async wakeSnoozedThrottled(userId: string): Promise<void> {
     const last = this.lastWake.get(userId) ?? 0;
     if (Date.now() - last < ExtractsService.WAKE_INTERVAL_MS) return;
     this.lastWake.set(userId, Date.now());
     await this.wakeSnoozed(userId);
-    await this.autoCompletePastEvents(userId);
   }
 
   async findForUser(
@@ -371,7 +341,7 @@ export class ExtractsService {
     limit: number,
     cursor: string | null,
   ): Promise<{ rows: ExtractRow[]; next_cursor: string | null }> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const lim = Math.min(Math.max(limit, 1), 50);
     const parts: SQL[] = [eq(extractsTable.userId, userId)];
 
@@ -379,6 +349,9 @@ export class ExtractsService {
     if (st === 'open') {
       parts.push(ne(extractsTable.status, 'done'));
       parts.push(ne(extractsTable.status, 'dismissed'));
+      parts.push(
+        sql`not (${extractsTable.externalEventId} is not null and ${extractsTable.eventEndAt} is not null and ${extractsTable.eventEndAt} < now())`,
+      );
     } else {
       parts.push(eq(extractsTable.status, st));
     }
@@ -427,7 +400,7 @@ export class ExtractsService {
     id: string,
     audit?: ExtractMutationAudit,
   ): Promise<ExtractRow> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
     const now = new Date();
@@ -461,7 +434,7 @@ export class ExtractsService {
     id: string,
     audit?: ExtractMutationAudit,
   ): Promise<ExtractRow> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
 
@@ -521,7 +494,7 @@ export class ExtractsService {
   }
 
   async undone(userId: string, id: string): Promise<ExtractRow> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
     const now = new Date();
@@ -543,7 +516,7 @@ export class ExtractsService {
   }
 
   async undismiss(userId: string, id: string): Promise<ExtractRow> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
     const now = new Date();
@@ -622,7 +595,7 @@ export class ExtractsService {
     isoOverride?: string,
     audit?: ExtractMutationAudit,
   ): Promise<ExtractRow> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
 
@@ -695,7 +668,7 @@ export class ExtractsService {
     id: string,
     patch: UpdateExtractBody,
   ): Promise<ExtractRow> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
     if (row.status !== 'inbox' && row.status !== 'snoozed') {
@@ -933,7 +906,7 @@ export class ExtractsService {
     this_week: number;
     someday: number;
   }> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const zone = await this.getUserTimezone(userId);
     const now = DateTime.now().setZone(zone);
     const todayStart = now.startOf('day').toJSDate();
@@ -943,9 +916,12 @@ export class ExtractsService {
       .endOf('day')
       .toJSDate();
 
+    const jsNow = now.toJSDate();
     const anchor = sql`coalesce(${extractsTable.eventStartAt}, ${extractsTable.scheduledAt}, ${extractsTable.dueAt}, ${extractsTable.periodStart})`;
+    const isPastCalEvent = sql`(${extractsTable.externalEventId} is not null and ${extractsTable.eventEndAt} is not null and ${extractsTable.eventEndAt} < ${jsNow})`;
     const overdueCondition = sql`(
-      ${anchor} is not null and ${anchor} < ${todayStart}
+      ${extractsTable.externalEventId} is null
+      and ${anchor} is not null and ${anchor} < ${todayStart}
       and (
         (${extractsTable.periodEnd} is not null and ${extractsTable.periodEnd} < ${todayStart})
         or (${extractsTable.periodEnd} is null and ${extractsTable.dueAt} is not null and ${extractsTable.dueAt} < ${todayStart})
@@ -957,6 +933,7 @@ export class ExtractsService {
         eq(extractsTable.status, 'inbox'),
         eq(extractsTable.status, 'snoozed'),
       ),
+      sql`not (${isPastCalEvent})`,
     );
 
     const [counts] = await this.db
@@ -988,7 +965,7 @@ export class ExtractsService {
     overdue: ReturnType<typeof this.serialize>[];
     dot_map: Record<string, { tasks: number; events: number }>;
   }> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const zone = await this.getUserTimezone(userId);
     const now = DateTime.now().setZone(zone);
 
@@ -1032,7 +1009,12 @@ export class ExtractsService {
     const overdue: ExtractRow[] = [];
     const dotMap: Record<string, { tasks: number; events: number }> = {};
 
+    const jsNow = now.toJSDate();
+
     for (const row of allOpen) {
+      const isCalEvent = row.source === 'calendar' || !!row.externalEventId;
+      if (isCalEvent && row.eventEndAt && row.eventEndAt < jsNow) continue;
+
       const anchor = row.eventStartAt ?? row.dueAt ?? row.periodStart;
 
       if (!anchor) {
@@ -1042,14 +1024,15 @@ export class ExtractsService {
 
       const anchorDate = new Date(anchor);
 
-      // Overdue: anchor must be before today AND (period_end or due_at) must be past
-      const anchorBeforeToday = anchorDate < todayStart;
-      if (anchorBeforeToday) {
-        const periodEndDate = row.periodEnd ? new Date(row.periodEnd) : null;
-        const isOd = periodEndDate
-          ? periodEndDate < todayStart
-          : anchorDate < todayStart;
-        if (isOd) overdue.push(row);
+      if (!isCalEvent) {
+        const anchorBeforeToday = anchorDate < todayStart;
+        if (anchorBeforeToday) {
+          const periodEndDate = row.periodEnd ? new Date(row.periodEnd) : null;
+          const isOd = periodEndDate
+            ? periodEndDate < todayStart
+            : anchorDate < todayStart;
+          if (isOd) overdue.push(row);
+        }
       }
 
       // Period items span multiple days; non-period items use the anchor
@@ -1111,7 +1094,7 @@ export class ExtractsService {
     limit: number,
     cursor: string | null,
   ): Promise<{ rows: ExtractRow[]; next_cursor: string | null }> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const lim = Math.min(Math.max(limit, 1), 50);
     const base = and(
       eq(extractsTable.userId, userId),
@@ -1119,6 +1102,7 @@ export class ExtractsService {
         eq(extractsTable.status, 'inbox'),
         eq(extractsTable.status, 'snoozed'),
       ),
+      sql`not (${extractsTable.externalEventId} is not null and ${extractsTable.eventEndAt} is not null and ${extractsTable.eventEndAt} < now())`,
     );
     const cur = cursor ? decodeOpenCursor(cursor) : null;
     const where = cur
@@ -1152,7 +1136,7 @@ export class ExtractsService {
   }
 
   async getBrief(userId: string): Promise<BriefBuckets> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const zone = await this.getUserTimezone(userId);
     const rows = await this.fetchExtractsForTimeline(userId, [
       'inbox',
@@ -1163,7 +1147,7 @@ export class ExtractsService {
 
   /** Open actionable timeline for Ask Pem (inbox + snoozed), same bucketing as the daily brief. */
   async getAskOpenTimelineBuckets(userId: string): Promise<BriefBuckets> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const zone = await this.getUserTimezone(userId);
     const rows = await this.fetchExtractsForTimeline(userId, [
       'inbox',
@@ -1174,7 +1158,7 @@ export class ExtractsService {
 
   /** Every open shopping-tagged extract (any urgency), for shopping-list questions. */
   async getAskOpenShoppingExtracts(userId: string): Promise<ExtractRow[]> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     return this.db
       .select()
       .from(extractsTable)
@@ -1262,6 +1246,9 @@ export class ExtractsService {
       if (row.tone === 'idea') continue;
       if (row.urgency === 'someday') continue;
 
+      const isCalEvent = row.source === 'calendar' || !!row.externalEventId;
+      if (isCalEvent && row.eventEndAt && row.eventEndAt < now) continue;
+
       const anchor =
         row.status === 'snoozed' && row.snoozedUntil
           ? row.snoozedUntil
@@ -1271,14 +1258,16 @@ export class ExtractsService {
             row.periodStart ??
             null);
 
-      const anchorBeforeToday = anchor && anchor < todayStart;
-      const isDueOverdue = anchorBeforeToday && row.dueAt && row.dueAt < todayStart;
-      const isEventOverdue =
-        anchorBeforeToday && row.eventEndAt && row.eventEndAt < now && row.source === 'calendar';
+      const periodCoversToday =
+        row.periodStart && row.periodEnd &&
+        row.periodStart <= todayEnd && row.periodEnd >= todayStart;
 
-      if (isDueOverdue || isEventOverdue) {
+      const anchorBeforeToday = anchor && anchor < todayStart;
+      const isDueOverdue = !isCalEvent && anchorBeforeToday && row.dueAt && row.dueAt < todayStart;
+
+      if (isDueOverdue) {
         overdue.push(row);
-      } else if (anchor && anchor <= todayEnd) {
+      } else if (periodCoversToday || (anchor && anchor <= todayEnd)) {
         today.push(row);
       } else if (anchor && anchor <= tomorrowEnd) {
         tomorrow.push(row);
@@ -1342,7 +1331,7 @@ export class ExtractsService {
     limit: number,
     cursor: string | null,
   ): Promise<{ rows: ExtractRow[]; next_cursor: string | null }> {
-    await this.wakeAndAutoComplete(userId);
+    await this.wakeSnoozedThrottled(userId);
     const lim = Math.min(Math.max(limit, 1), 50);
     const base = and(
       eq(extractsTable.userId, userId),

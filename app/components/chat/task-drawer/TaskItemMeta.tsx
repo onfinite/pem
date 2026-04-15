@@ -22,8 +22,6 @@ export function TaskItemMeta({
   timeStr,
   dateStr,
   urgencyLabel,
-  isCalendarBacked,
-  noManualComplete,
 }: {
   item: ApiExtract;
   compact?: boolean;
@@ -31,8 +29,6 @@ export function TaskItemMeta({
   timeStr: string | null;
   dateStr: string | null;
   urgencyLabel: string | null;
-  isCalendarBacked: boolean;
-  noManualComplete: boolean;
 }) {
   const { colors } = useTheme();
 
@@ -144,14 +140,6 @@ export function TaskItemMeta({
             {formatBatchKey(item.batch_key!)}
           </Text>
         </View>
-      )}
-      {isCalendarBacked && noManualComplete && !compact && (
-        <Text
-          style={[itemStyles.metaText, { color: colors.textTertiary }]}
-          numberOfLines={2}
-        >
-          Clears when the event passes — ask Pem to reschedule.
-        </Text>
       )}
     </View>
   );

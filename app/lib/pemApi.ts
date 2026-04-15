@@ -200,6 +200,25 @@ export async function summarizeMessage(
   );
 }
 
+export type MessageExtract = {
+  id: string;
+  text: string;
+  status: string;
+  tone: string | null;
+  batchKey: string | null;
+  listId: string | null;
+};
+
+export async function getMessageExtracts(
+  getToken: () => Promise<string | null>,
+  messageId: string,
+) {
+  return apiFetch<{ extracts: MessageExtract[] }>(
+    `/chat/messages/${messageId}/extracts`,
+    { getToken },
+  );
+}
+
 export type TaskCounts = {
   today: number;
   overdue: number;
