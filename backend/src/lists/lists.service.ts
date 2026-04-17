@@ -118,9 +118,7 @@ export class ListsService {
     const existing = await this.db
       .select({ id: listsTable.id, name: listsTable.name })
       .from(listsTable)
-      .where(
-        and(eq(listsTable.userId, userId), eq(listsTable.isDefault, true)),
-      )
+      .where(and(eq(listsTable.userId, userId), eq(listsTable.isDefault, true)))
       .orderBy(listsTable.createdAt);
 
     const seen = new Map<string, string>();
@@ -134,9 +132,7 @@ export class ListsService {
       }
     }
     if (dupeIds.length > 0) {
-      await this.db
-        .delete(listsTable)
-        .where(inArray(listsTable.id, dupeIds));
+      await this.db.delete(listsTable).where(inArray(listsTable.id, dupeIds));
     }
 
     const existingNames = new Set(seen.keys());

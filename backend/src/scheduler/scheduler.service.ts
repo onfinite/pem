@@ -170,11 +170,7 @@ export class SchedulerService {
       })
       .filter((b): b is NonNullable<typeof b> => b !== null);
 
-    const googleBlocks = await this.getGoogleBusyBlocks(
-      userId,
-      from,
-      to,
-    );
+    const googleBlocks = await this.getGoogleBusyBlocks(userId, from, to);
 
     return [...localBlocks, ...googleBlocks];
   }

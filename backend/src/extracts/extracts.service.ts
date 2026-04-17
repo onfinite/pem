@@ -272,7 +272,8 @@ export class ExtractsService {
     const dated: ExtractRow[] = [];
     const somedayRows: ExtractRow[] = [];
     for (const r of allInbox) {
-      const hasDate = r.periodStart || r.dueAt || r.eventStartAt || r.scheduledAt;
+      const hasDate =
+        r.periodStart || r.dueAt || r.eventStartAt || r.scheduledAt;
       if (r.urgency === 'someday' || !hasDate) {
         somedayRows.push(r);
       } else {
@@ -522,11 +523,7 @@ export class ExtractsService {
 
     if (row.externalEventId && row.calendarConnectionId && !row.isOrganizer) {
       this.calendarSync
-        .rsvpOnGoogle(
-          row.calendarConnectionId,
-          row.externalEventId,
-          'accepted',
-        )
+        .rsvpOnGoogle(row.calendarConnectionId, row.externalEventId, 'accepted')
         .catch((e) =>
           this.log.warn(
             `Calendar RSVP accept on undismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
@@ -710,8 +707,7 @@ export class ExtractsService {
       upd.periodEnd =
         patch.period_end === null ? null : new Date(patch.period_end);
     }
-    if (patch.period_label !== undefined)
-      upd.periodLabel = patch.period_label;
+    if (patch.period_label !== undefined) upd.periodLabel = patch.period_label;
 
     const [u] = await this.db
       .update(extractsTable)
@@ -1037,10 +1033,12 @@ export class ExtractsService {
       if (hasPeriod) {
         const cursor = DateTime.fromJSDate(
           pStart < rangeStart ? rangeStart : pStart,
-        ).setZone(zone).startOf('day');
-        const limit = DateTime.fromJSDate(
-          pEnd > rangeEnd ? rangeEnd : pEnd,
-        ).setZone(zone).startOf('day');
+        )
+          .setZone(zone)
+          .startOf('day');
+        const limit = DateTime.fromJSDate(pEnd > rangeEnd ? rangeEnd : pEnd)
+          .setZone(zone)
+          .startOf('day');
         let d = cursor;
         while (d <= limit) {
           const dk = d.toFormat('yyyy-MM-dd');
@@ -1243,11 +1241,14 @@ export class ExtractsService {
             null);
 
       const periodCoversToday =
-        row.periodStart && row.periodEnd &&
-        row.periodStart <= todayEnd && row.periodEnd >= todayStart;
+        row.periodStart &&
+        row.periodEnd &&
+        row.periodStart <= todayEnd &&
+        row.periodEnd >= todayStart;
 
       const anchorBeforeToday = anchor && anchor < todayStart;
-      const isDueOverdue = !isCalEvent && anchorBeforeToday && row.dueAt && row.dueAt < todayStart;
+      const isDueOverdue =
+        !isCalEvent && anchorBeforeToday && row.dueAt && row.dueAt < todayStart;
 
       if (isDueOverdue) {
         overdue.push(row);

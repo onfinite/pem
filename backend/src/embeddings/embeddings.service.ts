@@ -7,7 +7,12 @@ import { eq, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import { messageEmbeddingsTable } from '../database/schemas';
-import { RAG_MIN_SIMILARITY, RAG_TOP_K } from '../chat/chat.constants';
+import {
+  RAG_IMAGE_RECALL_MIN_SIMILARITY,
+  RAG_IMAGE_RECALL_TOP_K,
+  RAG_MIN_SIMILARITY,
+  RAG_TOP_K,
+} from '../chat/chat.constants';
 
 @Injectable()
 export class EmbeddingsService {
@@ -101,6 +106,59 @@ export class EmbeddingsService {
           as boosted_sim
       FROM message_embeddings me
       WHERE me.user_id = ${userId}
+        AND (1 - (me.embedding <=> ${vectorStr}::vector)) >= ${minSimilarity}
+      ORDER BY boosted_sim DESC
+      LIMIT ${limit}
+    `);
+
+    return (
+      results.rows as {
+        message_id: string;
+        content: string;
+        cosine_sim: string;
+        boosted_sim: string;
+      }[]
+    ).map((r) => ({
+      messageId: r.message_id,
+      content: r.content,
+      similarity: Number(r.boosted_sim),
+    }));
+  }
+
+  /**
+   * Vector search restricted to **user image messages** so "LA trip photos"
+   * ranks relevant shots instead of every recent image.
+   */
+  async similaritySearchImageMessages(
+    userId: string,
+    query: string,
+    limit = RAG_IMAGE_RECALL_TOP_K,
+    minSimilarity = RAG_IMAGE_RECALL_MIN_SIMILARITY,
+  ): Promise<{ messageId: string; content: string; similarity: number }[]> {
+    const apiKey = this.config.get<string>('openai.apiKey');
+    if (!apiKey) return [];
+
+    const openai = createOpenAI({ apiKey });
+    const { embedding } = await embed({
+      model: openai.embedding('text-embedding-3-small'),
+      value: query,
+    });
+
+    const vectorStr = `[${embedding.join(',')}]`;
+
+    const results = await this.db.execute(sql`
+      SELECT
+        me.message_id,
+        me.content,
+        1 - (me.embedding <=> ${vectorStr}::vector) as cosine_sim,
+        me.created_at,
+        (1 - (me.embedding <=> ${vectorStr}::vector))
+          + LEAST(0.05, 0.05 * (1.0 - EXTRACT(EPOCH FROM (NOW() - me.created_at)) / (30.0 * 86400)))
+          as boosted_sim
+      FROM message_embeddings me
+      INNER JOIN messages m ON m.id = me.message_id AND m.user_id = me.user_id
+      WHERE me.user_id = ${userId}
+        AND m.kind = 'image'
         AND (1 - (me.embedding <=> ${vectorStr}::vector)) >= ${minSimilarity}
       ORDER BY boosted_sim DESC
       LIMIT ${limit}

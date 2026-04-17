@@ -39,8 +39,9 @@ globs: backend/**
 **API:**
 
 ```
-POST /chat/messages     ← send message (text or voice)
-GET  /chat/messages     ← paginated history (?before=ISO&limit=50)
+POST /chat/messages     ← send message (text, voice, or image with `image_key` / optional `content` caption)
+POST /chat/photos/upload-url ← presigned PUT to R2 for `chat-images/{userId}/{uuid}.ext`; client PUTs then POSTs message with `kind: image`
+GET  /chat/messages     ← paginated history (?before=ISO&limit=50); image rows include signed `image_urls` when R2 is configured
 GET  /chat/stream       ← SSE (one per user session)
 
 GET  /extracts/done|open|query|:id|:id/history

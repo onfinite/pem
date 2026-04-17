@@ -14,8 +14,20 @@ import { usersTable } from './users.schema';
 export const MESSAGE_ROLES = ['user', 'pem'] as const;
 export type MessageRole = (typeof MESSAGE_ROLES)[number];
 
-export const MESSAGE_KINDS = ['text', 'voice', 'brief', 'reflection'] as const;
+export const MESSAGE_KINDS = [
+  'text',
+  'voice',
+  'brief',
+  'reflection',
+  'image',
+] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+/** One stored image asset (R2 key + optional mime). v1: single item. */
+export type MessageImageAsset = {
+  key: string;
+  mime?: string | null;
+};
 
 export const TRIAGE_CATEGORIES = [
   'trivial',
@@ -52,6 +64,13 @@ export const messagesTable = pgTable(
     summary: text('summary'),
     parentMessageId: uuid('parent_message_id'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    imageKeys: jsonb('image_keys').$type<MessageImageAsset[] | null>(),
+    visionSummary: text('vision_summary'),
+    visionModel: text('vision_model'),
+    visionCompletedAt: timestamp('vision_completed_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     /** Client-supplied key for safe retries (unique per user when set). */
     idempotencyKey: text('idempotency_key'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })

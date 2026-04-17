@@ -4,6 +4,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
+import type { Readable } from 'node:stream';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
@@ -57,5 +58,45 @@ export class StorageService {
       new GetObjectCommand({ Bucket: this.bucket, Key: key }),
       { expiresIn },
     );
+  }
+
+  /** Presigned PUT for direct client uploads (e.g. chat images). */
+  async getPresignedPutUrl(
+    key: string,
+    contentType: string,
+    expiresIn = 900,
+  ): Promise<string | null> {
+    if (!this.client) return null;
+    return getSignedUrl(
+      this.client,
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: contentType,
+      }),
+      { expiresIn },
+    );
+  }
+
+  /** Download object bytes (e.g. for server-side vision). */
+  async downloadObject(
+    key: string,
+  ): Promise<{ buffer: Buffer; contentType: string } | null> {
+    if (!this.client) return null;
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const body = res.Body;
+    if (!body) return null;
+    const stream = body as Readable;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const ct =
+      typeof res.ContentType === 'string' && res.ContentType
+        ? res.ContentType
+        : 'application/octet-stream';
+    return { buffer: Buffer.concat(chunks), contentType: ct };
   }
 }

@@ -186,8 +186,7 @@ export class BriefCronService {
     const anchor = (e: (typeof openExtracts)[0]) =>
       e.scheduledAt ?? e.eventStartAt ?? e.dueAt ?? e.periodStart;
     const overdue = openExtracts.filter(
-      (e) =>
-        (e.dueAt && e.dueAt < now) || (e.eventEndAt && e.eventEndAt < now),
+      (e) => (e.dueAt && e.dueAt < now) || (e.eventEndAt && e.eventEndAt < now),
     );
     const todayItems = openExtracts.filter((e) => {
       const a = anchor(e);
@@ -317,10 +316,14 @@ export class BriefCronService {
         ),
       ]);
       if (ragResults.length > 0) {
-        ragSection = ragResults.map((r) => `- ${r.content.slice(0, 200)}`).join('\n');
+        ragSection = ragResults
+          .map((r) => `- ${r.content.slice(0, 200)}`)
+          .join('\n');
       }
       if (worryResults.length > 0) {
-        worriesSection = worryResults.map((r) => `- ${r.content.slice(0, 200)}`).join('\n');
+        worriesSection = worryResults
+          .map((r) => `- ${r.content.slice(0, 200)}`)
+          .join('\n');
       }
     } catch (e) {
       this.log.warn(
@@ -349,17 +352,12 @@ ${ragSection ? `## Recent relevant context\n${ragSection}` : ''}
 ${worriesSection ? `## Recurring concerns\n${worriesSection}` : ''}`;
 
     const timeOfDay =
-      luxNow.hour < 12
-        ? 'morning'
-        : luxNow.hour < 17
-          ? 'afternoon'
-          : 'evening';
+      luxNow.hour < 12 ? 'morning' : luxNow.hour < 17 ? 'afternoon' : 'evening';
     const dayOfWeek = luxNow.toFormat('cccc');
     const systemPrompt = buildBriefSystem(timeOfDay, dayOfWeek);
 
     const openai = createOpenAI({ apiKey });
-    const agentModel =
-      this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
+    const agentModel = this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
 
     const nameNote = userName
       ? `\nThe user's name is ${userName}. Use it occasionally.`

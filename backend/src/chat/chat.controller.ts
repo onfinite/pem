@@ -24,7 +24,7 @@ import { Observable } from 'rxjs';
 
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import type { UserRow } from '../database/schemas';
+import type { MessageImageAsset, UserRow } from '../database/schemas';
 import { TriageService, type TriageCategory } from '../agents/triage.service';
 import { BriefCronService } from '../background/queues/brief/brief-cron.service';
 import { ChatService } from './chat.service';
@@ -37,7 +37,15 @@ import {
   CHAT_JOB_DELAY_MS_QUESTION,
   CHAT_JOB_ID_PREFIX,
 } from './chat.constants';
+import { randomUUID } from 'node:crypto';
+
 import { SendMessageDto } from './dto/send-message.dto';
+import { validateChatImageKeysForUser } from './validate-chat-image-keys';
+import {
+  MAX_PHOTO_UPLOAD_BYTES,
+  PhotoUploadUrlDto,
+} from './dto/photo-upload-url.dto';
+import type { MessageRow } from '../database/schemas';
 
 @ApiTags('chat')
 @Controller('chat')
@@ -55,10 +63,42 @@ export class ChatController {
     @InjectQueue('chat') private readonly chatQueue: Queue,
   ) {}
 
+  @Post('photos/upload-url')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Presigned PUT URL for chat image (R2 direct upload)',
+  })
+  async photoUploadUrl(
+    @CurrentUser() user: UserRow,
+    @Body() body: PhotoUploadUrlDto,
+  ) {
+    if (!this.storage.enabled) {
+      throw new BadRequestException('Image uploads are not configured');
+    }
+    if (body.byte_size != null && body.byte_size > MAX_PHOTO_UPLOAD_BYTES) {
+      throw new BadRequestException('File too large');
+    }
+    const ext = photoKeyExtension(body.content_type);
+    const key = `chat-images/${user.id}/${randomUUID()}.${ext}`;
+    const uploadUrl = await this.storage.getPresignedPutUrl(
+      key,
+      body.content_type,
+    );
+    if (!uploadUrl) {
+      throw new BadRequestException('Could not create upload URL');
+    }
+    return {
+      upload_url: uploadUrl,
+      image_key: key,
+      expires_in_seconds: 900,
+    };
+  }
+
   @Post('messages')
   @HttpCode(200)
   @Throttle({ default: { limit: 40, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Send a message (text or voice)' })
+  @ApiOperation({ summary: 'Send a message (text, voice, or image)' })
   async sendMessage(
     @CurrentUser() user: UserRow,
     @Body() body: SendMessageDto,
@@ -69,16 +109,61 @@ export class ChatController {
         body.idempotency_key,
       );
       if (existing) {
+        const serialized = this.chat.serializeMessage(existing);
+        await this.attachSignedMediaUrls(serialized, existing);
         return {
-          message: this.chat.serializeMessage(existing),
+          message: serialized,
           status: 'received' as const,
           deduplicated: true as const,
         };
       }
     }
 
+    if (body.kind === 'image') {
+      const keysFromArray =
+        body.image_keys && body.image_keys.length > 0
+          ? body.image_keys.map((k) => ({
+              key: k.key,
+              mime: k.mime ?? null,
+            }))
+          : null;
+      const keysRaw =
+        keysFromArray ??
+        (body.image_key
+          ? [{ key: body.image_key, mime: null as string | null }]
+          : null);
+      const keys = validateChatImageKeysForUser(user.id, keysRaw ?? []);
+      const msg = await this.chat.saveMessage({
+        userId: user.id,
+        role: 'user',
+        kind: 'image',
+        content: body.content?.trim() ? body.content : null,
+        imageKeys: keys,
+        triageCategory: null,
+        processingStatus: 'pending',
+        idempotencyKey: body.idempotency_key?.trim() || null,
+      });
+      await this.chatQueue.add(
+        'process-message',
+        { messageId: msg.id, userId: user.id },
+        {
+          jobId: `${CHAT_JOB_ID_PREFIX}${msg.id}`,
+          delay: CHAT_JOB_DELAY_MS_DUMP,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2000 },
+        },
+      );
+      const serialized = this.chat.serializeMessage(msg);
+      await this.attachSignedMediaUrls(serialized, msg);
+      return {
+        message: serialized,
+        status: 'received' as const,
+        deduplicated: false as const,
+      };
+    }
+
     const textContent =
-      body.kind === 'text' ? body.content?.trim() ?? '' : '';
+      body.kind === 'text' ? (body.content?.trim() ?? '') : '';
 
     let triageCategory: TriageCategory | null = null;
     if (textContent) {
@@ -117,8 +202,10 @@ export class ChatController {
       },
     );
 
+    const serialized = this.chat.serializeMessage(msg);
+    await this.attachSignedMediaUrls(serialized, msg);
     return {
-      message: this.chat.serializeMessage(msg),
+      message: serialized,
       status: 'received' as const,
       deduplicated: false as const,
     };
@@ -136,6 +223,7 @@ export class ChatController {
   async sendVoice(
     @CurrentUser() user: UserRow,
     @UploadedFile() audio: Express.Multer.File,
+    @Body('image_keys') imageKeysJson?: string,
     @Query('idempotency_key') idempotencyKey?: string,
   ) {
     if (!audio?.buffer) {
@@ -148,11 +236,7 @@ export class ChatController {
       );
       if (existing) {
         const serialized = this.chat.serializeMessage(existing);
-        if (existing.audioKey && this.storage.enabled) {
-          serialized.voice_url =
-            (await this.storage.getSignedUrl(existing.audioKey)) ??
-            serialized.voice_url;
-        }
+        await this.attachSignedMediaUrls(serialized, existing);
         return {
           message: serialized,
           status: 'received' as const,
@@ -160,6 +244,33 @@ export class ChatController {
         };
       }
     }
+
+    let imageKeys: MessageImageAsset[] | null = null;
+    if (imageKeysJson?.trim()) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(imageKeysJson) as unknown;
+      } catch {
+        throw new BadRequestException('image_keys must be valid JSON');
+      }
+      if (!Array.isArray(parsed)) {
+        throw new BadRequestException('image_keys must be a JSON array');
+      }
+      const raw = parsed.map((item): { key: string; mime?: string | null } => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          throw new BadRequestException('Invalid image_keys entry');
+        }
+        const o = item as Record<string, unknown>;
+        const key = typeof o.key === 'string' ? o.key : '';
+        if (!key) {
+          throw new BadRequestException('Each image_keys item needs a key');
+        }
+        const mime = typeof o.mime === 'string' ? o.mime : null;
+        return { key, mime };
+      });
+      imageKeys = validateChatImageKeysForUser(user.id, raw);
+    }
+
     const transcript = await this.transcription.transcribe(audio);
 
     let audioKey: string | null = null;
@@ -182,6 +293,7 @@ export class ChatController {
       transcript,
       voiceUrl,
       audioKey,
+      imageKeys,
       processingStatus: 'pending',
       idempotencyKey: idempotencyKey?.trim() || null,
     });
@@ -191,7 +303,11 @@ export class ChatController {
       triageCat = await this.triage.classify(transcript);
     }
     if (triageCat) {
-      await this.chat.updateMessage(msg.id, { triageCategory: triageCat }, user.id);
+      await this.chat.updateMessage(
+        msg.id,
+        { triageCategory: triageCat },
+        user.id,
+      );
     }
 
     const isInstantVoice =
@@ -202,17 +318,16 @@ export class ChatController {
       { messageId: msg.id, userId: user.id },
       {
         jobId: `${CHAT_JOB_ID_PREFIX}${msg.id}`,
-        delay: isInstantVoice ? CHAT_JOB_DELAY_MS_QUESTION : CHAT_JOB_DELAY_MS_DUMP,
+        delay: isInstantVoice
+          ? CHAT_JOB_DELAY_MS_QUESTION
+          : CHAT_JOB_DELAY_MS_DUMP,
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
       },
     );
 
     const serialized = this.chat.serializeMessage(msg);
-    if (audioKey && this.storage.enabled) {
-      serialized.voice_url =
-        (await this.storage.getSignedUrl(audioKey)) ?? serialized.voice_url;
-    }
+    await this.attachSignedMediaUrls(serialized, msg);
     return {
       message: serialized,
       status: 'received' as const,
@@ -236,10 +351,7 @@ export class ChatController {
     const serialized = await Promise.all(
       messages.map(async (m) => {
         const s = this.chat.serializeMessage(m);
-        if (m.audioKey && this.storage.enabled) {
-          s.voice_url =
-            (await this.storage.getSignedUrl(m.audioKey)) ?? s.voice_url;
-        }
+        await this.attachSignedMediaUrls(s, m);
         return s;
       }),
     );
@@ -310,6 +422,73 @@ export class ChatController {
       query || '',
       Number.isNaN(limit) ? 20 : limit,
     );
-    return { messages: messages.map((m) => this.chat.serializeMessage(m)) };
+    return {
+      messages: await Promise.all(
+        messages.map(async (m) => {
+          const s = this.chat.serializeMessage(m);
+          await this.attachSignedMediaUrls(s, m);
+          return s;
+        }),
+      ),
+    };
   }
+
+  /** Voice GET URL + image preview URLs for client display. */
+  private async attachSignedMediaUrls(
+    serialized: ReturnType<ChatService['serializeMessage']>,
+    row: MessageRow,
+  ): Promise<void> {
+    if (row.audioKey && this.storage.enabled) {
+      serialized.voice_url =
+        (await this.storage.getSignedUrl(row.audioKey)) ?? serialized.voice_url;
+    }
+    const keys = row.imageKeys;
+    if (keys?.length && this.storage.enabled) {
+      const pairs: { key: string; url: string }[] = [];
+      for (const a of keys) {
+        const url = await this.storage.getSignedUrl(a.key);
+        if (url) pairs.push({ key: a.key, url });
+      }
+      if (pairs.length) serialized.image_urls = pairs;
+    }
+    await this.refreshPhotoRecallSignedUrls(serialized);
+  }
+
+  /** DB stores short-lived presigned URLs; re-sign keys on each read for the client. */
+  private async refreshPhotoRecallSignedUrls(
+    serialized: ReturnType<ChatService['serializeMessage']>,
+  ): Promise<void> {
+    if (!this.storage.enabled) return;
+    const meta = serialized.metadata;
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return;
+
+    const metaObj: Record<string, unknown> = { ...meta };
+    const recall = metaObj.photo_recall;
+    if (!Array.isArray(recall) || recall.length === 0) return;
+
+    const next: Record<string, unknown>[] = await Promise.all(
+      recall.map(async (entry): Promise<Record<string, unknown>> => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          return {};
+        }
+        const o: Record<string, unknown> = {
+          ...(entry as Record<string, unknown>),
+        };
+        const imageKey = typeof o.image_key === 'string' ? o.image_key : '';
+        if (!imageKey) {
+          return o;
+        }
+        const url = await this.storage.getSignedUrl(imageKey);
+        return { ...o, signed_url: url ?? o.signed_url };
+      }),
+    );
+
+    serialized.metadata = { ...metaObj, photo_recall: next };
+  }
+}
+
+function photoKeyExtension(contentType: string): string {
+  if (contentType === 'image/png') return 'png';
+  if (contentType === 'image/webp') return 'webp';
+  return 'jpg';
 }

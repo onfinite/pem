@@ -10,6 +10,10 @@ import { Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native
 import InviteRsvpActions from "./InviteRsvpActions";
 import { MarkdownText } from "./MarkdownText";
 import VoiceBubble from "./VoiceBubble";
+import { UserPhotoBubble } from "./UserPhotoBubble";
+import { UserPhotoBubbleThumbnails } from "./UserPhotoBubbleThumbnails";
+import { PemPhotoRecallStrip } from "./PemPhotoRecallStrip";
+import { collectUserPhotoDisplayUris } from "@/utils/collectUserPhotoDisplayUris";
 
 type Props = {
   message: ClientMessage;
@@ -37,7 +41,40 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
     }).start();
   }, [isHighlighted, flashOpacity]);
 
+  if (message.kind === "image") {
+    return (
+      <UserPhotoBubble
+        message={message}
+        isSending={isSending}
+        isFailed={isFailed}
+        onRetry={onRetry ? () => onRetry(message) : undefined}
+      />
+    );
+  }
+
   if (message.kind === "voice") {
+    const voicePhotoUris =
+      isUser ? collectUserPhotoDisplayUris(message) : [];
+    if (voicePhotoUris.length > 0) {
+      return (
+        <View style={voiceWithPhotosStyles.column}>
+          <UserPhotoBubbleThumbnails
+            uris={voicePhotoUris}
+            userBubbleText={colors.userBubbleText}
+            secondarySurface={colors.secondarySurface}
+          />
+          <VoiceBubble
+            key={message.id}
+            message={message}
+            isUser={isUser}
+            isSending={isSending}
+            isFailed={isFailed}
+            onRetry={onRetry ? () => onRetry(message) : undefined}
+            omitOuterGutters
+          />
+        </View>
+      );
+    }
     return (
       <VoiceBubble
         key={message.id}
@@ -125,6 +162,12 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
           </MarkdownText>
         )}
 
+        {!isUser &&
+          Array.isArray(meta?.photo_recall) &&
+          meta.photo_recall.length > 0 && (
+            <PemPhotoRecallStrip items={meta.photo_recall} />
+          )}
+
         {isFailed && (
           <Pressable
             onPress={onRetry ? () => onRetry(message) : undefined}
@@ -177,6 +220,15 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
     </View>
   );
 }
+
+const voiceWithPhotosStyles = StyleSheet.create({
+  column: {
+    alignItems: "flex-end",
+    paddingHorizontal: space[3],
+    gap: space[2],
+    marginBottom: space[2],
+  },
+});
 
 const styles = StyleSheet.create({
   row: {

@@ -11,8 +11,8 @@ import {
   type RecordingOptions,
 } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
-import { pemImpactLight, pemImpactMedium } from "@/lib/pemHaptics";
-import { ArrowUp, Mic, Pause, Play, Send, Trash2 } from "lucide-react-native";
+import { pemImpactMedium } from "@/lib/pemHaptics";
+import { ArrowUp, ImagePlus, Mic, Pause, Play, Send, Trash2 } from "lucide-react-native";
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Alert,
@@ -26,6 +26,9 @@ import {
   TextInput,
   View,
 } from "react-native";
+
+import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
+import { ChatPendingPhotoBar } from "./ChatPendingPhotoBar";
 
 const MAX_DURATION_S = 30 * 60;
 const WAVEFORM_MAX_BARS = 48;
@@ -67,12 +70,20 @@ const COMPOSER_PLACEHOLDER = "Message Pem…";
 type Props = {
   onSendText: (text: string) => void;
   onSendVoice: (audioUri: string) => void;
+  onPickImage?: () => void;
+  pendingImageUris?: string[];
+  onRemovePendingImageAt?: (index: number) => void;
+  onClearPendingImages?: () => void;
   disabled?: boolean;
 };
 
 export default function ChatInput({
   onSendText,
   onSendVoice,
+  onPickImage,
+  pendingImageUris = [],
+  onRemovePendingImageAt,
+  onClearPendingImages,
   disabled,
 }: Props) {
   const { colors } = useTheme();
@@ -131,9 +142,17 @@ export default function ChatInput({
 
   const hasText = text.trim().length > 0;
   const isRecMode = mode === "recording" || mode === "paused";
+  const hasPendingPhoto = pendingImageUris.length > 0;
+  const isAtPhotoCap = pendingImageUris.length >= MAX_CHAT_MESSAGE_IMAGES;
 
   const handleSend = () => {
     const trimmed = text.trim();
+    if (hasPendingPhoto) {
+      onSendText(trimmed);
+      setText("");
+      Keyboard.dismiss();
+      return;
+    }
     if (!trimmed) return;
     onSendText(trimmed);
     setText("");
@@ -251,7 +270,15 @@ export default function ChatInput({
 
   if (isRecMode) {
     return (
-      <View style={styles.container}>
+      <View style={styles.outer}>
+        {hasPendingPhoto && onRemovePendingImageAt && onClearPendingImages ? (
+          <ChatPendingPhotoBar
+            uris={pendingImageUris}
+            onRemoveAt={onRemovePendingImageAt}
+            onClearAll={onClearPendingImages}
+          />
+        ) : null}
+        <View style={styles.container}>
         <Pressable onPress={handleCancel} style={styles.recSideBtn} hitSlop={8}>
           <Trash2 size={20} color="#ff3b30" />
         </Pressable>
@@ -295,45 +322,109 @@ export default function ChatInput({
         >
           <Send size={18} color="#fff" strokeWidth={2.5} />
         </Pressable>
+        </View>
       </View>
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <View style={[styles.inputPill, { backgroundColor: colors.secondarySurface }]}>
-        <TextInput
-          ref={inputRef}
-          value={text}
-          onChangeText={setText}
-          placeholder={COMPOSER_PLACEHOLDER}
-          placeholderTextColor={colors.placeholder}
-          style={[styles.input, { color: colors.textPrimary }]}
-          multiline
-          maxLength={8000}
-          editable={!disabled}
-          onSubmitEditing={Platform.OS === "web" ? handleSend : undefined}
-          blurOnSubmit={false}
-        />
-      </View>
+  const isSendDisabled = Boolean(disabled || (!hasPendingPhoto && !hasText));
+  const showSend = hasText || hasPendingPhoto;
+  const showMicWithPending = hasPendingPhoto;
 
-      {hasText ? (
-        <Pressable
-          onPress={handleSend}
-          style={[styles.actionBtn, { backgroundColor: pemAmber }]}
-          disabled={disabled}
-        >
-          <ArrowUp size={20} color="#fff" strokeWidth={2.5} />
-        </Pressable>
-      ) : (
-        <Pressable
-          onPress={handleStartRecording}
-          style={[styles.actionBtn, { backgroundColor: colors.secondarySurface }]}
-          disabled={disabled}
-        >
-          <Mic size={20} color={pemAmber} strokeWidth={2} />
-        </Pressable>
-      )}
+  return (
+    <View style={styles.outer}>
+      {hasPendingPhoto && onRemovePendingImageAt && onClearPendingImages ? (
+        <ChatPendingPhotoBar
+          uris={pendingImageUris}
+          onRemoveAt={onRemovePendingImageAt}
+          onClearAll={onClearPendingImages}
+        />
+      ) : null}
+      <View style={styles.container}>
+        {onPickImage ? (
+          <Pressable
+            onPress={onPickImage}
+            style={[styles.sideBtn, { backgroundColor: colors.secondarySurface }]}
+            disabled={disabled || isAtPhotoCap}
+            hitSlop={6}
+          >
+            <ImagePlus size={20} color={pemAmber} strokeWidth={2} />
+          </Pressable>
+        ) : null}
+        <View style={[styles.inputPill, { backgroundColor: colors.secondarySurface }]}>
+          <TextInput
+            ref={inputRef}
+            value={text}
+            onChangeText={setText}
+            placeholder={COMPOSER_PLACEHOLDER}
+            placeholderTextColor={colors.placeholder}
+            style={[styles.input, { color: colors.textPrimary }]}
+            multiline
+            maxLength={8000}
+            editable={!disabled}
+            onSubmitEditing={Platform.OS === "web" ? handleSend : undefined}
+            blurOnSubmit={false}
+          />
+        </View>
+
+        {showMicWithPending ? (
+          <View style={styles.dualActions}>
+            <Pressable
+              onPress={handleSend}
+              style={[
+                styles.actionBtn,
+                {
+                  backgroundColor: isSendDisabled
+                    ? colors.borderMuted
+                    : pemAmber,
+                },
+              ]}
+              disabled={isSendDisabled}
+            >
+              <ArrowUp
+                size={20}
+                color={isSendDisabled ? colors.textTertiary : "#fff"}
+                strokeWidth={2.5}
+              />
+            </Pressable>
+            <Pressable
+              onPress={handleStartRecording}
+              style={[
+                styles.actionBtn,
+                { backgroundColor: colors.secondarySurface },
+              ]}
+              disabled={disabled}
+            >
+              <Mic size={20} color={pemAmber} strokeWidth={2} />
+            </Pressable>
+          </View>
+        ) : showSend ? (
+          <Pressable
+            onPress={handleSend}
+            style={[
+              styles.actionBtn,
+              {
+                backgroundColor: isSendDisabled ? colors.borderMuted : pemAmber,
+              },
+            ]}
+            disabled={isSendDisabled}
+          >
+            <ArrowUp
+              size={20}
+              color={isSendDisabled ? colors.textTertiary : "#fff"}
+              strokeWidth={2.5}
+            />
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={handleStartRecording}
+            style={[styles.actionBtn, { backgroundColor: colors.secondarySurface }]}
+            disabled={disabled}
+          >
+            <Mic size={20} color={pemAmber} strokeWidth={2} />
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -350,6 +441,8 @@ const waveStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  outer: { width: "100%" },
+  dualActions: { flexDirection: "row", alignItems: "flex-end", gap: space[2] },
   container: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -375,6 +468,13 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 0 : space[1],
   },
   actionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sideBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,

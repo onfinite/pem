@@ -31,7 +31,13 @@ import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
 import { PushService } from '../../../push/push.service';
 import { SchedulerService } from '../../../scheduler/scheduler.service';
 import { TranscriptionService } from '../../../transcription/transcription.service';
+import { StorageService } from '../../../storage/storage.service';
 import { ChatQuestionService } from './chat-question.service';
+import { PhotoVisionService } from './photo-vision.service';
+import { buildPhotoRecallMetadata } from './build-photo-recall-metadata';
+import { ChatPhotoRecallIntentService } from './chat-photo-recall-intent.service';
+import { ImageReferenceOnlyReplyService } from './image-reference-only-reply.service';
+import { PhotoAttachmentIntentService } from './photo-attachment-intent.service';
 import {
   AGENT_RECENT_MESSAGES_LIMIT,
   DISMISSED_EXTRACTS_LOOKBACK_DAYS,
@@ -50,7 +56,13 @@ function normalizeDedupeKey(text: string): string {
 
 /** ISO weekday (1=Mon … 7=Sun) → RRULE day abbreviation. */
 const ISO_TO_RRULE: Record<number, string> = {
-  1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR', 6: 'SA', 7: 'SU',
+  1: 'MO',
+  2: 'TU',
+  3: 'WE',
+  4: 'TH',
+  5: 'FR',
+  6: 'SA',
+  7: 'SU',
 };
 
 function buildRrule(rule: {
@@ -62,13 +74,19 @@ function buildRrule(rule: {
   count?: number;
 }): string {
   const parts = [`FREQ=${rule.freq.toUpperCase()}`];
-  if (rule.interval && rule.interval > 1) parts.push(`INTERVAL=${rule.interval}`);
+  if (rule.interval && rule.interval > 1)
+    parts.push(`INTERVAL=${rule.interval}`);
   if (rule.by_day?.length) {
-    parts.push(`BYDAY=${rule.by_day.map((d) => ISO_TO_RRULE[d] ?? 'MO').join(',')}`);
+    parts.push(
+      `BYDAY=${rule.by_day.map((d) => ISO_TO_RRULE[d] ?? 'MO').join(',')}`,
+    );
   }
   if (rule.by_month_day != null) parts.push(`BYMONTHDAY=${rule.by_month_day}`);
   if (rule.until) {
-    const u = rule.until.replace(/[-:]/g, '').replace(/\.\d+/, '').replace('Z', '');
+    const u = rule.until
+      .replace(/[-:]/g, '')
+      .replace(/\.\d+/, '')
+      .replace('Z', '');
     parts.push(`UNTIL=${u}Z`);
   }
   if (rule.count) parts.push(`COUNT=${rule.count}`);
@@ -94,11 +112,23 @@ function clampAgentOutput(output: PemAgentOutput): PemAgentOutput {
     creates: output.creates.slice(0, SAFETY_CAPS.creates),
     updates: output.updates.slice(0, SAFETY_CAPS.updates),
     completions: output.completions.slice(0, SAFETY_CAPS.completions),
-    calendar_writes: output.calendar_writes.slice(0, SAFETY_CAPS.calendar_writes),
-    calendar_updates: output.calendar_updates.slice(0, SAFETY_CAPS.calendar_updates),
-    calendar_deletes: output.calendar_deletes.slice(0, SAFETY_CAPS.calendar_deletes),
+    calendar_writes: output.calendar_writes.slice(
+      0,
+      SAFETY_CAPS.calendar_writes,
+    ),
+    calendar_updates: output.calendar_updates.slice(
+      0,
+      SAFETY_CAPS.calendar_updates,
+    ),
+    calendar_deletes: output.calendar_deletes.slice(
+      0,
+      SAFETY_CAPS.calendar_deletes,
+    ),
     scheduling: output.scheduling.slice(0, SAFETY_CAPS.scheduling),
-    recurrence_detections: output.recurrence_detections.slice(0, SAFETY_CAPS.recurrence_detections),
+    recurrence_detections: output.recurrence_detections.slice(
+      0,
+      SAFETY_CAPS.recurrence_detections,
+    ),
     rsvp_actions: output.rsvp_actions.slice(0, SAFETY_CAPS.rsvp_actions),
     memory_writes: output.memory_writes.slice(0, SAFETY_CAPS.memory_writes),
   };
@@ -122,6 +152,11 @@ export class ChatOrchestratorService {
     private readonly scheduler: SchedulerService,
     private readonly transcription: TranscriptionService,
     private readonly questionService: ChatQuestionService,
+    private readonly storage: StorageService,
+    private readonly photoVision: PhotoVisionService,
+    private readonly photoRecallIntent: ChatPhotoRecallIntentService,
+    private readonly imageReferenceOnlyReply: ImageReferenceOnlyReplyService,
+    private readonly photoAttachmentIntent: PhotoAttachmentIntentService,
   ) {}
 
   async processMessage(
@@ -170,6 +205,15 @@ export class ChatOrchestratorService {
         content = msg.transcript;
       }
 
+      const hasUserImages =
+        (msg.imageKeys ?? []).filter((a) => a.key).length > 0;
+
+      if (msg.kind === 'image') {
+        content = await this.resolveImagePipelineContent(msg, userId);
+      } else if (msg.kind === 'voice' && hasUserImages) {
+        content = await this.resolveImagePipelineContent(msg, userId);
+      }
+
       if (!content.trim()) {
         await this.savePemResponse(
           userId,
@@ -189,6 +233,22 @@ export class ChatOrchestratorService {
         );
         this.queueUserMessageEmbedding(msg, content);
         return;
+      }
+
+      if (msg.kind === 'image' || (msg.kind === 'voice' && hasUserImages)) {
+        const runInboxExtraction =
+          await this.photoAttachmentIntent.isDirectiveOrganizeIntent(content);
+        if (!runInboxExtraction) {
+          await this.publishStatus(userId, messageId, 'Saving your photo…');
+          const reply =
+            await this.imageReferenceOnlyReply.composeReply(content);
+          await this.savePemResponse(userId, messageId, reply, {
+            image_reference_only: true,
+          });
+          this.queueUserMessageEmbedding(msg, content);
+          this.tryLightweightMemoryExtraction(userId, messageId, content);
+          return;
+        }
       }
 
       // Triage
@@ -230,13 +290,14 @@ export class ChatOrchestratorService {
           .from(usersTable)
           .where(eq(usersTable.id, userId))
           .limit(1);
-        const answer = await this.questionService.answer(
-          userId,
-          content,
-          userRow?.name ?? null,
-          userRow?.summary ?? null,
-        );
-        await this.savePemResponse(userId, messageId, answer);
+        const { text: answerText, metadata: answerMeta } =
+          await this.questionService.answer(
+            userId,
+            content,
+            userRow?.name ?? null,
+            userRow?.summary ?? null,
+          );
+        await this.savePemResponse(userId, messageId, answerText, answerMeta);
         this.queueUserMessageEmbedding(msg, content);
         return;
       }
@@ -262,6 +323,25 @@ export class ChatOrchestratorService {
         content,
       );
       const ragContext = ragResults.map((r) => r.content).join('\n');
+
+      const { attachStrip, messageIds: photoRecallMessageIds } =
+        await this.photoRecallIntent.resolveStripAndMessageIds({
+          userId,
+          userText: content,
+          ragMessageIds: ragResults.map((r) => r.messageId),
+          excludeMessageId: messageId,
+        });
+      let photoRecallMeta: Awaited<ReturnType<typeof buildPhotoRecallMetadata>>;
+      if (attachStrip && photoRecallMessageIds.length > 0) {
+        photoRecallMeta = await buildPhotoRecallMetadata(
+          this.db,
+          this.storage,
+          userId,
+          photoRecallMessageIds,
+        );
+      } else {
+        photoRecallMeta = undefined;
+      }
 
       const recentMsgs = await this.getRecentMessages(userId);
 
@@ -346,6 +426,9 @@ export class ChatOrchestratorService {
         meta.calendar_updated = agentOutput.calendar_updates.length;
       if (agentOutput.calendar_deletes.length)
         meta.calendar_deleted = agentOutput.calendar_deletes.length;
+      if (photoRecallMeta?.photo_recall?.length) {
+        meta.photo_recall = photoRecallMeta.photo_recall;
+      }
       const metadata = Object.keys(meta).length > 0 ? meta : undefined;
 
       // Save response
@@ -661,9 +744,101 @@ export class ChatOrchestratorService {
 
     return rows.reverse().map((m) => ({
       role: m.role,
-      content: m.content ?? m.transcript ?? '',
+      content: this.lineForRecentMessage(m),
       created_at: m.createdAt.toISOString(),
     }));
+  }
+
+  private lineForRecentMessage(
+    m: (typeof messagesTable)['$inferSelect'],
+  ): string {
+    if (m.role === 'pem') return m.content ?? '';
+    if (m.kind === 'image') {
+      const cap = (m.content ?? '').trim();
+      const vis = (m.visionSummary ?? '').trim();
+      if (cap && vis) return `${cap}\n[Photo: ${vis}]`;
+      if (vis) return `[Photo: ${vis}]`;
+      if (cap) return `${cap} [photo]`;
+      return '[photo]';
+    }
+    const voiceLine = m.transcript ?? m.content ?? '';
+    const imgCount = (m.imageKeys ?? []).filter((a) => a.key).length;
+    if (m.kind === 'voice' && imgCount > 0) {
+      const vis = (m.visionSummary ?? '').trim();
+      const t = voiceLine.trim();
+      if (t && vis) return `${t}\n[Photo: ${vis}]`;
+      if (vis) return `[Photo: ${vis}]`;
+      if (t) return `${t} [photo]`;
+      return '[voice + photo]';
+    }
+    return voiceLine;
+  }
+
+  private async resolveImagePipelineContent(
+    msg: (typeof messagesTable)['$inferSelect'],
+    userId: string,
+  ): Promise<string> {
+    let visionFlat = msg.visionSummary?.trim() ?? '';
+    const modelId = this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
+
+    const imageAssets = (msg.imageKeys ?? []).filter((a) => a.key);
+    if (!visionFlat && imageAssets.length > 0 && this.storage.enabled) {
+      const sections: string[] = [];
+      try {
+        for (let i = 0; i < imageAssets.length; i++) {
+          const asset = imageAssets[i];
+          const downloaded = await this.storage.downloadObject(asset.key);
+          if (!downloaded) continue;
+          const mime =
+            asset.mime?.trim() ||
+            (downloaded.contentType.startsWith('image/')
+              ? downloaded.contentType
+              : 'image/jpeg');
+          const analyzed = await this.photoVision.analyzeImage(
+            downloaded.buffer,
+            mime,
+          );
+          if (analyzed) {
+            sections.push(
+              `[Photo ${i + 1}/${imageAssets.length}]\n${analyzed.flatSummary}`,
+            );
+          }
+        }
+        visionFlat = sections.join('\n\n---\n\n');
+        if (visionFlat) {
+          await this.db
+            .update(messagesTable)
+            .set({
+              visionSummary: visionFlat,
+              visionModel: modelId,
+              visionCompletedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(messagesTable.id, msg.id),
+                eq(messagesTable.userId, userId),
+              ),
+            );
+        }
+      } catch (e) {
+        this.log.warn(
+          `Image vision pipeline failed messageId=${msg.id}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    const cap = (msg.content ?? '').trim();
+    const n = imageAssets.length;
+    const parts: string[] = [];
+    if (cap) parts.push(`User photo caption: ${cap}`);
+    if (visionFlat) parts.push(`Image description: ${visionFlat}`);
+    if (parts.length > 0) {
+      return parts.join('\n\n');
+    }
+    if (n > 1) {
+      return 'User attached photos in chat. No visual description was captured (images could not be read from storage or vision). Ask what they want Pem to remember or organize, or suggest they add a short caption.';
+    }
+    return 'User attached a photo in chat. No visual description was captured (image could not be read from storage or vision). Ask what they want Pem to remember or organize, or suggest they add a one-line caption.';
   }
 
   private async applyAgentActions(
@@ -725,8 +900,7 @@ export class ChatOrchestratorService {
           if (resolvedListId) patch.listId = resolvedListId;
         }
       }
-      if (upd.patch.priority !== undefined)
-        patch.priority = upd.patch.priority;
+      if (upd.patch.priority !== undefined) patch.priority = upd.patch.priority;
       if (upd.patch.due_at !== undefined)
         patch.dueAt = parseIsoDate(upd.patch.due_at);
       if (upd.patch.period_start !== undefined)
@@ -1240,22 +1414,32 @@ export class ChatOrchestratorService {
         const trimmed = text?.trim();
         if (!trimmed || trimmed === '[]') return;
 
-        let facts: { memory_key: string; note: string }[];
+        let raw: unknown;
         try {
-          facts = JSON.parse(trimmed);
+          raw = JSON.parse(trimmed) as unknown;
         } catch {
           return;
         }
-        if (!Array.isArray(facts) || facts.length === 0) return;
+        if (!Array.isArray(raw) || raw.length === 0) return;
 
-        for (const f of facts.slice(0, 3)) {
-          if (f.memory_key && f.note) {
-            await this.profile.saveFromAgent(
-              userId,
-              f.memory_key,
-              f.note,
-              messageId,
-            );
+        for (const item of raw.slice(0, 3)) {
+          if (
+            item &&
+            typeof item === 'object' &&
+            'memory_key' in item &&
+            'note' in item &&
+            typeof (item as { memory_key: unknown }).memory_key === 'string' &&
+            typeof (item as { note: unknown }).note === 'string'
+          ) {
+            const f = item as { memory_key: string; note: string };
+            if (f.memory_key && f.note) {
+              await this.profile.saveFromAgent(
+                userId,
+                f.memory_key,
+                f.note,
+                messageId,
+              );
+            }
           }
         }
       } catch (e) {
@@ -1310,8 +1494,7 @@ export class ChatOrchestratorService {
 
   private trivialResponse(content: string): string {
     const lower = content.toLowerCase().trim();
-    if (lower.includes('thank') || lower.includes('thx'))
-      return "Anytime.";
+    if (lower.includes('thank') || lower.includes('thx')) return 'Anytime.';
     return 'Got it.';
   }
 
@@ -1436,7 +1619,9 @@ Rules:
 
     if (userRow?.summary) return;
 
-    const openai = createOpenAI({ apiKey: this.config.get<string>('openai.apiKey') });
+    const openai = createOpenAI({
+      apiKey: this.config.get<string>('openai.apiKey'),
+    });
 
     const { text } = await generateText({
       model: openai('gpt-4o-mini'),

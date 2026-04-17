@@ -10,7 +10,13 @@ import { ExtractsController } from './extracts.controller';
 import { ExtractsService } from './extracts.service';
 
 @Module({
-  imports: [DatabaseModule, UsersModule, ProfileModule, ConfigModule, CalendarModule],
+  imports: [
+    DatabaseModule,
+    UsersModule,
+    ProfileModule,
+    ConfigModule,
+    CalendarModule,
+  ],
   controllers: [ExtractsController],
   providers: [ExtractsService, DraftService],
   exports: [ExtractsService, UsersModule],

@@ -57,7 +57,9 @@ export class CalendarSyncService {
   async setupWatch(connectionId: string): Promise<void> {
     const webhookUrl = this.config.get<string>('googleCalendar.webhookUrl');
     if (!webhookUrl) {
-      this.log.debug('GOOGLE_CALENDAR_WEBHOOK_URL not set, skipping watch setup');
+      this.log.debug(
+        'GOOGLE_CALENDAR_WEBHOOK_URL not set, skipping watch setup',
+      );
       return;
     }
 
@@ -677,8 +679,7 @@ export class CalendarSyncService {
         );
       }
 
-      const isNewInvite =
-        !isPast && !event.isOrganizer && !!inserted;
+      const isNewInvite = !isPast && !event.isOrganizer && !!inserted;
       return { isNewInvite, extractId: inserted?.id ?? null };
     }
   }
@@ -696,12 +697,15 @@ export class CalendarSyncService {
       hour: 'numeric',
       minute: '2-digit',
     });
-    const parts = [`${organizer} invited you to "${event.summary}" on ${time}.`];
+    const parts = [
+      `${organizer} invited you to "${event.summary}" on ${time}.`,
+    ];
     if (event.location) parts.push(`Location: ${event.location}`);
     if (event.description) {
-      const desc = event.description.length > 200
-        ? event.description.slice(0, 200) + '...'
-        : event.description;
+      const desc =
+        event.description.length > 200
+          ? event.description.slice(0, 200) + '...'
+          : event.description;
       parts.push(desc);
     }
 
@@ -757,7 +761,10 @@ export class CalendarSyncService {
     if (diffDays < 2) return 'tomorrow';
     if (diffDays < 7) return 'this week';
     if (diffDays < 14) return 'next week';
-    return start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return start.toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
   }
 
   private async logCalendar(

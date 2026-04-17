@@ -200,7 +200,10 @@ export class GoogleCalendarService {
     refreshToken: string,
   ): Promise<{ names: string[]; newAccessToken: string | null }> {
     const client = this.getOAuthClient();
-    client.setCredentials({ access_token: accessToken, refresh_token: refreshToken });
+    client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
 
     let newAccessToken: string | null = null;
     client.on('tokens', (tokens) => {
@@ -305,7 +308,10 @@ export class GoogleCalendarService {
           summary: e.summary ?? null,
           start: new Date(e.start!.dateTime ?? e.start!.date!),
           end: new Date(
-            e.end?.dateTime ?? e.end?.date ?? e.start!.dateTime ?? e.start!.date!,
+            e.end?.dateTime ??
+              e.end?.date ??
+              e.start!.dateTime ??
+              e.start!.date!,
           ),
           location: e.location ?? null,
           description: e.description ?? null,
@@ -573,7 +579,9 @@ export class GoogleCalendarService {
     });
 
     if (!data.resourceId || !data.expiration) {
-      throw new Error('Google Calendar watch did not return resourceId/expiration');
+      throw new Error(
+        'Google Calendar watch did not return resourceId/expiration',
+      );
     }
 
     return {

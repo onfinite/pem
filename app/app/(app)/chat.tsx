@@ -22,17 +22,30 @@ import {
   type BriefResponse,
   type TaskCounts,
 } from "@/lib/pemApi";
+import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
+import {
+  uploadChatImagesAndSend,
+  uploadPendingChatImageKeys,
+} from "@/lib/uploadChatImage";
+import {
+  pendingImagesFromPickerAssets,
+  type PendingChatImage,
+} from "@/lib/pendingChatImagesFromPicker";
+import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
 import { CalendarDays, Search, Settings } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActionSheetIOS,
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   Image,
   Keyboard,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -86,7 +99,12 @@ async function writeCache(messages: ClientMessage[]) {
   try {
     // Only cache confirmed, non-optimistic messages
     const cacheable = messages
-      .filter((m) => m._clientStatus === "sent" && !m._localUri)
+      .filter(
+        (m) =>
+          m._clientStatus === "sent" &&
+          !m._localUri &&
+          !m._pendingLocalUris?.length,
+      )
       .slice(-CACHE_LIMIT);
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cacheable));
   } catch {
@@ -97,6 +115,10 @@ async function writeCache(messages: ClientMessage[]) {
 export type ClientMessage = ApiMessage & {
   _clientStatus?: "sending" | "sent" | "failed";
   _localUri?: string;
+  /** Optimistic multi-photo local URIs (same order as upload batch). */
+  _pendingLocalUris?: string[];
+  /** Voice + photos optimistic: image URIs (audio uses `_localUri`). */
+  _pendingImageUris?: string[];
 };
 
 type DisplayItem =
@@ -118,6 +140,8 @@ export default function ChatScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [taskCounts, setTaskCounts] = useState<TaskCounts | null>(null);
   const [briefData, setBriefData] = useState<BriefResponse | null>(null);
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  const pendingImageUris = pendingImages.map((p) => p.uri);
   const headerSummary = buildHeaderSummary(briefData);
   const drawerRef = useRef<TaskDrawerHandle>(null);
   const search = useMessageSearch(getToken);
@@ -238,17 +262,67 @@ export default function ChatScreen() {
     },
   });
 
-  const handleSend = useCallback(
-    async (text: string) => {
+  const handleSendText = useCallback(async (text: string) => {
+    pemImpactLight();
+    const tempId = `temp-text-${Date.now()}`;
+    const optimistic: ClientMessage = {
+      id: tempId,
+      role: "user",
+      kind: "text",
+      content: text,
+      voice_url: null,
+      transcript: null,
+      triage_category: null,
+      processing_status: null,
+      polished_text: null,
+      parent_message_id: null,
+      summary: null,
+      created_at: new Date().toISOString(),
+      _clientStatus: "sending",
+    };
+    setMessages((prev) => [...prev, optimistic]);
+
+    try {
+      const res = await sendChatMessage(getTokenRef.current, {
+        kind: "text",
+        content: text,
+      });
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...res.message, _clientStatus: "sent" as const }
+            : m,
+        ),
+      );
+      setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
+    } catch (e) {
+      console.warn("Failed to send message:", e);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, _clientStatus: "failed" as const } : m,
+        ),
+      );
+    }
+  }, []);
+
+  const handleSendImage = useCallback(
+    async (
+      localUris: string[],
+      opts?: { replaceMessageId?: string; caption?: string },
+    ) => {
       pemImpactLight();
-      const tempId = `temp-text-${Date.now()}`;
+      const tempId = opts?.replaceMessageId ?? `temp-image-${Date.now()}`;
+      const caption = opts?.caption?.trim() ?? null;
       const optimistic: ClientMessage = {
         id: tempId,
         role: "user",
-        kind: "text",
-        content: text,
+        kind: "image",
+        content: caption,
         voice_url: null,
         transcript: null,
+        image_keys: null,
+        image_urls: null,
+        vision_summary: null,
         triage_category: null,
         processing_status: null,
         polished_text: null,
@@ -256,37 +330,200 @@ export default function ChatScreen() {
         summary: null,
         created_at: new Date().toISOString(),
         _clientStatus: "sending",
+        _localUri: localUris[0],
+        _pendingLocalUris: localUris.length > 1 ? localUris : undefined,
       };
-      setMessages((prev) => [...prev, optimistic]);
+      setMessages((prev) => {
+        if (opts?.replaceMessageId) {
+          return prev.map((m) =>
+            m.id === opts.replaceMessageId ? optimistic : m,
+          );
+        }
+        return [...prev, optimistic];
+      });
 
       try {
-        const res = await sendChatMessage(getTokenRef.current, {
-          kind: "text",
-          content: text,
+        const res = await uploadChatImagesAndSend(getTokenRef.current, localUris, {
+          content: caption ?? undefined,
         });
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId
-              ? { ...res.message, _clientStatus: "sent" as const }
+              ? {
+                  ...res.message,
+                  _localUri: localUris[0],
+                  _pendingLocalUris: undefined,
+                  _clientStatus: "sent" as const,
+                }
               : m,
           ),
         );
         setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
       } catch (e) {
-        console.warn("Failed to send message:", e);
+        console.warn("Failed to send image:", e);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId ? { ...m, _clientStatus: "failed" as const } : m,
           ),
         );
+        throw e;
       }
     },
     [],
   );
 
+  const handleComposerSend = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (pendingImages.length > 0) {
+        const uris = pendingImages.map((p) => p.uri);
+        const snapshot = [...pendingImages];
+        setPendingImages([]);
+        try {
+          await handleSendImage(uris, {
+            caption: trimmed ? trimmed : undefined,
+          });
+        } catch {
+          setPendingImages(snapshot);
+        }
+        return;
+      }
+      await handleSendText(trimmed);
+    },
+    [pendingImages, handleSendText, handleSendImage],
+  );
+
+  const handlePickImageFromLibrary = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        "Photo library",
+        "Pem needs access to your photos to attach an image.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Settings", onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    const remainingSlots = MAX_CHAT_MESSAGE_IMAGES - pendingImages.length;
+    if (remainingSlots <= 0) {
+      Alert.alert(
+        "Photo limit",
+        `You can attach up to ${MAX_CHAT_MESSAGE_IMAGES} photos per message.`,
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 1,
+      allowsMultipleSelection: remainingSlots > 1,
+      selectionLimit: remainingSlots,
+    });
+    if (result.canceled) return;
+
+    const additions = await pendingImagesFromPickerAssets(
+      result.assets,
+      pendingImages,
+      remainingSlots,
+    );
+    if (!additions.length) return;
+
+    setPendingImages((prev) =>
+      [...prev, ...additions].slice(0, MAX_CHAT_MESSAGE_IMAGES),
+    );
+  }, [pendingImages]);
+
+  const handleTakePhoto = useCallback(async () => {
+    const remainingSlots = MAX_CHAT_MESSAGE_IMAGES - pendingImages.length;
+    if (remainingSlots <= 0) {
+      Alert.alert(
+        "Photo limit",
+        `You can attach up to ${MAX_CHAT_MESSAGE_IMAGES} photos per message.`,
+      );
+      return;
+    }
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        "Camera",
+        "Pem needs camera access to snap a photo for chat.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Settings", onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 1,
+      });
+    } catch {
+      Alert.alert(
+        "Camera unavailable",
+        "The camera is not available here (for example on a simulator). Use Photo library or try on a physical device.",
+      );
+      return;
+    }
+    if (result.canceled) return;
+
+    const additions = await pendingImagesFromPickerAssets(
+      result.assets,
+      pendingImages,
+      remainingSlots,
+    );
+    if (!additions.length) return;
+
+    setPendingImages((prev) =>
+      [...prev, ...additions].slice(0, MAX_CHAT_MESSAGE_IMAGES),
+    );
+  }, [pendingImages]);
+
+  const handleAttachImagePress = useCallback(() => {
+    if (Platform.OS === "web") {
+      void handlePickImageFromLibrary();
+      return;
+    }
+    const openCamera = () => {
+      void handleTakePhoto();
+    };
+    const openLibrary = () => {
+      void handlePickImageFromLibrary();
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Cancel", "Take photo", "Photo library"],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) openCamera();
+          if (buttonIndex === 2) openLibrary();
+        },
+      );
+    } else {
+      Alert.alert("Add image", undefined, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Take photo", onPress: openCamera },
+        { text: "Photo library", onPress: openLibrary },
+      ]);
+    }
+  }, [handlePickImageFromLibrary, handleTakePhoto]);
+
   const handleSendVoice = useCallback(
-    (audioUri: string) => {
+    async (audioUri: string) => {
       pemImpactLight();
+      const snapshot = [...pendingImages];
+      const imageUris = snapshot.map((p) => p.uri);
+      if (snapshot.length > 0) {
+        setPendingImages([]);
+      }
+
       const tempId = `temp-voice-${Date.now()}`;
       const optimistic: ClientMessage = {
         id: tempId,
@@ -303,37 +540,54 @@ export default function ChatScreen() {
         created_at: new Date().toISOString(),
         _clientStatus: "sending",
         _localUri: audioUri,
+        _pendingImageUris:
+          imageUris.length > 0 ? imageUris : undefined,
       };
       setMessages((prev) => [...prev, optimistic]);
 
-      sendVoiceMessage(getTokenRef.current, audioUri)
-        .then((res) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === tempId
-                ? {
-                    ...res.message,
-                    voice_url: audioUri,
-                    _localUri: audioUri,
-                    _clientStatus: "sent" as const,
-                  }
-                : m,
-            ),
-          );
-          setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
-        })
-        .catch((e) => {
-          console.warn("Failed to send voice:", e);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === tempId
-                ? { ...m, _clientStatus: "failed" as const }
-                : m,
-            ),
-          );
-        });
+      try {
+        const imageKeys =
+          imageUris.length > 0
+            ? await uploadPendingChatImageKeys(
+                getTokenRef.current,
+                imageUris,
+              )
+            : undefined;
+        const res = await sendVoiceMessage(
+          getTokenRef.current,
+          audioUri,
+          "audio/m4a",
+          imageKeys?.length ? { image_keys: imageKeys } : undefined,
+        );
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? {
+                  ...res.message,
+                  voice_url: audioUri,
+                  _localUri: audioUri,
+                  _clientStatus: "sent" as const,
+                  _pendingImageUris: undefined,
+                }
+              : m,
+          ),
+        );
+        setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
+      } catch (e) {
+        console.warn("Failed to send voice:", e);
+        if (snapshot.length > 0) {
+          setPendingImages(snapshot);
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? { ...m, _clientStatus: "failed" as const }
+              : m,
+          ),
+        );
+      }
     },
-    [],
+    [pendingImages],
   );
 
   const handleLoadMore = useCallback(() => {
@@ -441,8 +695,22 @@ export default function ChatScreen() {
             m.id === msg.id ? { ...m, _clientStatus: "sending" as const } : m,
           ),
         );
-        sendVoiceMessage(getTokenRef.current, msg._localUri)
-          .then((res) => {
+        const retryVoice = async () => {
+          try {
+            const uris = msg._pendingImageUris ?? [];
+            const imageKeys =
+              uris.length > 0
+                ? await uploadPendingChatImageKeys(
+                    getTokenRef.current,
+                    uris,
+                  )
+                : undefined;
+            const res = await sendVoiceMessage(
+              getTokenRef.current,
+              msg._localUri!,
+              "audio/m4a",
+              imageKeys?.length ? { image_keys: imageKeys } : undefined,
+            );
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === msg.id
@@ -451,12 +719,12 @@ export default function ChatScreen() {
                       voice_url: msg._localUri!,
                       _localUri: msg._localUri,
                       _clientStatus: "sent" as const,
+                      _pendingImageUris: undefined,
                     }
                   : m,
               ),
             );
-          })
-          .catch(() => {
+          } catch {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === msg.id
@@ -464,7 +732,26 @@ export default function ChatScreen() {
                   : m,
               ),
             );
-          });
+          }
+        };
+        void retryVoice();
+      } else if (msg.kind === "image" && (msg._localUri || msg._pendingLocalUris?.length)) {
+        let uris: string[] = [];
+        if (msg._pendingLocalUris?.length) {
+          uris = msg._pendingLocalUris;
+        } else if (msg._localUri) {
+          uris = [msg._localUri];
+        }
+        if (!uris.length) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id ? { ...m, _clientStatus: "sending" as const } : m,
+          ),
+        );
+        handleSendImage(uris, {
+          replaceMessageId: msg.id,
+          caption: msg.content?.trim() || undefined,
+        }).catch(() => {});
       } else if (msg.content) {
         setMessages((prev) =>
           prev.map((m) =>
@@ -473,7 +760,7 @@ export default function ChatScreen() {
         );
         sendChatMessage(getTokenRef.current, {
           kind: "text",
-          content: msg.content,
+          content: msg.content ?? "",
         })
           .then((res) => {
             setMessages((prev) =>
@@ -495,8 +782,16 @@ export default function ChatScreen() {
           });
       }
     },
-    [],
+    [handleSendImage],
   );
+
+  const handleRemovePendingImageAt = useCallback((index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleClearPendingImages = useCallback(() => {
+    setPendingImages([]);
+  }, []);
 
   const handleDelete = useCallback(
     async (messageId: string) => {
@@ -590,7 +885,7 @@ export default function ChatScreen() {
               {EXAMPLE_PROMPTS.map((prompt) => (
                 <Pressable
                   key={prompt}
-                  onPress={() => handleSend(prompt)}
+                  onPress={() => handleSendText(prompt)}
                   style={[styles.emptyChip, { borderColor: colors.borderMuted, backgroundColor: colors.cardBackground }]}
                 >
                   <Text style={[styles.emptyChipText, { color: colors.textPrimary }]}>
@@ -637,7 +932,14 @@ export default function ChatScreen() {
             paddingBottom: Math.max(insets.bottom, space[2]),
           }}
         >
-          <ChatInput onSendText={handleSend} onSendVoice={handleSendVoice} />
+          <ChatInput
+            onSendText={handleComposerSend}
+            onSendVoice={handleSendVoice}
+            onPickImage={handleAttachImagePress}
+            pendingImageUris={pendingImageUris}
+            onRemovePendingImageAt={handleRemovePendingImageAt}
+            onClearPendingImages={handleClearPendingImages}
+          />
         </View>
         <Animated.View style={{ height: kbHeight }} />
       </View>

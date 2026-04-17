@@ -90,69 +90,75 @@ export class WeeklyReflectionProcessor extends WorkerHost {
 
     const weekAgo = luxNow.minus({ days: 7 }).toJSDate();
 
-    const [userMessages, createdThisWeek, doneThisWeek, allOpen, memorySection, ragResults] =
-      await Promise.all([
-        this.db
-          .select({
-            content: messagesTable.content,
-            transcript: messagesTable.transcript,
-            kind: messagesTable.kind,
-            createdAt: messagesTable.createdAt,
-          })
-          .from(messagesTable)
-          .where(
-            and(
-              eq(messagesTable.userId, userId),
-              eq(messagesTable.role, 'user'),
-              gte(messagesTable.createdAt, weekAgo),
-            ),
-          )
-          .orderBy(desc(messagesTable.createdAt))
-          .limit(50),
-        this.db
-          .select({ text: extractsTable.extractText, tone: extractsTable.tone })
-          .from(extractsTable)
-          .where(
-            and(
-              eq(extractsTable.userId, userId),
-              gte(extractsTable.createdAt, weekAgo),
-            ),
-          )
-          .limit(100),
-        this.db
-          .select({ text: extractsTable.extractText })
-          .from(extractsTable)
-          .where(
-            and(
-              eq(extractsTable.userId, userId),
-              eq(extractsTable.status, 'done'),
-              gte(extractsTable.doneAt, weekAgo),
-            ),
-          )
-          .limit(100),
-        this.db
-          .select({
-            text: extractsTable.extractText,
-            status: extractsTable.status,
-            urgency: extractsTable.urgency,
-          })
-          .from(extractsTable)
-          .where(
-            and(
-              eq(extractsTable.userId, userId),
-              sql`${extractsTable.status} IN ('inbox', 'snoozed')`,
-            ),
-          )
-          .limit(100),
-        this.profile.buildMemoryPromptSection(userId),
-        this.embeddings
-          .similaritySearch(
-            userId,
-            'What recurring themes, worries, and patterns have come up this week?',
-            5,
-          )
-          .catch(() => []),
-      ]);
+    const [
+      userMessages,
+      createdThisWeek,
+      doneThisWeek,
+      allOpen,
+      memorySection,
+      ragResults,
+    ] = await Promise.all([
+      this.db
+        .select({
+          content: messagesTable.content,
+          transcript: messagesTable.transcript,
+          kind: messagesTable.kind,
+          createdAt: messagesTable.createdAt,
+        })
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.userId, userId),
+            eq(messagesTable.role, 'user'),
+            gte(messagesTable.createdAt, weekAgo),
+          ),
+        )
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(50),
+      this.db
+        .select({ text: extractsTable.extractText, tone: extractsTable.tone })
+        .from(extractsTable)
+        .where(
+          and(
+            eq(extractsTable.userId, userId),
+            gte(extractsTable.createdAt, weekAgo),
+          ),
+        )
+        .limit(100),
+      this.db
+        .select({ text: extractsTable.extractText })
+        .from(extractsTable)
+        .where(
+          and(
+            eq(extractsTable.userId, userId),
+            eq(extractsTable.status, 'done'),
+            gte(extractsTable.doneAt, weekAgo),
+          ),
+        )
+        .limit(100),
+      this.db
+        .select({
+          text: extractsTable.extractText,
+          status: extractsTable.status,
+          urgency: extractsTable.urgency,
+        })
+        .from(extractsTable)
+        .where(
+          and(
+            eq(extractsTable.userId, userId),
+            sql`${extractsTable.status} IN ('inbox', 'snoozed')`,
+          ),
+        )
+        .limit(100),
+      this.profile.buildMemoryPromptSection(userId),
+      this.embeddings
+        .similaritySearch(
+          userId,
+          'What recurring themes, worries, and patterns have come up this week?',
+          5,
+        )
+        .catch(() => []),
+    ]);
 
     const userMsgText = userMessages
       .map((m) => {
@@ -171,7 +177,9 @@ export class WeeklyReflectionProcessor extends WorkerHost {
       .map((e) => `- ${e.text}${e.urgency === 'someday' ? ' (someday)' : ''}`)
       .join('\n');
 
-    const ragText = ragResults.map((r) => `- ${r.content.slice(0, 200)}`).join('\n');
+    const ragText = ragResults
+      .map((r) => `- ${r.content.slice(0, 200)}`)
+      .join('\n');
 
     const context = `Week ending: ${luxNow.toFormat('cccc, LLLL d')}
 

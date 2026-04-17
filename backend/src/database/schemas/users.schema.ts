@@ -29,8 +29,14 @@ export const usersTable = pgTable('users', {
   preferences: jsonb('preferences').$type<UserPreferences>(),
   focusHoursPerWeek: integer('focus_hours_per_week'),
   schedulingConfidence: text('scheduling_confidence'),
-  lastBriefDate: timestamp('last_brief_date', { withTimezone: true, mode: 'date' }),
-  lastBriefPushDate: timestamp('last_brief_push_date', { withTimezone: true, mode: 'date' }),
+  lastBriefDate: timestamp('last_brief_date', {
+    withTimezone: true,
+    mode: 'date',
+  }),
+  lastBriefPushDate: timestamp('last_brief_push_date', {
+    withTimezone: true,
+    mode: 'date',
+  }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

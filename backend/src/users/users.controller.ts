@@ -73,10 +73,7 @@ export class UsersController {
   @UseGuards(ClerkAuthGuard)
   @ApiBearerAuth('clerk')
   @ApiOperation({ summary: 'Set preferred display name' })
-  async setName(
-    @CurrentUser() user: UserRow,
-    @Body() body: UpdateNameDto,
-  ) {
+  async setName(@CurrentUser() user: UserRow, @Body() body: UpdateNameDto) {
     await this.users.setName(user.id, body.name);
     return { ok: true, name: body.name.trim() };
   }

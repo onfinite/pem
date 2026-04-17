@@ -1,6 +1,12 @@
 /** Minimum cosine similarity (1 - distance) for RAG hits — below this is mostly noise. */
 export const RAG_MIN_SIMILARITY = 0.68;
 
+/** Slightly looser floor for image-only recall (user asks for a subset like "LA trip"). */
+export const RAG_IMAGE_RECALL_MIN_SIMILARITY = 0.58;
+
+/** Max image messages to consider for targeted photo recall strip. */
+export const RAG_IMAGE_RECALL_TOP_K = 12;
+
 /** Max vector hits to fetch and consider after threshold filter. */
 export const RAG_TOP_K = 15;
 
@@ -27,3 +33,6 @@ export const CHAT_JOB_DELAY_MS = CHAT_JOB_DELAY_MS_DUMP;
 
 /** Window in which pending messages from the same user are merged into one job. */
 export const BATCH_WINDOW_MS = 8_000;
+
+/** Max images attached to a single chat message (user + API). */
+export const MAX_CHAT_MESSAGE_IMAGES = 10;

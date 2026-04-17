@@ -6,6 +6,7 @@ import type { DrizzleDb } from '../database/database.module';
 import {
   extractsTable,
   messagesTable,
+  type MessageImageAsset,
   type MessageRow,
   type MessageRole,
   type MessageKind,
@@ -25,6 +26,7 @@ export class ChatService {
     voiceUrl?: string | null;
     audioKey?: string | null;
     transcript?: string | null;
+    imageKeys?: MessageImageAsset[] | null;
     triageCategory?: TriageCategory | null;
     processingStatus?: ProcessingStatus | null;
     parentMessageId?: string | null;
@@ -40,6 +42,7 @@ export class ChatService {
         voiceUrl: params.voiceUrl ?? null,
         audioKey: params.audioKey ?? null,
         transcript: params.transcript ?? null,
+        imageKeys: params.imageKeys ?? null,
         triageCategory: params.triageCategory ?? null,
         processingStatus: params.processingStatus ?? null,
         parentMessageId: params.parentMessageId ?? null,
@@ -78,6 +81,9 @@ export class ChatService {
       processingStatus: ProcessingStatus | null;
       polishedText: string | null;
       summary: string | null;
+      visionSummary: string | null;
+      visionModel: string | null;
+      visionCompletedAt: Date | null;
     }>,
     userId?: string,
   ): Promise<MessageRow | null> {
@@ -165,6 +171,7 @@ export class ChatService {
           or(
             ilike(messagesTable.content, pattern),
             ilike(messagesTable.transcript, pattern),
+            ilike(messagesTable.visionSummary, pattern),
           ),
         ),
       )
@@ -180,6 +187,9 @@ export class ChatService {
       content: m.content,
       voice_url: m.voiceUrl,
       transcript: m.transcript,
+      image_keys: m.imageKeys ?? null,
+      image_urls: null as { key: string; url: string }[] | null,
+      vision_summary: m.visionSummary ?? null,
       triage_category: m.triageCategory,
       processing_status: m.processingStatus,
       polished_text: m.polishedText,
@@ -209,5 +219,4 @@ export class ChatService {
         ),
       );
   }
-
 }

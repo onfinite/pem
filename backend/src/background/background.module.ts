@@ -12,6 +12,7 @@ import { AgentsModule } from '../agents/agents.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { SchedulerModule } from '../scheduler/scheduler.module';
 import { TranscriptionModule } from '../transcription/transcription.module';
+import { StorageModule } from '../storage/storage.module';
 import { ChatEventsModule } from './chat-events/chat-events.module';
 import { BriefCronService } from './queues/brief/brief-cron.service';
 import { CalendarCronService } from './queues/calendar/calendar-cron.service';
@@ -19,6 +20,10 @@ import { CalendarSyncProcessor } from './queues/calendar/calendar-sync.processor
 import { ChatOrchestratorService } from './queues/chat/chat-orchestrator.service';
 import { ChatProcessor } from './queues/chat/chat.processor';
 import { ChatQuestionService } from './queues/chat/chat-question.service';
+import { PhotoVisionService } from './queues/chat/photo-vision.service';
+import { ChatPhotoRecallIntentService } from './queues/chat/chat-photo-recall-intent.service';
+import { ImageReferenceOnlyReplyService } from './queues/chat/image-reference-only-reply.service';
+import { PhotoAttachmentIntentService } from './queues/chat/photo-attachment-intent.service';
 import { ReminderCronService } from './queues/reminder/reminder-cron.service';
 import { RecurrenceCronService } from './queues/scheduler/recurrence-cron.service';
 import { WeeklyReflectionProcessor } from './queues/weekly/weekly-reflection.processor';
@@ -62,11 +67,16 @@ import { WeeklyReflectionProcessor } from './queues/weekly/weekly-reflection.pro
     SchedulerModule,
     TranscriptionModule,
     PushModule,
+    StorageModule,
   ],
   providers: [
     ChatProcessor,
     ChatOrchestratorService,
     ChatQuestionService,
+    ChatPhotoRecallIntentService,
+    ImageReferenceOnlyReplyService,
+    PhotoAttachmentIntentService,
+    PhotoVisionService,
     BriefCronService,
     CalendarSyncProcessor,
     CalendarCronService,
@@ -74,6 +84,11 @@ import { WeeklyReflectionProcessor } from './queues/weekly/weekly-reflection.pro
     ReminderCronService,
     WeeklyReflectionProcessor,
   ],
-  exports: [BullModule, ChatEventsModule, ChatQuestionService, BriefCronService],
+  exports: [
+    BullModule,
+    ChatEventsModule,
+    ChatQuestionService,
+    BriefCronService,
+  ],
 })
 export class BackgroundModule {}

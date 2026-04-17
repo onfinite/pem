@@ -68,7 +68,8 @@ export class CalendarCronService {
   @Cron(CronExpression.EVERY_6_HOURS)
   async renewExpiringWatches(): Promise<void> {
     const expiryThreshold = new Date(Date.now() + WATCH_RENEWAL_WINDOW_MS);
-    const expiring = await this.connectionsSvc.findExpiringWatches(expiryThreshold);
+    const expiring =
+      await this.connectionsSvc.findExpiringWatches(expiryThreshold);
     if (expiring.length === 0) return;
 
     this.log.log(`Renewing ${expiring.length} expiring calendar watches`);

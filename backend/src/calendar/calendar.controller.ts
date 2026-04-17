@@ -117,7 +117,9 @@ export class CalendarController {
       const tokens = await this.googleCal.exchangeCode(code);
       const conn = await this.connections.upsertGoogle(userId, tokens);
       void this.sync.setupWatch(conn.id).catch((err) => {
-        this.log.warn(`Watch setup after OAuth failed: ${err instanceof Error ? err.message : 'unknown'}`);
+        this.log.warn(
+          `Watch setup after OAuth failed: ${err instanceof Error ? err.message : 'unknown'}`,
+        );
       });
 
       if (appRedirect) {

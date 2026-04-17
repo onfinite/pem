@@ -79,8 +79,8 @@ This document is the implementation plan for WhatsApp-style photo attachments: d
 - **Structured output:** `generateText` + **`Output.object({ schema })`** (Zod) — fields such as:
   - `summary` — retrieval-rich description
   - `visible_text` — transcribed text in reading order (empty if none)
-  - `doc_type` — `receipt` | `whiteboard` | `business_card` | `screenshot` | `photo` | `other`
-  - `is_readable` / `confidence` — for downstream copy and edge handling
+  - `handwriting_quality` — `clear` | `partial` | `unreadable` | `n/a`
+  - `is_readable` — for downstream copy when the image is too poor to describe usefully
 - **OCR:** **Single vision call** asking for verbatim visible text; **no separate Tesseract v1** unless metrics show gaps.
 - **Prompt:** Instruct concrete nouns, brands, scene; transcribe embedded text faithfully; **if illegible, say so explicitly** (see §9 handwriting).
 

@@ -44,17 +44,10 @@ export const EXTRACT_STATUSES = [
 ] as const;
 export type ExtractStatus = (typeof EXTRACT_STATUSES)[number];
 
-export const EXTRACT_TONES = [
-  'confident',
-  'tentative',
-  'someday',
-] as const;
+export const EXTRACT_TONES = ['confident', 'tentative', 'someday'] as const;
 export type ExtractTone = (typeof EXTRACT_TONES)[number];
 
-export const EXTRACT_URGENCIES = [
-  'someday',
-  'none',
-] as const;
+export const EXTRACT_URGENCIES = ['someday', 'none'] as const;
 export type ExtractUrgency = (typeof EXTRACT_URGENCIES)[number];
 
 export const BATCH_KEYS = ['shopping', 'errands', 'follow_ups'] as const;

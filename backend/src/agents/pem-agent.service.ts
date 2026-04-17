@@ -8,6 +8,8 @@ import {
   wrapLanguageModel,
 } from 'ai';
 import { DateTime } from 'luxon';
+
+import { formatChatRecallStamp } from '../chat/utils/format-chat-recall-stamp';
 import { z } from 'zod';
 
 import { DRIZZLE } from '../database/database.constants';
@@ -67,40 +69,58 @@ const extractActionSchema = z.object({
   tone: toneEnum,
   urgency: urgencyEnum,
   batch_key: batchEnum,
-  list_name: nullStr.describe('Name of user list to assign (e.g. "Shopping", "Errands", or a user-created list). null if no list.'),
-  create_list: z.boolean().default(false).describe('true if user explicitly asks to create a new list/project'),
-  priority: priorityEnum.describe('high/medium/low or null. Only set when user signals priority explicitly.'),
+  list_name: nullStr.describe(
+    'Name of user list to assign (e.g. "Shopping", "Errands", or a user-created list). null if no list.',
+  ),
+  create_list: z
+    .boolean()
+    .default(false)
+    .describe('true if user explicitly asks to create a new list/project'),
+  priority: priorityEnum.describe(
+    'high/medium/low or null. Only set when user signals priority explicitly.',
+  ),
   due_at: nullStr.describe('ISO datetime if detected'),
   period_start: nullStr,
   period_end: nullStr,
   period_label: nullStr,
-  pem_note: nullStr.describe('Short context note from Pem shown on task detail — e.g. "Annual checkup", "Kane prefers mornings". Write as Pem speaking about the user by their name (never say "User"). Omit if no useful context beyond the task text.'),
+  pem_note: nullStr.describe(
+    'Short context note from Pem shown on task detail — e.g. "Annual checkup", "Kane prefers mornings". Write as Pem speaking about the user by their name (never say "User"). Omit if no useful context beyond the task text.',
+  ),
   draft_text: nullStr.describe('Draft message for contact-related tasks'),
 });
 
 const updateActionSchema = z.object({
   extract_id: z.string().describe('ID of existing extract to update'),
-  patch: z.object({
-    text: z.string().optional(),
-    tone: toneEnum.optional(),
-    urgency: urgencyEnum.optional(),
-    batch_key: batchEnum.optional(),
-    list_name: nullStr.optional().describe('List name to move to, or null to remove from current list'),
-    create_list: z.boolean().default(false).describe('true if list_name is a new list that should be created'),
-    priority: priorityEnum.optional(),
-    due_at: nullStr.optional(),
-    period_start: nullStr.optional(),
-    period_end: nullStr.optional(),
-    period_label: nullStr.optional(),
-    pem_note: nullStr.optional(),
-    draft_text: nullStr.optional(),
-    event_start_at: nullStr
-      .optional()
-      .describe('New event start ISO datetime if rescheduling'),
-    event_end_at: nullStr
-      .optional()
-      .describe('New event end ISO datetime if rescheduling'),
-  }).describe('ONLY include fields the user asked to change. Omit everything else — omitted fields stay unchanged.'),
+  patch: z
+    .object({
+      text: z.string().optional(),
+      tone: toneEnum.optional(),
+      urgency: urgencyEnum.optional(),
+      batch_key: batchEnum.optional(),
+      list_name: nullStr
+        .optional()
+        .describe('List name to move to, or null to remove from current list'),
+      create_list: z
+        .boolean()
+        .default(false)
+        .describe('true if list_name is a new list that should be created'),
+      priority: priorityEnum.optional(),
+      due_at: nullStr.optional(),
+      period_start: nullStr.optional(),
+      period_end: nullStr.optional(),
+      period_label: nullStr.optional(),
+      pem_note: nullStr.optional(),
+      draft_text: nullStr.optional(),
+      event_start_at: nullStr
+        .optional()
+        .describe('New event start ISO datetime if rescheduling'),
+      event_end_at: nullStr
+        .optional()
+        .describe('New event end ISO datetime if rescheduling'),
+    })
+    .describe(
+      'ONLY include fields the user asked to change. Omit everything else — omitted fields stay unchanged.',
+    ),
   reason: z.string().default(''),
 });
 
@@ -128,11 +148,15 @@ const calendarWriteSchema = z.object({
     .union([z.boolean(), z.string().transform((v) => v === 'true')])
     .optional()
     .default(false)
-    .describe('True for vacations, holidays, multi-day events with no specific time'),
+    .describe(
+      'True for vacations, holidays, multi-day events with no specific time',
+    ),
   reminder_minutes: z.coerce
     .number()
     .optional()
-    .describe('Custom popup reminder N minutes before. Omit to use calendar defaults.'),
+    .describe(
+      'Custom popup reminder N minutes before. Omit to use calendar defaults.',
+    ),
   location: nullStr.optional(),
   description: nullStr.optional(),
   attendees: z
@@ -323,6 +347,10 @@ Rules for task extraction:
 - Implied timing: when a user says they need to do something without specifying when, use common sense. "Drink milk before sleeping" = tonight (period_label: "today"). "I need to call my mom" = today or soon, not someday. "Run at the lake everyday at 5 PM" starts TODAY. Only use urgency: "someday" for genuinely aspirational items with no implied timeline.
 - IMPORTANT: "I need to grab X", "I need to buy X", "I should get X", "don't forget X" are ALL actionable. ALWAYS create a task for these. NEVER skip extraction when the user mentions something they need to do, buy, or handle.
 
+CRITICAL — Photos and screenshots (vision in "## User message"):
+- When "Image description:" is present for the **current** user message that reached this full agent step after Pem's upstream classifier marked it as organize-from-photo (directive tone — not mere storytelling), treat the vision like typed text: emit one create per distinct actionable line when it lists tasks, times, reminders, or calendar UI (merge sub-bullets only when one action). Use times from the image for due_at or period_start/period_end when shown. If more than 8 items appear, create the first 8 highest-signal items, then stop. Do not leave creates empty when the vision clearly lists concrete to-dos or appointments.
+- When the current user message is short (roughly under 50 characters) and mainly agrees to plan or add tasks (yes, sure, go ahead, plan it, add tasks, do it) AND recent conversation includes their prior user photo with vision ([Photo: ...] lines), treat THAT prior photo description as authorized — emit creates the same way as the explicit-planning bullet above.
+
 Journal-style commitments (still create tasks):
 - Phrases like "I'll need to learn X", "I need to learn X", "I should learn X", "gonna learn X", "I have to figure out Y", "I need to get better at Z" describe something the user must do — create a task with appropriate tone/urgency. Do NOT only skip because the tone is reflective.
 
@@ -398,6 +426,12 @@ CRITICAL — Forbidden filler (never use any variation of these):
 Capabilities and honesty:
 - You can manage tasks, calendar (when connected), and memory. If the user asks for something you genuinely can't do, say so honestly and offer what you can do instead — don't be defensive about it, just be real.
 
+Chat photos (vision text in the prompt):
+- When "## User message" includes "User photo caption:" and/or "Image description:", that text is Pem's own analysis of the image they sent. Treat it as what you "see" — react and use memory from it. Task extraction from images follows the CRITICAL — Photos rules in extraction (reference-only saves happen earlier; if you see full vision here for the current message, Pem already treated it as an organize-from-photo pass via explicit wording or clear directive tone).
+- When "Recent conversation" includes [Photo: ...] lines from earlier messages, those are the same — you can summarize, compare, or "bring up" what they showed before from that text. The app may show a thumbnail gallery when they asked for past photos or when they are recalling a person, meeting, or topic and stored images match — do not tell them to look at thumbnails unless that path applies; never contradict thumbnail scenes if described in context.
+- NEVER say you cannot view, open, or see photos/images, or that you only handle text, or that you cannot pull up or retrieve past photos from the chat. You always have the supplied caption and/or description when those lines appear.
+- If the message is only that they sent a photo with no description line, vision could not read the image — say briefly you could not make out details and ask what they want captured, or suggest a short caption. Do not use generic "AI can't see images" disclaimers.
+
 CRITICAL — Pem organizes; Pem does not do things for the user:
 - You help the user capture, list, schedule, and remember — you do NOT perform real-world actions. You cannot cancel a gym membership, place an order, call a business, send email, or complete errands on their behalf.
 - NEVER imply you are executing something outside the app. Forbidden phrasing: "I'll cancel...", "I'll call...", "I'll buy...", "I'll handle...", "I'll take care of...", "I'm canceling...", "I'll get that done for you."
@@ -443,7 +477,7 @@ Journaling, venting, and emotional support:
 - For journaling (stream of consciousness, reflections, life updates), acknowledge what they shared and store important context via summary_update and memory_writes. The user should feel heard, not processed.
 
 Recall and memory questions:
-- If the user asks a recall question ("do you remember X?", "what do you know about Y?", "have we talked about Z?", "who is X?", "did I mention X?"), answer from memory facts, user summary, RAG context, and recent messages. You do NOT need to create tasks for pure recall questions — just answer.
+- If the user asks a recall question ("do you remember X?", "what do you know about Y?", "when did we discuss Z?", "have we talked about Z?", "who is X?", "did I mention X?"), answer from memory facts, user summary, RAG context, and recent messages. Anchor what you remember in time and feeling: when it was (use bracket timestamps in Recent conversation — today, yesterday, last Monday with date) and what it was like, not only a one-line fact. You do NOT need to create tasks for pure recall questions — just answer.
 - If you have the information, share it naturally. Reference when you learned it if possible.
 - If you have partial information, share what you have and note what you're unsure about.
 - If you truly don't know, say: "I don't have anything about that yet. Tell me and I'll remember." This teaches the user that Pem is their memory, not just a task manager.
@@ -638,16 +672,50 @@ const MAX_MESSAGE_CHARS = 4000;
 
 function truncateForPrompt(content: string): string {
   if (content.length <= MAX_MESSAGE_CHARS) return content;
-  return content.slice(0, MAX_MESSAGE_CHARS) + '\n\n(message truncated for length)';
+  return (
+    content.slice(0, MAX_MESSAGE_CHARS) + '\n\n(message truncated for length)'
+  );
 }
 
 function messageLikelyContainsTasks(content: string): boolean {
   const t = content.trim();
   if (t.length < 10) return false;
+  if (/User photo caption:/i.test(t)) {
+    if (
+      /\b(should|need to|have to|must|got to|gotta|todo|to-?do|tasks?|remind|my list|things i|stuff i|on my plate|appointments?|schedule)\b/i.test(
+        t,
+      )
+    ) {
+      return true;
+    }
+  }
   if (t.length > 60) return true;
-  return /\b(need|have to|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline|worried|concern|miss|missing|afraid|scared|prioritize|important|urgent|focus)\b/i.test(
+  return /\b(need|have to|should|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline|worried|concern|miss|missing|afraid|scared|prioritize|important|urgent|focus|stuff to do|things to do)\b/i.test(
     t,
   );
+}
+
+/** Follow-up after image_reference_only Pem reply: explicit plan / short yes + prior user photo in thread. */
+function shortAffirmationToPlanRecentPhoto(params: {
+  messageContent: string;
+  recentMessages: { role: string; content: string; created_at: string }[];
+}): boolean {
+  const t = params.messageContent.trim();
+  if (t.length > 60) return false;
+  const hasPriorUserPhoto = params.recentMessages.some(
+    (m) => m.role === 'user' && /\[Photo:/i.test(m.content),
+  );
+  if (!hasPriorUserPhoto) return false;
+
+  if (/\b(plan it|add tasks?|turn it into tasks?)\b/i.test(t)) return true;
+  if (/\b(yes|sure|ok|okay|yeah).{0,18}\bplan\b/i.test(t)) return true;
+  if (
+    t.length <= 22 &&
+    /^(y(es)?|sure|ok(ay)?|go ahead|do it)\s*!*$/i.test(t)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 const DEFAULT_ORCHESTRATION: PemOrchestrationOutput = {
@@ -761,16 +829,22 @@ export class PemAgentService {
 
     if (
       extractionIsEmpty(extraction) &&
-      messageLikelyContainsTasks(params.messageContent)
+      (messageLikelyContainsTasks(params.messageContent) ||
+        shortAffirmationToPlanRecentPhoto(params))
     ) {
       this.log.warn(
         'PemAgent: empty extraction for likely-actionable message; nudged retry',
       );
+      const photoNudge = /Image description:/i.test(params.messageContent)
+        ? ' If "Image description" lists errands, appointments, or checklist lines (especially with times), emit one create per distinct line unless it already exists in open tasks — Pem already routed this message as organize-from-photo.'
+        : shortAffirmationToPlanRecentPhoto(params)
+          ? ' The user is confirming they want inbox items from their latest photo: read the most recent user line in "## Recent conversation" that contains [Photo: ...] and emit one create per distinct actionable line from that vision text (times → due_at / periods). Do not leave creates empty if that block lists concrete to-dos or appointments.'
+          : '';
       extraction = await this.runExtractionPhase(
         openai,
         agentModel,
         model,
-        `${prompt}\n\nIMPORTANT: The user message almost certainly contains at least one actionable item (buy/do/call/remember/time/worry/deadline/concern). Populate creates, updates, or completions — do not leave all three arrays empty unless there is truly nothing to capture. "I'm worried about missing X deadline" = update or create a task about X.`,
+        `${prompt}\n\nIMPORTANT: The user message almost certainly contains at least one actionable item (buy/do/call/remember/time/worry/deadline/concern). Populate creates, updates, or completions — do not leave all three arrays empty unless there is truly nothing to capture. "I'm worried about missing X deadline" = update or create a task about X.${photoNudge}`,
       );
 
       this.log.log(
@@ -779,7 +853,8 @@ export class PemAgentService {
     }
     if (
       extractionIsEmpty(extraction) &&
-      messageLikelyContainsTasks(params.messageContent)
+      (messageLikelyContainsTasks(params.messageContent) ||
+        shortAffirmationToPlanRecentPhoto(params))
     ) {
       this.log.warn('PemAgent: monolithic fallback after extraction gate');
       const mono = await this.runMonolithicPhase(
@@ -882,20 +957,28 @@ export class PemAgentService {
         ? cappedEvents
             .map((e) => {
               const loc = e.location ? ` at ${e.location}` : '';
-              const origin = e.source === 'calendar' && !e.is_organizer ? ' [invited]' : '';
-              const desc = e.description ? ` — ${e.description.slice(0, 300)}` : '';
+              const origin =
+                e.source === 'calendar' && !e.is_organizer ? ' [invited]' : '';
+              const desc = e.description
+                ? ` — ${e.description.slice(0, 300)}`
+                : '';
               return `- [${e.id}] ${e.summary}: ${fmt(e.start_at)} to ${fmt(e.end_at)}${loc}${origin}${desc}`;
             })
             .join('\n')
         : '(no upcoming events)';
 
+    const nowJs = DateTime.now().toJSDate();
     const recentSection =
       params.recentMessages.length > 0
         ? params.recentMessages
-            .map(
-              (m) =>
-                `[${m.created_at}] ${m.role === 'user' ? 'User' : 'Pem'}: ${m.content?.slice(0, 300) ?? ''}`,
-            )
+            .map((m) => {
+              const dt = DateTime.fromISO(m.created_at, {
+                zone: 'utc',
+              }).setZone(tz);
+              const stamp = formatChatRecallStamp(dt.toJSDate(), nowJs, tz);
+              const body = m.content?.slice(0, 300) ?? '';
+              return `[${stamp}] ${m.role === 'user' ? 'User' : 'Pem'}: ${body}`;
+            })
             .join('\n')
         : '';
 
@@ -952,9 +1035,7 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
             `${c.meetingCount} meeting${c.meetingCount === 1 ? '' : 's'}`,
           );
         if (c.lastMetAt)
-          meta.push(
-            `last met ${c.lastMetAt.toISOString().slice(0, 10)}`,
-          );
+          meta.push(`last met ${c.lastMetAt.toISOString().slice(0, 10)}`);
         return meta.length > 0
           ? `- ${label} (${meta.join(', ')})`
           : `- ${label}`;
@@ -1079,9 +1160,7 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
           `PemAgent orchestration attempt ${attempt + 1}/${PEM_ORCHESTRATION_ATTEMPTS}: ${msg}`,
         );
         if (rawText) {
-          this.log.debug(
-            `PemAgent orchestration raw text: ${rawText}`,
-          );
+          this.log.debug(`PemAgent orchestration raw text: ${rawText}`);
           const recovered = this.tryRecoverOrchestrationFromRaw(rawText);
           if (recovered) {
             this.log.warn(
@@ -1307,17 +1386,37 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
           })
         : [];
 
-    const calendar_writes = mapArr(o.calendar_writes, calendarWriteSchema, 'calendar_writes');
-    const memory_writes = mapArr(o.memory_writes, memoryWriteSchema, 'memory_writes');
-    const calendar_updates = mapArr(o.calendar_updates, calendarUpdateSchema, 'calendar_updates');
-    const calendar_deletes = mapArr(o.calendar_deletes, calendarDeleteSchema, 'calendar_deletes');
+    const calendar_writes = mapArr(
+      o.calendar_writes,
+      calendarWriteSchema,
+      'calendar_writes',
+    );
+    const memory_writes = mapArr(
+      o.memory_writes,
+      memoryWriteSchema,
+      'memory_writes',
+    );
+    const calendar_updates = mapArr(
+      o.calendar_updates,
+      calendarUpdateSchema,
+      'calendar_updates',
+    );
+    const calendar_deletes = mapArr(
+      o.calendar_deletes,
+      calendarDeleteSchema,
+      'calendar_deletes',
+    );
     const scheduling = mapArr(o.scheduling, schedulingSchema, 'scheduling');
     const recurrence_detections = mapArr(
       o.recurrence_detections,
       recurrenceDetectionSchema,
       'recurrence_detections',
     );
-    const rsvp_actions = mapArr(o.rsvp_actions, rsvpActionSchema, 'rsvp_actions');
+    const rsvp_actions = mapArr(
+      o.rsvp_actions,
+      rsvpActionSchema,
+      'rsvp_actions',
+    );
 
     const hasWork =
       calendar_writes.length > 0 ||

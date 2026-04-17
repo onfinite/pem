@@ -108,9 +108,18 @@ type Props = {
   isSending?: boolean;
   isFailed?: boolean;
   onRetry?: () => void;
+  /** When stacked under thumbnails, parent already applies screen gutters. */
+  omitOuterGutters?: boolean;
 };
 
-export default function VoiceBubble({ message, isUser, isSending, isFailed, onRetry }: Props) {
+export default function VoiceBubble({
+  message,
+  isUser,
+  isSending,
+  isFailed,
+  onRetry,
+  omitOuterGutters = false,
+}: Props) {
   const { colors } = useTheme();
   const transcript = message.transcript ?? message.content;
   const [speedIdx, setSpeedIdx] = useState(0);
@@ -216,7 +225,13 @@ export default function VoiceBubble({ message, isUser, isSending, isFailed, onRe
   });
 
   return (
-    <View style={[styles.row, isUser && styles.rowRight]}>
+    <View
+      style={[
+        styles.row,
+        isUser && styles.rowRight,
+        omitOuterGutters && styles.rowNestedInAttachment,
+      ]}
+    >
       <View
         style={[
           styles.bubble,
@@ -301,6 +316,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginBottom: space[2],
     paddingHorizontal: space[3],
+  },
+  rowNestedInAttachment: {
+    paddingHorizontal: 0,
+    marginBottom: 0,
   },
   rowRight: { justifyContent: "flex-end" },
   bubble: {

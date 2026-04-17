@@ -36,7 +36,9 @@ export class SummarizeTranscriptService {
     const msg = await this.chat.findMessage(messageId, userId);
     if (!msg) throw new NotFoundException('Message not found');
     if (msg.kind !== 'voice' || !msg.transcript?.trim()) {
-      throw new BadRequestException('Only voice messages with transcripts can be summarized');
+      throw new BadRequestException(
+        'Only voice messages with transcripts can be summarized',
+      );
     }
     if (msg.summary) return msg.summary;
 

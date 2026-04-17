@@ -64,6 +64,13 @@
       "when": 1776275915600,
       "tag": "0008_amazing_trish_tilby",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776400091126,
+      "tag": "0009_blue_big_bertha",
+      "breakpoints": true
     }
   ]
 }

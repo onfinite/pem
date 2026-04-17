@@ -43,7 +43,8 @@ Rules:
 - Questions about Pem itself ("who are you?", "who r u?", "what can you do?", "what's your name?", "how do you work?") → needs_agent. These are NEVER trivial or off_topic.
 - Personal sharing, feelings, venting, opinions, stories, conversation → needs_agent. Pem is a friend and listener.
 - Commands to modify tasks/calendar ("clear my afternoon", "cancel X", "reschedule Y", "delete Z") → needs_agent.
-- Recall / memory questions ("do you remember X?", "what were we talking about last month?", "what do you know about Z?", "who is X?") → question_only.
+- Recall / memory questions ("do you remember X?", "what were we talking about last month?", "when did we discuss Y?", "what did we talk about today?", "what do you know about Z?", "who is X?") → question_only.
+- Past chat photos ("bring up photos from…", "show me pictures I sent", "photos from my LA trip") or factual recall of a past chat topic/person answerable from messages/memory ("what did we discuss with Farin?") → question_only (not the open web). If the message is mostly venting, journaling, or mixed with commands → needs_agent.
 - Brief/overview requests about their own data ("what's my week look like", "brief me") → question_only.
 - Pure data lookups about their tasks/lists/calendar ("what's on my list?", "what's tomorrow?") → question_only.
 - Requests for factual internet knowledge Pem genuinely cannot answer (weather forecasts, stock prices, sports scores, math homework, Wikipedia facts) → off_topic.

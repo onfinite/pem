@@ -47,7 +47,9 @@ export class ExtractsController {
   }
 
   @Get('brief')
-  @ApiOperation({ summary: 'Inbox brief — overdue, today, tomorrow, this/next week, later' })
+  @ApiOperation({
+    summary: 'Inbox brief — overdue, today, tomorrow, this/next week, later',
+  })
   async getBrief(@CurrentUser() user: UserRow) {
     const buckets = await this.extracts.getBrief(user.id);
     const s = this.extracts.serialize.bind(this.extracts);

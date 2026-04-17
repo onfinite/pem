@@ -70,13 +70,23 @@ export async function createDump(
 
 // ── Chat API ──
 
+export type PhotoRecallItem = {
+  message_id: string;
+  image_key: string;
+  signed_url: string;
+  vision_summary: string | null;
+};
+
 export type ApiMessage = {
   id: string;
   role: "user" | "pem";
-  kind: "text" | "voice" | "brief";
+  kind: "text" | "voice" | "brief" | "image";
   content: string | null;
   voice_url: string | null;
   transcript: string | null;
+  image_keys?: { key: string; mime?: string | null }[] | null;
+  image_urls?: { key: string; url: string }[] | null;
+  vision_summary?: string | null;
   triage_category: string | null;
   processing_status: string | null;
   polished_text: string | null;
@@ -91,6 +101,7 @@ export type ApiMessage = {
     calendar_written?: number;
     calendar_updated?: number;
     calendar_deleted?: number;
+    photo_recall?: PhotoRecallItem[];
     type?: string;
     extract_id?: string;
     event_summary?: string;
@@ -103,15 +114,20 @@ export type ApiMessage = {
   } | null;
 };
 
+export type SendChatMessageParams =
+  | { kind: "text"; content: string; idempotency_key?: string }
+  | { kind: "voice"; voice_url?: string; audio_key?: string; idempotency_key?: string }
+  | {
+      kind: "image";
+      image_key?: string;
+      image_keys?: { key: string; mime?: string | null }[];
+      content?: string;
+      idempotency_key?: string;
+    };
+
 export async function sendChatMessage(
   getToken: () => Promise<string | null>,
-  params: {
-    kind: "text" | "voice";
-    content?: string;
-    voice_url?: string;
-    audio_key?: string;
-    idempotency_key?: string;
-  },
+  params: SendChatMessageParams,
 ): Promise<{
   message: ApiMessage;
   status: string;
@@ -124,11 +140,29 @@ export async function sendChatMessage(
   });
 }
 
+export async function requestPhotoUploadUrl(
+  getToken: () => Promise<string | null>,
+  body: { content_type: "image/jpeg" | "image/png" | "image/webp"; byte_size?: number },
+): Promise<{
+  upload_url: string;
+  image_key: string;
+  expires_in_seconds: number;
+}> {
+  return apiFetch("/chat/photos/upload-url", {
+    method: "POST",
+    getToken,
+    body: JSON.stringify(body),
+  });
+}
+
 export async function sendVoiceMessage(
   getToken: () => Promise<string | null>,
   audioUri: string,
   mimeType = "audio/m4a",
-  opts?: { idempotency_key?: string },
+  opts?: {
+    idempotency_key?: string;
+    image_keys?: { key: string; mime?: string | null }[];
+  },
 ): Promise<{ message: ApiMessage; status: string; deduplicated?: boolean }> {
   const token = await getToken();
   const formData = new FormData();
@@ -137,6 +171,9 @@ export async function sendVoiceMessage(
     name: "recording.m4a",
     type: mimeType,
   } as any);
+  if (opts?.image_keys?.length) {
+    formData.append("image_keys", JSON.stringify(opts.image_keys));
+  }
   const q = opts?.idempotency_key
     ? `?idempotency_key=${encodeURIComponent(opts.idempotency_key)}`
     : "";
