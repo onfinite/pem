@@ -47,7 +47,6 @@ export type ExtractStatus = (typeof EXTRACT_STATUSES)[number];
 export const EXTRACT_TONES = [
   'confident',
   'tentative',
-  'idea',
   'someday',
 ] as const;
 export type ExtractTone = (typeof EXTRACT_TONES)[number];

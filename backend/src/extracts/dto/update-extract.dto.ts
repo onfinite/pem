@@ -13,7 +13,7 @@ export const updateExtractBodySchema = z
   .object({
     text: z.string().min(1).max(2000).optional(),
     original_text: z.string().max(4000).optional(),
-    tone: z.enum(['confident', 'tentative', 'idea', 'someday']).optional(),
+    tone: z.enum(['confident', 'tentative', 'someday']).optional(),
     urgency: z.enum(['someday', 'none']).optional(),
     batch_key: z
       .enum(['shopping', 'errands', 'follow_ups'])
@@ -49,7 +49,7 @@ export class UpdateExtractDto {
   @ApiPropertyOptional()
   original_text?: string;
 
-  @ApiPropertyOptional({ enum: ['confident', 'tentative', 'idea', 'someday'] })
+  @ApiPropertyOptional({ enum: ['confident', 'tentative', 'someday'] })
   tone?: string;
 
   @ApiPropertyOptional({ enum: ['someday', 'none'] })

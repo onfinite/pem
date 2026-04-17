@@ -32,6 +32,7 @@ export function InboxTab({
   doneLoadingMore,
   onInboxScroll,
   onEditTask,
+  onUndone,
   onRetry,
   onRefresh,
   refreshing,
@@ -46,6 +47,7 @@ export function InboxTab({
   doneLoadingMore: boolean;
   onInboxScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEditTask: (item: ApiExtract) => void;
+  onUndone: (id: string) => void;
   onRetry: () => void;
   onRefresh: () => void;
   refreshing: boolean;
@@ -152,6 +154,7 @@ export function InboxTab({
         doneItems={doneItems}
         collapsed={collapsed.done}
         onToggleDone={() => toggleSection("done")}
+        onUndone={onUndone}
         hasMore={doneHasMore}
         loadingMore={doneLoadingMore}
       />

@@ -3,7 +3,8 @@ import { space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { CheckCircle2, ChevronDown, ChevronRight } from "lucide-react-native";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useCallback } from "react";
+import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { inboxStyles } from "./inboxTab.styles";
 import { InboxSectionItemsGroup } from "./InboxSectionItemsGroup";
 
@@ -11,16 +12,28 @@ export function InboxDoneSection({
   doneItems,
   collapsed,
   onToggleDone,
+  onUndone,
   hasMore,
   loadingMore,
 }: {
   doneItems: ApiExtract[];
   collapsed: boolean;
   onToggleDone: () => void;
+  onUndone: (id: string) => void;
   hasMore: boolean;
   loadingMore: boolean;
 }) {
   const { colors } = useTheme();
+
+  const confirmRestore = useCallback(
+    (item: ApiExtract) => {
+      Alert.alert("Restore task?", item.text, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Restore", onPress: () => onUndone(item.id) },
+      ]);
+    },
+    [onUndone],
+  );
 
   if (doneItems.length === 0) return null;
 
@@ -53,11 +66,13 @@ export function InboxDoneSection({
       {!collapsed && (
         <InboxSectionItemsGroup>
           {doneItems.map((item) => (
-            <View
+            <Pressable
               key={item.id}
-              style={[
+              onPress={() => confirmRestore(item)}
+              style={({ pressed }) => [
                 inboxStyles.doneRow,
                 { borderBottomColor: colors.borderMuted },
+                pressed && { opacity: 0.6 },
               ]}
             >
               <CheckCircle2 size={14} color={colors.textTertiary} />
@@ -75,7 +90,7 @@ export function InboxDoneSection({
                   })}
                 </Text>
               )}
-            </View>
+            </Pressable>
           ))}
         </InboxSectionItemsGroup>
       )}

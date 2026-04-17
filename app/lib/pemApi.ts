@@ -299,7 +299,14 @@ export type ApiExtract = {
   duration_minutes: number | null;
   auto_scheduled: boolean;
   scheduling_reason: string | null;
-  recurrence_rule: unknown;
+  recurrence_rule: {
+    freq: "daily" | "weekly" | "monthly" | "yearly";
+    interval: number;
+    by_day?: number[];
+    by_month_day?: number;
+    until?: string;
+    count?: number;
+  } | null;
   recurrence_parent_id: string | null;
   rsvp_status: string | null;
   is_all_day: boolean;
@@ -319,7 +326,7 @@ export type ApiExtract = {
 export type UpdateExtractPayload = {
   text?: string;
   original_text?: string;
-  tone?: "confident" | "tentative" | "idea" | "someday";
+  tone?: "confident" | "tentative" | "someday";
   urgency?: "someday" | "none";
   batch_key?: "shopping" | "errands" | "follow_ups" | null;
   due_at?: string | null;
@@ -361,7 +368,6 @@ export async function getInboxAll(getToken: () => Promise<string | null>) {
   return apiFetch<{
     dated: ApiExtract[];
     someday: ApiExtract[];
-    ideas: ApiExtract[];
     dismissed: ApiExtract[];
     batch_groups: { batch_key: string; items: ApiExtract[] }[];
     batch_slots: BatchSlot[];
@@ -371,8 +377,8 @@ export async function getInboxAll(getToken: () => Promise<string | null>) {
 export type ExtractsQueryParams = {
   status?: "open" | "inbox" | "snoozed" | "dismissed" | "done";
   batch_key?: "shopping" | "errands" | "follow_ups";
-  tone?: "confident" | "tentative" | "idea" | "someday";
-  exclude_tone?: "confident" | "tentative" | "idea" | "someday";
+  tone?: "confident" | "tentative" | "someday";
+  exclude_tone?: "confident" | "tentative" | "someday";
   urgency?: "someday" | "none";
   limit?: number;
   cursor?: string | null;

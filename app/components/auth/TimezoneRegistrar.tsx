@@ -1,4 +1,4 @@
-import { patchTimezone } from "@/lib/pemApi";
+import { getMe, patchTimezone } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef } from "react";
@@ -14,38 +14,44 @@ function deviceTimeZone(): string {
   }
 }
 
+/**
+ * Sync device IANA timezone to the server when missing or out of date.
+ * We compare against GET /users/me — not only AsyncStorage — so a failed
+ * PATCH (server down) or a reset DB does not leave the user stuck with
+ * no timezone forever.
+ */
 async function syncIfChanged(getToken: () => Promise<string | null>) {
+  const tz = deviceTimeZone();
   try {
-    const tz = deviceTimeZone();
-    const last = await AsyncStorage.getItem(TZ_STORAGE_KEY);
-    if (last === tz) return;
+    const me = await getMe(getToken);
+    if (me.timezone === tz) {
+      await AsyncStorage.setItem(TZ_STORAGE_KEY, tz);
+      return;
+    }
     await patchTimezone(getToken, tz);
     await AsyncStorage.setItem(TZ_STORAGE_KEY, tz);
   } catch {
-    /* non-fatal */
+    /* non-fatal — retry on next foreground */
   }
 }
 
 export default function TimezoneRegistrar() {
-  const { isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
-  const ran = useRef(false);
 
   useEffect(() => {
-    if (!isSignedIn) return;
-    if (!ran.current) {
-      ran.current = true;
-      syncIfChanged(getTokenRef.current);
-    }
+    if (!isLoaded || !isSignedIn) return;
+
+    void syncIfChanged(getTokenRef.current);
 
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        syncIfChanged(getTokenRef.current);
+        void syncIfChanged(getTokenRef.current);
       }
     });
     return () => sub.remove();
-  }, [isSignedIn]);
+  }, [isLoaded, isSignedIn]);
 
   return null;
 }

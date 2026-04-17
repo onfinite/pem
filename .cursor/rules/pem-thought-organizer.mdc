@@ -149,7 +149,7 @@ dump_id         uuid fk dumps
 text            text        -- the extracted thought, clean and short
 original_text   text        -- raw fragment from dump that produced this
 status          enum        -- 'inbox' | 'done' | 'snoozed' | 'dismissed'
-tone            enum        -- 'confident' | 'tentative' | 'idea' | 'someday'
+tone            enum        -- 'confident' | 'tentative' | 'someday'
 urgency         enum        -- 'someday' | 'none' (all timing lives in period dates, not urgency)
 batch_key       text        -- nullable. 'shopping' | 'errands' | 'follow_ups' | null
 due_at          timestamptz -- nullable. exact datetime if detected
@@ -184,7 +184,7 @@ POST /dumps (text)
 Extraction worker (BullMQ):
   → classify and extract actionable items from dump text
   → for each actionable item:
-      - determine tone (confident | tentative | idea | someday)
+      - determine tone (confident | tentative | someday)
       - determine urgency ('someday' for aspirational items, 'none' otherwise)
       - detect exact datetime OR period (always set period_start/period_end for any timeline)
       - detect batch_key if batchable
@@ -211,8 +211,11 @@ tone determines where it surfaces and how it is treated.
 
 - **confident** — user stated this clearly. Goes to inbox. Surfaces normally.
 - **tentative** — maybe, thinking about, not sure if. Saved. Lower priority. Does not pressure.
-- **idea** — non-actionable creative or business thought. Goes to ideas section, not inbox.
 - **someday** — aspirational. No deadline, no urgency. Lives at the bottom of everything.
+
+Speculative/exploratory thoughts ("what if…", "wouldn't it be cool if…") are NOT tasks. They are stored as `memory_write` with `memory_key: "ideas"`. The user can later ask "what ideas did I have?" and Pem lists them from memory. Weekly reflections may surface interesting ones.
+
+Concrete routines ("run every day", "meditate", "wake up at 6 AM") are recurring tasks with `recurrence_detections`, plus a `memory_write` with `memory_key: "routines"` for scheduling intelligence. No calendar blocks. No special list. They show up in the daily brief and reset via the recurrence cron.
 
 Tone is detected from language signals in the dump. Use gpt-4o-mini for classification.
 Never assume confident when language is vague. When in doubt, classify as tentative.

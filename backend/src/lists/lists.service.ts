@@ -13,7 +13,6 @@ import { extractsTable, listsTable, type ListRow } from '../database/schemas';
 const DEFAULT_LISTS: { name: string; icon: string }[] = [
   { name: 'Shopping', icon: 'cart' },
   { name: 'Errands', icon: 'run' },
-  { name: 'Ideas', icon: 'lightbulb' },
 ];
 
 @Injectable()

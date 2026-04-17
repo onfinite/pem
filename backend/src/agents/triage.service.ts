@@ -9,7 +9,7 @@ const triageCategorySchema = z.object({
     .enum(['trivial', 'question_only', 'off_topic', 'needs_agent'])
     .describe(
       `trivial: ONLY pure acknowledgments with zero content — "ok", "thanks", "got it", emoji-only, thumbs up. Nothing else is trivial.
-question_only: user asks something answerable from THEIR Pem data — open tasks, shopping list, ideas list, calendar, memory, what they said before. NOT weather, news, trivia, homework, or the wider internet.
+question_only: user asks something answerable from THEIR Pem data — open tasks, shopping list, calendar, memory, ideas from memory, what they said before. NOT weather, news, trivia, homework, or the wider internet.
 off_topic: requests for factual internet knowledge that Pem genuinely cannot answer — weather forecasts, sports scores, stock prices, math/coding homework, Wikipedia-style facts. NOT personal sharing, NOT questions about Pem, NOT conversation.
 needs_agent: everything else — dumping thoughts, commands, journaling, venting, sharing, conversation, questions about Pem itself ("who are you?", "what can you do?"), things to buy/do/remember, scheduling, mixed content, personal sharing, feelings, opinions. When in doubt → needs_agent.`,
     ),
@@ -47,7 +47,7 @@ Rules:
 - Brief/overview requests about their own data ("what's my week look like", "brief me") → question_only.
 - Pure data lookups about their tasks/lists/calendar ("what's on my list?", "what's tomorrow?") → question_only.
 - Requests for factual internet knowledge Pem genuinely cannot answer (weather forecasts, stock prices, sports scores, math homework, Wikipedia facts) → off_topic.
-- Dumps, things to buy/do/remember, scheduling, journaling, ideas, preferences, life context → needs_agent.
+- Dumps, things to buy/do/remember, scheduling, journaling, preferences, life context → needs_agent.
 - When in doubt → needs_agent. Always.`,
         prompt: `Classify this message:\n"""${content.slice(0, 2000)}"""`,
         maxRetries: 2,

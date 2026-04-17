@@ -35,7 +35,7 @@ const nullStr = z
   .nullish()
   .transform((v) => v ?? null);
 const toneEnum = enumWithDefault(
-  ['confident', 'tentative', 'idea', 'someday'],
+  ['confident', 'tentative', 'someday'],
   'confident',
   'tone',
 );
@@ -67,7 +67,7 @@ const extractActionSchema = z.object({
   tone: toneEnum,
   urgency: urgencyEnum,
   batch_key: batchEnum,
-  list_name: nullStr.describe('Name of user list to assign (e.g. "Shopping", "Errands", "Ideas", or a user-created list). null if no list.'),
+  list_name: nullStr.describe('Name of user list to assign (e.g. "Shopping", "Errands", or a user-created list). null if no list.'),
   create_list: z.boolean().default(false).describe('true if user explicitly asks to create a new list/project'),
   priority: priorityEnum.describe('high/medium/low or null. Only set when user signals priority explicitly.'),
   due_at: nullStr.describe('ISO datetime if detected'),
@@ -85,7 +85,8 @@ const updateActionSchema = z.object({
     tone: toneEnum.optional(),
     urgency: urgencyEnum.optional(),
     batch_key: batchEnum.optional(),
-    list_name: nullStr.optional().describe('List name to assign'),
+    list_name: nullStr.optional().describe('List name to move to, or null to remove from current list'),
+    create_list: z.boolean().default(false).describe('true if list_name is a new list that should be created'),
     priority: priorityEnum.optional(),
     due_at: nullStr.optional(),
     period_start: nullStr.optional(),
@@ -266,20 +267,27 @@ Voice transcription: Messages may come from voice input. Transcripts can be frag
 
 Rules for task extraction:
 - Extract EVERY actionable item as its OWN separate task. "potatoes and tomatoes" = TWO tasks, not one.
+- SPLIT compound habits and routines into separate tasks. "exercise and wake up at 6 AM every day" = TWO tasks: "Wake up at 6 AM" and "Exercise" — each with its own recurrence.
+- Task text should read like a task, not a narration of intent. Strip "start", "begin", "I should", "I need to" prefixes. "I should start exercising" → "Exercise". "I need to start waking up at 6" → "Wake up at 6 AM". "I want to work harder" → "Work 12+ hours daily" (if that's what they said). The text should be the ACTION, not the decision to start doing it.
 - Use the user's natural language for task text — don't over-formalize.
 - Food items to PURCHASE (fruits, vegetables, meat, dairy, snacks, ingredients) → list_name: "Shopping". Only when the intent is to BUY. "I need potatoes" = "Buy potatoes" [Shopping]. But "drink milk before sleeping" or "eat more vegetables" are PERSONAL REMINDERS/HABITS, not shopping — do NOT assign Shopping list. Shopping is for acquiring items, not consuming them.
-- Health habits with no concrete action ("eat better", "sleep more", "drink more water", "exercise more", "be more active") → memory_write only, no task. These are vague intentions, not actionable steps. Health tasks with a concrete step ("book nutritionist", "buy vitamins", "schedule sleep study", "sign up for gym") → create a task.
+- Health habits with a concrete action ("exercise", "wake up at 6 AM", "run 5k", "meditate", "stretch") → create a recurring task with recurrence_detections. These are specific enough to track daily/weekly.
+- Health habits with no concrete action ("eat better", "sleep more", "drink more water", "be more active") → memory_write only, no task. These are vague intentions, not actionable steps. Health tasks with a concrete step ("book nutritionist", "buy vitamins", "schedule sleep study", "sign up for gym") → create a task.
 - Errands (physical chores: laundry, dry cleaning, pharmacy, pick up, drop off, return) → list_name: "Errands".
-- Ideas — ONLY for hypothetical, speculative, or exploratory thoughts with NO concrete commitment. Signals: "what if…", "wouldn't it be cool if…", "I have an idea for…", "imagine if…", "here's a wild idea…", "been brainstorming about…". These are creative seeds the user wants captured but hasn't committed to doing. Set tone: "idea", list_name: "Ideas". IMPORTANT: Rewrite as a clean idea title. "Wouldn't it be cool if there was an app for errands with AI?" → "App idea: AI-powered errands app".
-- NOT ideas — statements of intent are tasks, not ideas. "Gonna build X", "I'm going to build X", "I need to build X", "Building X", "I want to start X" → these express commitment. They are confident tasks (tone: "confident"), NOT ideas. Only classify as idea when the language is explicitly speculative or exploratory ("what if", "imagine", "wouldn't it be cool"). When in doubt, classify as a task — the user can always move it to Ideas later.
+- Speculative/exploratory thoughts ("what if…", "wouldn't it be cool if…", "I have an idea for…", "imagine if…", "here's a wild idea…") are NOT tasks. Do NOT create extracts for them. Store as memory_write with memory_key: "ideas" and a clean title as the note. E.g. "Wouldn't it be cool if there was an app for errands with AI?" → memory_write: {memory_key: "ideas", note: "AI-powered errands app"}. The user can later ask "what ideas did I have?" and Pem lists them from memory.
+- NOT speculative — statements of intent are tasks. "Gonna build X", "I'm going to build X", "I need to build X", "Building X", "I want to start X" → these express commitment. They are confident tasks (tone: "confident"). Only store as memory when the language is explicitly speculative or exploratory ("what if", "imagine", "wouldn't it be cool"). When in doubt, classify as a task.
+- Concrete routines ("run every day", "meditate daily", "wake up at 6 AM") are recurring tasks with recurrence_detections. Also store as memory_write with memory_key: "routines" so Pem knows the user's schedule for conflict detection and can reference it in scheduling.
 - If user mentions a specific list/project by name (e.g. "add to my Work list"), use list_name with that name. If the list doesn't exist in their current lists, set create_list: true.
 - If user says "create a new list called X" or "start a new project X", set create_list: true with list_name: "X".
-- SMART LIST MATCHING: When creating a task, check "## User's lists" for custom lists. If the task clearly relates to a custom list topic/project, assign it there automatically. E.g. if user has a "Pem" list and says "have to make a good app for Pem", that task belongs in the "Pem" list. Similarly "buy running shoes" with a "Fitness" list → assign to Fitness. Only assign when the match is clear from context — don't force-match generic words.
+- MOVING between lists: When user says "move X to Y list" or "X should be under Y" or "X belongs in Y project", emit an UPDATE with list_name: "Y" (and create_list: true if Y doesn't exist yet). This actually changes the list assignment in the database.
+- REMOVING from a list: When user says "X is personal" or "remove X from the project" or "X doesn't belong in any list", emit an UPDATE with list_name: null. This clears the list assignment.
+- SMART LIST MATCHING: When creating a task, check "## User's lists" for custom lists. Assign a task to a list ONLY if **that specific task** clearly belongs to that project/topic. Evaluate each extracted item independently — a project name mentioned elsewhere in the same dump does NOT apply to unrelated items. E.g. "fix the login bug in Pem" → Pem list. But "prepare for coding interview" in the same dump → no list, even if the user also talks about Pem. "buy running shoes" with a "Fitness" list → Fitness. When in doubt, leave list_name null — the user can assign it later.
 - Priority: only set when user explicitly signals it. "urgent"/"asap"/"important"/"high priority" → priority: "high". "low priority"/"whenever"/"not urgent" → priority: "low". Default is null (no priority).
 - When user says "I did X" or "X is done" or "I bought X" or "got the X" → find the matching extract and mark it done (completions).
 - When user says "never mind about X" or "forget X" → dismiss the matching extract (completions).
 - When user updates an existing task (adds detail, changes timing), update it — don't create a duplicate (updates).
 - CRITICAL — updates patch: ONLY include fields the user explicitly asked to change. If the user says "change the name to X", the patch should ONLY contain { text: "X" }. Do NOT re-emit due_at, period_start, period_end, urgency, or any other field that wasn't mentioned. Omitted fields stay unchanged — including them risks overwriting correct values with stale or wrong data.
+- NEVER include a field in the updates patch with value null unless the user explicitly asked to clear it. Omit the field entirely if unchanged. The system treats null as "delete this value" — a null due_at will erase the existing deadline.
 - Dates: "tomorrow" means the next day. "next week" starts Monday.
 - CRITICAL — No past dates: NEVER set due_at, period_start, or event_start_at to a datetime in the past unless the user explicitly asks for it. If a period reference like "this week" or "this month" has already started, set period_start to NOW (not the beginning of the period that is already past). For example, if today is Wednesday and user says "this week", period_start = today, not last Monday.
 - CRITICAL — Period dates for ALL timelines: Every time reference MUST set period_start and period_end. The urgency field is ONLY for "someday" (aspirational, no timeline) or "none" (default). Do NOT use urgency for timing — use period dates instead.
@@ -302,8 +310,8 @@ Rules for task extraction:
   - "this afternoon" → period_start: today 12:00, period_end: today 17:00, period_label: "today"
   - "tonight" / "before sleeping" / "before bed" / "before I sleep" → period_start: today 18:00, period_end: today 23:59, period_label: "today"
   - "early next week" → period_start: Monday 00:00, period_end: Wednesday 23:59, period_label: "early next week"
-  - "everyday"/"daily"/"every day at X"/"every weekday" → period_start: today, period_end: today 23:59, period_label: "today". This is a RECURRING task that starts TODAY — NOT someday. Also set recurrence_detections with freq: "daily" and appropriate by_day if weekdays-only.
-  - "every Monday"/"every week" → period_start: next occurrence, period_end: same day 23:59, period_label: day name. Also set recurrence_detections with freq: "weekly".
+  - "everyday"/"daily"/"every day at X"/"every weekday" → period_start: today, period_end: today 23:59, period_label: "today". This is a RECURRING task that starts TODAY — NOT someday. Also set recurrence_detections with freq: "daily" and appropriate by_day if weekdays-only. by_day uses ISO weekdays: 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday, 7=Sunday. "every weekday" → by_day: [1,2,3,4,5].
+  - "every Monday"/"every week" → period_start: next occurrence, period_end: same day 23:59, period_label: day name. Also set recurrence_detections with freq: "weekly". by_day for specific days: "every Monday" → by_day: [1], "every Saturday and Sunday" → by_day: [6,7].
   - "soon"/"sometime"/"eventually"/"someday" → NO dates, urgency: "someday"
   - Specific date with no exact time (e.g. "on Friday") → period_start: that day 00:00, period_end: that day 23:59, period_label: day name
   - "by Friday" (deadline) → due_at: Friday 17:00, PLUS period_start/period_end for that day
@@ -375,7 +383,7 @@ Your personality:
 - When the user shares something and there's an actionable piece, capture it — but lead with empathy when the tone is emotional.
 - Be proactive: if the user mentions buying groceries and you know they have a shopping list, mention it.
 - The user prompt always includes an "## Addressing the user" section when their name is known — use it naturally when it fits, not every message. Never invent or swap names.
-- CRITICAL — in pem_note and all internal notes: NEVER write "User" or "the user". Always use the person's name from "## Addressing the user". Example: "Arzhang clarified this is a task, not an idea" — never "User clarified this is a task".
+- CRITICAL — in pem_note and all internal notes: NEVER write "User" or "the user". Always use the person's name from "## Addressing the user". Example: "Arzhang clarified this is a personal task" — never "User clarified this is a task".
 
 CRITICAL — Forbidden filler (never use any variation of these):
 - "Let me know if there's anything else"
@@ -599,9 +607,11 @@ const JSON_RECOVERY_SYSTEM = `You must output ONE JSON object only. No markdown,
 
 Keys: response_text (string, required), creates, updates, completions, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update (string or null), polished_text (string or null). Use [] for empty arrays.
 
-creates items: text (required), original_text, tone (confident|tentative|idea|someday), urgency (someday|none), batch_key (shopping|errands or null — legacy, prefer list_name), list_name (name of list to assign or null, e.g. "Shopping", "Errands", "Ideas"), create_list (boolean — true only when user asks to create a new list), priority (high|medium|low or null), due_at, period_start, period_end, period_label, pem_note (short context note from Pem shown on the task detail — e.g. "Annual checkup" or "Kane prefers morning meetings". ALWAYS refer to the user by their name from "## Addressing the user", NEVER write "User" or "the user". If no name is known, write in second person "you". Omit if no useful context beyond the task text), draft_text (strings or null). ALWAYS set period_start/period_end for any time reference. urgency is ONLY someday or none. Only speculative "what if" thoughts → Ideas; statements of intent ("gonna build", "I'm going to") are confident tasks, not ideas.
+creates items: text (required), original_text, tone (confident|tentative|someday), urgency (someday|none), batch_key (shopping|errands or null — legacy, prefer list_name), list_name (name of list to assign or null, e.g. "Shopping", "Errands"), create_list (boolean — true only when user asks to create a new list), priority (high|medium|low or null), due_at, period_start, period_end, period_label, pem_note (short context note from Pem shown on the task detail — e.g. "Annual checkup" or "Kane prefers morning meetings". ALWAYS refer to the user by their name from "## Addressing the user", NEVER write "User" or "the user". If no name is known, write in second person "you". Omit if no useful context beyond the task text), draft_text (strings or null). ALWAYS set period_start/period_end for any time reference. urgency is ONLY someday or none. Speculative thoughts → memory_write with memory_key "ideas", NOT tasks; statements of intent ("gonna build", "I'm going to") are confident tasks.
 
-Extract every actionable from the user message; dedupe against open tasks; food/groceries → shopping list; only speculative musings → Ideas list; memory_writes when user says remember/note/keep in mind; plain text only in response_text.`;
+updates items: extract_id (required), patch (object with ONLY changed fields: text, list_name (string to move to list, null to remove from list), create_list (boolean), priority, due_at, period_start, period_end, period_label, pem_note, etc.), reason.
+
+Extract every actionable from the user message; dedupe against open tasks; food/groceries → shopping list; speculative musings → memory_write with memory_key "ideas" (NOT tasks); memory_writes when user says remember/note/keep in mind; plain text only in response_text. When user asks to move/reorganize tasks, use updates with list_name.`;
 
 const JSON_RECOVERY_EXTRACTION = `Output ONE JSON object only. No markdown, no fences. Keys: creates (array), updates (array), completions (array). Use [] if none. Same item shapes as Pem task extraction. Extract every actionable; dedupe against open tasks in the prompt.`;
 
@@ -906,7 +916,7 @@ Current time: ${nowLocal.toFormat('cccc, MMMM d, yyyy h:mm a ZZZZ')} (${tz})
 ${openTasksSection}
 
 ## User's lists
-${params.userLists && params.userLists.length > 0 ? params.userLists.map((l) => `- ${l.name}`).join('\n') : '(no lists yet — defaults: Shopping, Errands, Ideas)'}
+${params.userLists && params.userLists.length > 0 ? params.userLists.map((l) => `- ${l.name}`).join('\n') : '(no lists yet — defaults: Shopping, Errands)'}
 
 ## Calendar (upcoming)
 ${calendarSection}

@@ -18,7 +18,7 @@ import { useTaskDrawerController } from "./useTaskDrawerController";
 
 const TaskDrawerView = forwardRef<
   TaskDrawerHandle,
-  { onCountsChanged?: () => void }
+  { onCountsChanged?: (removedId: string) => void }
 >(function TaskDrawerView({ onCountsChanged }, ref) {
   const { colors } = useTheme();
   const { getToken } = useAuth();
@@ -122,6 +122,7 @@ const TaskDrawerView = forwardRef<
               doneLoadingMore={c.doneLoadingMore}
               onInboxScroll={handleScroll}
               onEditTask={c.openTaskEdit}
+              onUndone={c.handleUndone}
               onRetry={() => c.handleTabSwitch("inbox")}
               onRefresh={c.handleRefresh}
               refreshing={c.refreshing}

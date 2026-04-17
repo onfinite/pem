@@ -57,6 +57,13 @@
       "when": 1775946798531,
       "tag": "0007_light_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776275915600,
+      "tag": "0008_amazing_trish_tilby",
+      "breakpoints": true
     }
   ]
 }

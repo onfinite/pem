@@ -229,7 +229,6 @@ export class ExtractsService {
         and(
           eq(extractsTable.userId, userId),
           eq(extractsTable.status, 'inbox'),
-          sql`${extractsTable.tone} <> 'idea'`,
         ),
       );
 
@@ -255,7 +254,6 @@ export class ExtractsService {
   async listAllForUser(userId: string): Promise<{
     dated: ExtractRow[];
     someday: ExtractRow[];
-    ideas: ExtractRow[];
     dismissed: ExtractRow[];
     batch_groups: { batch_key: string; items: ExtractRow[] }[];
     batch_slots: { batch_key: string; items: ExtractRow[]; count: number }[];
@@ -268,7 +266,7 @@ export class ExtractsService {
     const allInbox = await this.db
       .select()
       .from(extractsTable)
-      .where(and(base, sql`${extractsTable.tone} <> 'idea'`))
+      .where(base)
       .orderBy(asc(extractsTable.periodStart), asc(extractsTable.dueAt));
 
     const dated: ExtractRow[] = [];
@@ -281,12 +279,6 @@ export class ExtractsService {
         dated.push(r);
       }
     }
-
-    const ideas = await this.db
-      .select()
-      .from(extractsTable)
-      .where(and(base, eq(extractsTable.tone, 'idea')))
-      .orderBy(desc(extractsTable.createdAt));
 
     const dismissed = await this.db
       .select()
@@ -311,13 +303,7 @@ export class ExtractsService {
       const items = await this.db
         .select()
         .from(extractsTable)
-        .where(
-          and(
-            base,
-            eq(extractsTable.batchKey, bk),
-            sql`${extractsTable.tone} <> 'idea'`,
-          ),
-        )
+        .where(and(base, eq(extractsTable.batchKey, bk)))
         .orderBy(desc(extractsTable.createdAt));
       batch_slots.push({ batch_key: bk, items, count: items.length });
       if (items.length >= 2) {
@@ -328,7 +314,6 @@ export class ExtractsService {
     return {
       dated,
       someday: somedayRows,
-      ideas,
       dismissed,
       batch_groups,
       batch_slots,
@@ -1243,7 +1228,6 @@ export class ExtractsService {
     const later: ExtractRow[] = [];
 
     for (const row of rows) {
-      if (row.tone === 'idea') continue;
       if (row.urgency === 'someday') continue;
 
       const isCalEvent = row.source === 'calendar' || !!row.externalEventId;
@@ -1301,7 +1285,7 @@ export class ExtractsService {
     const batchKeys = ['shopping', 'errands', 'follow_ups'] as const;
     const batch_counts = batchKeys.map((bk) => ({
       batch_key: bk,
-      count: rows.filter((r) => r.batchKey === bk && r.tone !== 'idea').length,
+      count: rows.filter((r) => r.batchKey === bk).length,
     }));
 
     return {

@@ -34,7 +34,6 @@ export const inboxStyles = StyleSheet.create({
   sectionItemsInset: {
     marginLeft: space[4],
     paddingLeft: space[3],
-    borderLeftWidth: StyleSheet.hairlineWidth,
   },
   undoSection: {
     paddingHorizontal: space[4],

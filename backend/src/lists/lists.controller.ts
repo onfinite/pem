@@ -45,7 +45,6 @@ export class ListsController {
   @Get()
   @ApiOperation({ summary: 'All lists with open task counts' })
   async getAll(@CurrentUser() user: UserRow) {
-    await this.lists.seedDefaults(user.id);
     const rows = await this.lists.findByUserWithCounts(user.id);
     return { items: rows.map(serializeList) };
   }

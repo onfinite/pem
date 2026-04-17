@@ -118,6 +118,7 @@ export default function ChatScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [taskCounts, setTaskCounts] = useState<TaskCounts | null>(null);
   const [briefData, setBriefData] = useState<BriefResponse | null>(null);
+  const headerSummary = buildHeaderSummary(briefData);
   const drawerRef = useRef<TaskDrawerHandle>(null);
   const search = useMessageSearch(getToken);
 
@@ -415,7 +416,20 @@ export default function ChatScreen() {
     if (search.highlightId) scrollToMessage(search.highlightId);
   }, [search.highlightId, scrollToMessage]);
 
-  const handleCountsChanged = useCallback(() => {
+  const handleCountsChanged = useCallback((removedId: string) => {
+    setBriefData((prev) => {
+      if (!prev) return prev;
+      const strip = (arr: typeof prev.overdue) => arr.filter((x) => x.id !== removedId);
+      return {
+        ...prev,
+        overdue: strip(prev.overdue),
+        today: strip(prev.today),
+        tomorrow: strip(prev.tomorrow),
+        this_week: strip(prev.this_week),
+        next_week: strip(prev.next_week),
+        later: strip(prev.later),
+      };
+    });
     fetchCounts();
   }, [fetchCounts]);
 
@@ -522,20 +536,16 @@ export default function ChatScreen() {
             )}
           </Pressable>
           <Pressable onPress={handleOpenDrawer} style={styles.headerCenter} hitSlop={8}>
-            {(() => {
-              const summary = buildHeaderSummary(briefData);
-              if (!summary.text) return null;
-              return (
-                <Text
-                  style={[styles.headerBadge, {
-                    color: summary.isOverdue ? colors.error : colors.textSecondary,
-                  }]}
-                  numberOfLines={1}
-                >
-                  {summary.text}
-                </Text>
-              );
-            })()}
+            {headerSummary.text && (
+              <Text
+                style={[styles.headerBadge, {
+                  color: headerSummary.isOverdue ? colors.error : colors.textSecondary,
+                }]}
+                numberOfLines={1}
+              >
+                {headerSummary.text}
+              </Text>
+            )}
           </Pressable>
           <View style={styles.headerRight}>
             <Pressable onPress={search.handleOpen} hitSlop={12}>

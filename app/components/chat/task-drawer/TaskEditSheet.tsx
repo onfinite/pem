@@ -201,8 +201,7 @@ export function TaskEditSheet({
   const isSyncedFromCalendar = extract.source === "calendar" && !!extract.external_event_id;
   const isInvite = isSyncedFromCalendar && !extract.is_organizer;
   const isCalendarEvent = extract.source === "calendar" || !!extract.external_event_id;
-  const isIdea = extract.tone === "idea";
-  const canComplete = !isIdea && !isCalendarEvent;
+  const canComplete = !isCalendarEvent;
   const isDone = extract.status === "done";
   const dateSummary = formatDateSummary(extract, patch);
   const ListChevron = listOpen ? ChevronUp : ChevronDown;

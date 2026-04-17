@@ -5,7 +5,6 @@ export function toneChipLabel(tone: string | null | undefined): string | null {
   if (!tone) return null;
   if (tone === "confident") return null;
   if (tone === "tentative") return "Tentative";
-  if (tone === "idea") return "Idea";
   if (tone === "someday") return "Someday";
   return null;
 }

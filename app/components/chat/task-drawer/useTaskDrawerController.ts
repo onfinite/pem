@@ -46,7 +46,7 @@ const SCREEN_H = Dimensions.get("window").height;
 
 export function useTaskDrawerController(
   ref: ForwardedRef<TaskDrawerHandle | null>,
-  onCountsChanged: (() => void) | undefined,
+  onCountsChanged: ((removedId: string) => void) | undefined,
   getToken: () => Promise<string | null>,
 ) {
   const { colors } = useTheme();
@@ -210,6 +210,28 @@ export function useTaskDrawerController(
     [getToken],
   );
 
+  const mutationsInFlight = useRef(0);
+  const reconcileTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const scheduleReconcile = useCallback(() => {
+    clearTimeout(reconcileTimer.current);
+    reconcileTimer.current = setTimeout(async () => {
+      if (mutationsInFlight.current > 0) return;
+      try {
+        const [openRes, calRes] = await Promise.all([
+          getExtractsOpen(getToken, { limit: 200 }),
+          getExtractsCalendar(getToken, calMonth),
+        ]);
+        if (mutationsInFlight.current > 0) return;
+        setTasks(openRes.items);
+        setCalData(calRes);
+        void writeOpenCache(openRes.items);
+      } catch {
+        // non-critical background reconcile
+      }
+    }, 1500);
+  }, [getToken, calMonth]);
+
   const handleManualSync = useCallback(async () => {
     setIsSyncing(true);
     try {
@@ -318,42 +340,76 @@ export function useTaskDrawerController(
       if (item) {
         setUndoItem({ id: item.id, text: item.text, action: "done" });
       }
+      mutationsInFlight.current++;
       try {
         const { item: doneRow } = await patchExtractDone(getToken, id);
-        onCountsChanged?.();
+        onCountsChanged?.(id);
         setDoneItems((prev) => {
           if (prev.some((x) => x.id === id)) return prev;
           return [doneRow, ...prev];
         });
-        fetchCalendar(calMonth);
       } catch {
-        fetchTasks();
-        fetchCalendar(calMonth);
+        // error — reconcile will correct state
+      } finally {
+        mutationsInFlight.current--;
       }
+      scheduleReconcile();
     },
-    [getToken, removeItem, fetchTasks, fetchCalendar, calMonth, onCountsChanged, tasks],
+    [getToken, removeItem, onCountsChanged, tasks, scheduleReconcile],
   );
 
   const handleUndo = useCallback(
     async (id: string) => {
       pemImpactLight();
       const action = undoItem?.action;
+      const restoredItem = doneItems.find((x) => x.id === id);
       setUndoItem(null);
+      mutationsInFlight.current++;
       try {
         if (action === "dismissed") {
           await patchExtractUndismiss(getToken, id);
         } else {
           await patchExtractUndone(getToken, id);
         }
-        onCountsChanged?.();
-        fetchTasks();
-        fetchCalendar(calMonth);
+        if (restoredItem) {
+          setTasks((prev) => [restoredItem, ...prev]);
+          setDoneItems((prev) => prev.filter((x) => x.id !== id));
+        }
+        onCountsChanged?.(id);
       } catch {
-        fetchTasks();
-        fetchCalendar(calMonth);
+        // error — reconcile will correct state
+      } finally {
+        mutationsInFlight.current--;
       }
+      scheduleReconcile();
     },
-    [getToken, fetchTasks, fetchCalendar, calMonth, onCountsChanged, undoItem],
+    [getToken, onCountsChanged, undoItem, doneItems, scheduleReconcile],
+  );
+
+  const handleUndone = useCallback(
+    async (id: string) => {
+      pemImpactLight();
+      const item = doneItems.find((x) => x.id === id);
+      if (item) {
+        setDoneItems((prev) => prev.filter((x) => x.id !== id));
+        setTasks((prev) => {
+          const next = [item, ...prev];
+          void writeOpenCache(next);
+          return next;
+        });
+      }
+      mutationsInFlight.current++;
+      try {
+        await patchExtractUndone(getToken, id);
+        onCountsChanged?.(id);
+      } catch {
+        // error — reconcile will correct state
+      } finally {
+        mutationsInFlight.current--;
+      }
+      scheduleReconcile();
+    },
+    [getToken, doneItems, onCountsChanged, scheduleReconcile],
   );
 
   const handleUndoExpire = useCallback(
@@ -366,9 +422,10 @@ export function useTaskDrawerController(
   const handleTabSwitch = useCallback(
     (t: Tab) => {
       setTab(t);
-      fetchForTab(t);
+      if (t === "calendar" && !calData) fetchCalendar(calMonth);
+      else if ((t === "inbox" || t === "lists") && tasks.length === 0) fetchTasks();
     },
-    [fetchForTab],
+    [calData, tasks.length, fetchCalendar, fetchTasks, calMonth],
   );
 
   const openTaskEdit = useCallback((item: ApiExtract) => {
@@ -385,13 +442,17 @@ export function useTaskDrawerController(
     async (id: string, patch: Record<string, unknown>) => {
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } as ApiExtract : t)));
       setEditExtract((prev) => (prev?.id === id ? { ...prev, ...patch } as ApiExtract : prev));
+      mutationsInFlight.current++;
       try {
         await patchExtractUpdate(getToken, id, patch as UpdateExtractPayload);
       } catch {
-        fetchTasks();
+        // error — reconcile will correct state
+      } finally {
+        mutationsInFlight.current--;
       }
+      scheduleReconcile();
     },
-    [getToken, fetchTasks],
+    [getToken, scheduleReconcile],
   );
 
   const handleEditDone = useCallback(
@@ -410,16 +471,18 @@ export function useTaskDrawerController(
       if (item) {
         setUndoItem({ id: item.id, text: item.text, action: "dismissed" });
       }
+      mutationsInFlight.current++;
       try {
         await patchExtractDismiss(getToken, id);
-        onCountsChanged?.();
-        fetchCalendar(calMonth);
+        onCountsChanged?.(id);
       } catch {
-        fetchTasks();
-        fetchCalendar(calMonth);
+        // error — reconcile will correct state
+      } finally {
+        mutationsInFlight.current--;
       }
+      scheduleReconcile();
     },
-    [closeTaskEdit, removeItem, getToken, onCountsChanged, fetchTasks, fetchCalendar, calMonth, tasks],
+    [closeTaskEdit, removeItem, getToken, onCountsChanged, tasks, scheduleReconcile],
   );
 
 
@@ -500,6 +563,7 @@ export function useTaskDrawerController(
     handleTabSwitch,
     handleDone,
     handleUndo,
+    handleUndone,
     handleUndoExpire,
     markedDates,
     dayItems,

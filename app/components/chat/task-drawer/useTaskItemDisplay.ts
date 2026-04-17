@@ -17,8 +17,7 @@ export function useTaskItemDisplay(item: ApiExtract) {
     if (displayAnchor) return new Date(displayAnchor) < new Date();
     return false;
   }, [isCalendarBacked, displayAnchor, item.period_end]);
-  const isIdea = item.tone === "idea";
-  const noManualComplete = isCalendarBacked || isIdea;
+  const noManualComplete = isCalendarBacked;
 
   const timeStr = useMemo(() => {
     if (!displayAnchor) return null;

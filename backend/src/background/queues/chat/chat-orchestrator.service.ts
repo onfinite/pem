@@ -48,7 +48,10 @@ function normalizeDedupeKey(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-const RRULE_DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const;
+/** ISO weekday (1=Mon … 7=Sun) → RRULE day abbreviation. */
+const ISO_TO_RRULE: Record<number, string> = {
+  1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR', 6: 'SA', 7: 'SU',
+};
 
 function buildRrule(rule: {
   freq: string;
@@ -61,7 +64,7 @@ function buildRrule(rule: {
   const parts = [`FREQ=${rule.freq.toUpperCase()}`];
   if (rule.interval && rule.interval > 1) parts.push(`INTERVAL=${rule.interval}`);
   if (rule.by_day?.length) {
-    parts.push(`BYDAY=${rule.by_day.map((d) => RRULE_DAYS[d] ?? 'MO').join(',')}`);
+    parts.push(`BYDAY=${rule.by_day.map((d) => ISO_TO_RRULE[d] ?? 'MO').join(',')}`);
   }
   if (rule.by_month_day != null) parts.push(`BYMONTHDAY=${rule.by_month_day}`);
   if (rule.until) {
@@ -693,6 +696,17 @@ export class ChatOrchestratorService {
     for (const upd of output.updates) {
       const row = await this.extracts.findForUser(userId, upd.extract_id);
       if (!row || row.status === 'done') continue;
+
+      // Strip null values that the model included without the user asking.
+      // Only list_name uses null intentionally ("remove from list").
+      const CLEARABLE_BY_NULL = new Set(['list_name']);
+      const p = upd.patch as Record<string, unknown>;
+      for (const [key, val] of Object.entries(p)) {
+        if (val === null && !CLEARABLE_BY_NULL.has(key)) {
+          delete p[key];
+        }
+      }
+
       const patch: Partial<typeof extractsTable.$inferInsert> = {};
       if (upd.patch.text !== undefined) patch.extractText = upd.patch.text;
       if (upd.patch.tone !== undefined) patch.tone = upd.patch.tone;
@@ -700,12 +714,16 @@ export class ChatOrchestratorService {
       if (upd.patch.batch_key !== undefined)
         patch.batchKey = upd.patch.batch_key;
       if (upd.patch.list_name !== undefined) {
-        const resolvedListId = await this.resolveListId(
-          userId,
-          upd.patch.list_name,
-          false,
-        );
-        if (resolvedListId) patch.listId = resolvedListId;
+        if (upd.patch.list_name === null || upd.patch.list_name === '') {
+          patch.listId = null;
+        } else {
+          const resolvedListId = await this.resolveListId(
+            userId,
+            upd.patch.list_name,
+            upd.patch.create_list,
+          );
+          if (resolvedListId) patch.listId = resolvedListId;
+        }
       }
       if (upd.patch.priority !== undefined)
         patch.priority = upd.patch.priority;

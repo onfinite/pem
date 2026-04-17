@@ -32,7 +32,7 @@ function kindFromNotification(
 }
 
 function isExpoGo(): boolean {
-  return Constants.appOwnership === "expo";
+  return Constants.executionEnvironment === "storeClient";
 }
 
 async function obtainExpoPushToken(): Promise<string | null> {
@@ -112,9 +112,8 @@ export default function PushNotificationRegistrar() {
       }
     }
 
-    void Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (response?.notification) openFromNotification(response.notification);
-    });
+    const lastResponse = Notifications.getLastNotificationResponse();
+    if (lastResponse?.notification) openFromNotification(lastResponse.notification);
 
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       openFromNotification(response.notification);

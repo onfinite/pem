@@ -363,6 +363,8 @@ Prioritization ("what should I focus on", "top tasks", "most important"): Rank b
 
 Completion checks ("did I already do X?"): Check the recently completed section first, then open tasks.
 
+Ideas ("what ideas did I have?", "list my ideas", "any ideas about X?"): Look for memory facts with key "ideas" in the Memory section. List them clearly — these are speculative thoughts the user dumped previously. Present them as seeds, not tasks. If none found, say "You haven't shared any ideas with me yet."
+
 Tone: Be warm and natural. Talk like a friend who knows them well. No markdown, no bullet points. Use natural prose.`,
         prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${doneBlock ? `${doneBlock}\n\n` : ''}${dismissedBlock ? `${dismissedBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${temporalBlock ? `${temporalBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
       });

@@ -1,7 +1,7 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { openNativeMapsForPlace } from "@/lib/placeLinks";
-import { Clock, ExternalLink, MapPin } from "lucide-react-native";
+import { Clock, ExternalLink, MapPin, Repeat } from "lucide-react-native";
 import { useCallback, useMemo } from "react";
 import { Pressable, View, Text } from "react-native";
 import { itemStyles } from "./taskItem.styles";
@@ -13,6 +13,20 @@ function capitalize(s: string): string {
 function formatBatchKey(key: string): string {
   if (key === "follow_ups") return "Follow-ups";
   return capitalize(key);
+}
+
+function formatRecurrence(rule: NonNullable<ApiExtract["recurrence_rule"]>): string {
+  const { freq, interval } = rule;
+  if (freq === "daily" && interval === 1) return "Daily";
+  if (freq === "daily" && interval === 2) return "Every other day";
+  if (freq === "daily" && interval > 2) return `Every ${interval} days`;
+  if (freq === "weekly" && interval === 1) return "Weekly";
+  if (freq === "weekly" && interval === 2) return "Every 2 weeks";
+  if (freq === "weekly" && interval > 2) return `Every ${interval} weeks`;
+  if (freq === "monthly" && interval === 1) return "Monthly";
+  if (freq === "monthly") return `Every ${interval} months`;
+  if (freq === "yearly") return "Yearly";
+  return capitalize(freq);
 }
 
 export function TaskItemMeta({
@@ -75,10 +89,24 @@ export function TaskItemMeta({
     });
   }, [item.event_location]);
 
+  const recurrenceLabel = useMemo(() => {
+    if (item.recurrence_rule) return formatRecurrence(item.recurrence_rule);
+    if (item.recurrence_parent_id) return "Recurring";
+    return null;
+  }, [item.recurrence_rule, item.recurrence_parent_id]);
+
   const hasPeriod = !!periodLine;
 
   return (
     <View style={itemStyles.meta}>
+      {recurrenceLabel && (
+        <View style={itemStyles.metaRow}>
+          <Repeat size={11} color={colors.textTertiary} />
+          <Text style={[itemStyles.metaText, { color: colors.textTertiary }]}>
+            {recurrenceLabel}
+          </Text>
+        </View>
+      )}
       {isOverdue && (
         <Text style={[itemStyles.metaText, { color: "#e74c3c" }]}>Overdue</Text>
       )}
