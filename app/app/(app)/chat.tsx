@@ -39,7 +39,9 @@ import {
   loadPendingImagesDraft,
   savePendingImagesDraft,
 } from "@/lib/pendingChatImagesDraft";
+import { setChatScreenFocused } from "@/lib/chatPushPresence";
 import * as ImagePicker from "expo-image-picker";
+import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
 import { CalendarDays, Search, Settings } from "lucide-react-native";
@@ -191,6 +193,13 @@ export default function ChatScreen() {
   const headerSummary = buildHeaderSummary(briefData);
   const drawerRef = useRef<TaskDrawerHandle>(null);
   const search = useMessageSearch(getToken);
+
+  useFocusEffect(
+    useCallback(() => {
+      setChatScreenFocused(true);
+      return () => setChatScreenFocused(false);
+    }, []),
+  );
 
   const kbHeight = useRef(new Animated.Value(0)).current;
   useEffect(() => {

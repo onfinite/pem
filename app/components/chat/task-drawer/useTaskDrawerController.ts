@@ -13,6 +13,7 @@ import {
   patchExtractUpdate,
   type ApiExtract,
   type CalendarViewResponse,
+  type PemExtractMutationAudit,
   type UpdateExtractPayload,
 } from "@/lib/pemApi";
 import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
@@ -41,6 +42,10 @@ import {
 import type { TaskDrawerHandle } from "./types";
 
 export type Tab = "calendar" | "inbox" | "lists";
+
+const TASK_DRAWER_EXTRACT_AUDIT: PemExtractMutationAudit = {
+  surface: "task_drawer",
+};
 
 const SCREEN_H = Dimensions.get("window").height;
 
@@ -342,7 +347,11 @@ export function useTaskDrawerController(
       }
       mutationsInFlight.current++;
       try {
-        const { item: doneRow } = await patchExtractDone(getToken, id);
+        const { item: doneRow } = await patchExtractDone(
+          getToken,
+          id,
+          TASK_DRAWER_EXTRACT_AUDIT,
+        );
         onCountsChanged?.(id);
         setDoneItems((prev) => {
           if (prev.some((x) => x.id === id)) return prev;
@@ -367,9 +376,13 @@ export function useTaskDrawerController(
       mutationsInFlight.current++;
       try {
         if (action === "dismissed") {
-          await patchExtractUndismiss(getToken, id);
+          await patchExtractUndismiss(
+            getToken,
+            id,
+            TASK_DRAWER_EXTRACT_AUDIT,
+          );
         } else {
-          await patchExtractUndone(getToken, id);
+          await patchExtractUndone(getToken, id, TASK_DRAWER_EXTRACT_AUDIT);
         }
         if (restoredItem) {
           setTasks((prev) => [restoredItem, ...prev]);
@@ -400,7 +413,7 @@ export function useTaskDrawerController(
       }
       mutationsInFlight.current++;
       try {
-        await patchExtractUndone(getToken, id);
+        await patchExtractUndone(getToken, id, TASK_DRAWER_EXTRACT_AUDIT);
         onCountsChanged?.(id);
       } catch {
         // error — reconcile will correct state
@@ -444,7 +457,12 @@ export function useTaskDrawerController(
       setEditExtract((prev) => (prev?.id === id ? { ...prev, ...patch } as ApiExtract : prev));
       mutationsInFlight.current++;
       try {
-        await patchExtractUpdate(getToken, id, patch as UpdateExtractPayload);
+        await patchExtractUpdate(
+          getToken,
+          id,
+          patch as UpdateExtractPayload,
+          TASK_DRAWER_EXTRACT_AUDIT,
+        );
       } catch {
         // error — reconcile will correct state
       } finally {
@@ -473,7 +491,7 @@ export function useTaskDrawerController(
       }
       mutationsInFlight.current++;
       try {
-        await patchExtractDismiss(getToken, id);
+        await patchExtractDismiss(getToken, id, TASK_DRAWER_EXTRACT_AUDIT);
         onCountsChanged?.(id);
       } catch {
         // error — reconcile will correct state

@@ -49,8 +49,14 @@ export type ExtractQueryFilters = {
   urgency?: string;
 };
 
-/** When `'agent'`, skip user audit row — caller must log (e.g. dump pipeline `logEntry`). */
-export type ExtractMutationAudit = { initiatedBy?: 'user' | 'agent' };
+/** When `'agent'`, skip user audit row — caller must log (e.g. chat `logEntry`). */
+export type ExtractMutationAudit = {
+  initiatedBy?: 'user' | 'agent';
+  /** Client surface (e.g. `task_drawer`) — stored on log payload when present. */
+  surface?: string;
+  /** Correlation id from client or proxy — stored as `request_id` on log payload. */
+  requestId?: string;
+};
 
 export type BriefBuckets = {
   overdue: ExtractRow[];
@@ -111,6 +117,7 @@ export class ExtractsService {
     payload?: Record<string, unknown>;
     before?: Record<string, unknown> | null;
     after?: Record<string, unknown> | null;
+    audit?: ExtractMutationAudit;
   }): Promise<void> {
     const payload: Record<string, unknown> = {
       op: args.op,
@@ -118,6 +125,10 @@ export class ExtractsService {
     };
     if (args.before) payload.before = args.before;
     if (args.after) payload.after = args.after;
+    const a = args.audit;
+    if (a?.surface?.trim()) payload.surface = a.surface.trim().slice(0, 64);
+    if (a?.requestId?.trim())
+      payload.request_id = a.requestId.trim().slice(0, 128);
     await this.db.insert(logsTable).values({
       userId: args.userId,
       type: 'extract',
@@ -410,6 +421,7 @@ export class ExtractsService {
         op: 'mark_done',
         before: this.extractStateSnapshot(row),
         after: this.extractStateSnapshot(u),
+        audit,
       });
     }
     return u;
@@ -445,6 +457,7 @@ export class ExtractsService {
         op: 'dismiss',
         before: this.extractStateSnapshot(row),
         after: this.extractStateSnapshot(u),
+        audit,
       });
     }
 
@@ -479,7 +492,11 @@ export class ExtractsService {
     return u;
   }
 
-  async undone(userId: string, id: string): Promise<ExtractRow> {
+  async undone(
+    userId: string,
+    id: string,
+    audit?: ExtractMutationAudit,
+  ): Promise<ExtractRow> {
     await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
@@ -497,11 +514,16 @@ export class ExtractsService {
       op: 'undone',
       before: this.extractStateSnapshot(row),
       after: this.extractStateSnapshot(u),
+      audit,
     });
     return u;
   }
 
-  async undismiss(userId: string, id: string): Promise<ExtractRow> {
+  async undismiss(
+    userId: string,
+    id: string,
+    audit?: ExtractMutationAudit,
+  ): Promise<ExtractRow> {
     await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
@@ -519,6 +541,7 @@ export class ExtractsService {
       op: 'undismiss',
       before: this.extractStateSnapshot(row),
       after: this.extractStateSnapshot(u),
+      audit,
     });
 
     if (row.externalEventId && row.calendarConnectionId && !row.isOrganizer) {
@@ -640,6 +663,7 @@ export class ExtractsService {
           until,
           iso_override: isoOverride ?? null,
         },
+        audit,
       });
     }
     return u;
@@ -649,6 +673,7 @@ export class ExtractsService {
     userId: string,
     id: string,
     patch: UpdateExtractBody,
+    audit?: ExtractMutationAudit,
   ): Promise<ExtractRow> {
     await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
@@ -741,6 +766,7 @@ export class ExtractsService {
           (k) => patch[k as keyof UpdateExtractBody] !== undefined,
         ),
       },
+      audit,
     });
     return u;
   }
@@ -749,6 +775,7 @@ export class ExtractsService {
     userId: string,
     id: string,
     target: 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'someday',
+    audit?: ExtractMutationAudit,
   ): Promise<ExtractRow> {
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
@@ -820,11 +847,17 @@ export class ExtractsService {
       before: this.extractStateSnapshot(row),
       after: this.extractStateSnapshot(u),
       payload: { target },
+      audit,
     });
     return u;
   }
 
-  async report(userId: string, id: string, reason: string): Promise<void> {
+  async report(
+    userId: string,
+    id: string,
+    reason: string,
+    audit?: ExtractMutationAudit,
+  ): Promise<void> {
     const row = await this.findForUser(userId, id);
     if (!row) throw new NotFoundException('Extract not found');
 
@@ -877,6 +910,7 @@ export class ExtractsService {
         reason,
         reported_issue_id: created?.id ?? null,
       },
+      audit,
     });
   }
 

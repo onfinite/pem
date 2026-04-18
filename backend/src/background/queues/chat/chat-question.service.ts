@@ -362,8 +362,8 @@ export class ChatQuestionService {
 
 Recall questions ("do you remember X?", "what were we talking about last month?", "when did we discuss Y?", "what did we talk about today?", "remind me about Z", "who is X?", "what did we discuss with Farin?", "trying to remember our meeting about X"):
 - Piece together everything from memory, user summary, past messages, and completed tasks.
-- Always anchor memory in time and substance: say when it was (using the bracket stamps in context — today, yesterday, last Monday with calendar date, or the dated line) and what the conversation or moment was like — themes, tone, what they cared about — not only a flat fact.
-- For "when did we discuss X?", use message timestamps and RAG hits; give the clearest date phrasing you can (if it was last Monday, say both "last Monday" and the numeric date shown in context).
+- Always anchor memory in time and substance: say when it was (using the bracket stamps in context) and what the conversation or moment was like — themes, tone, what they cared about — not only a flat fact. If a stamp is only "today" or "yesterday", say just that — do not add a calendar date (no "April 17, 2026" or "4/17/2026" for those).
+- For "when did we discuss X?", use message timestamps and RAG hits; give the clearest date phrasing you can. If the stamp includes a calendar date or "last Monday" with a date, you may echo that; never invent a numeric date when the stamp is only "today" or "yesterday".
 - For time-based recall ("last month", "yesterday", "this month", "recently", or a specific calendar day like "April 12 last year" / "4/5/2007"), look at message dates and task creation dates in the context. When a "Messages from {period}" section is present, use it as the primary source for that time range.
 - When the client shows a thumbnail row of past chat photos for this question, those images were chosen as relevant to what they asked — describe the same scenes in your answer; weave them into the story of what you remember.
 - If you have partial info, share what you have and note what you're unsure about.

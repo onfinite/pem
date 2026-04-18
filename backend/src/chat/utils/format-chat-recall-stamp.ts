@@ -4,7 +4,8 @@ import { startOfIsoWeekMonday } from './start-of-iso-week';
 
 /**
  * Human-facing stamp for chat recall context (Ask + agent recent lines).
- * Prefers today / yesterday; "last Monday, M/D/YYYY" for prior ISO week; else weekday + date.
+ * Same calendar day as now → "today"; previous day → "yesterday" (no numeric date).
+ * Older: "last Monday, M/D/YYYY" for prior ISO week; else weekday + date.
  */
 export function formatChatRecallStamp(
   createdAt: Date,
@@ -19,14 +20,14 @@ export function formatChatRecallStamp(
   const md = msg.toFormat('M/d/yyyy');
 
   if (msg.hasSame(n, 'day')) {
-    return `today (${md})`;
+    return 'today';
   }
 
   const diffDays = Math.round(
     n.startOf('day').diff(msg.startOf('day'), 'days').days,
   );
   if (diffDays === 1) {
-    return `yesterday, ${md}`;
+    return 'yesterday';
   }
 
   const thisWeekStart = startOfIsoWeekMonday(n);

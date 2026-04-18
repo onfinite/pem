@@ -1,3 +1,4 @@
+import { isChatScreenFocusedRef } from "@/lib/chatPushPresence";
 import { setUserPushToken } from "@/lib/pemApi";
 import { useAuth } from "@clerk/expo";
 import Constants from "expo-constants";
@@ -5,23 +6,7 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Platform } from "react-native";
-
-/**
- * Registers Expo push token; notification taps route to inbox (dump organized).
- * Requires a development or production build (Expo Go skips token registration) and
- * `EXPO_PUBLIC_EAS_PROJECT_ID` from `eas init` / EAS.
- */
-if (Platform.OS !== "web") {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-}
+import { AppState, Platform } from "react-native";
 
 function kindFromNotification(
   notification: Notifications.Notification,
@@ -29,6 +14,39 @@ function kindFromNotification(
   const data = notification.request.content.data as Record<string, unknown> | undefined;
   const raw = data?.kind;
   return typeof raw === "string" ? raw : null;
+}
+
+const CHAT_REPLY_KIND = "chat_reply";
+
+/**
+ * Registers Expo push token; taps route to chat for inbox / Pem reply / brief.
+ * Chat reply pushes are still sent while the app is open (SSE delivers the message on chat);
+ * we hide banner/list/sound for `chat_reply` only when the app is foreground **and** the Chat
+ * screen is focused (`chatPushPresence`). Other screens still get the notification.
+ * Requires a development or production build (Expo Go skips token registration) and
+ * `EXPO_PUBLIC_EAS_PROJECT_ID` from `eas init` / EAS.
+ */
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async (notification) => {
+      const isChatReply = kindFromNotification(notification) === CHAT_REPLY_KIND;
+      const isForeground = AppState.currentState === "active";
+      if (isChatReply && isForeground && isChatScreenFocusedRef.current) {
+        return {
+          shouldShowBanner: false,
+          shouldShowList: false,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
+        };
+      }
+      return {
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      };
+    },
+  });
 }
 
 function isExpoGo(): boolean {
@@ -107,7 +125,11 @@ export default function PushNotificationRegistrar() {
 
     function openFromNotification(notification: Notifications.Notification) {
       const kind = kindFromNotification(notification);
-      if (kind === "inbox_updated") {
+      if (
+        kind === "inbox_updated" ||
+        kind === CHAT_REPLY_KIND ||
+        kind === "daily_brief"
+      ) {
         router.push("/chat");
       }
     }

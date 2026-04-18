@@ -870,6 +870,7 @@ export class ChatOrchestratorService {
     ctx: Awaited<ReturnType<typeof this.gatherContext>>,
   ) {
     const createdExtractMap = new Map<number, ExtractRow>();
+    const chatExtractLog = { surface: 'chat' as const };
 
     // Creates
     for (let i = 0; i < output.creates.length; i++) {
@@ -884,7 +885,7 @@ export class ChatOrchestratorService {
           messageId,
           isAgent: true,
           pemNote: 'Created from chat',
-          payload: { op: 'create', source: item },
+          payload: { op: 'create', source: item, ...chatExtractLog },
         });
       }
     }
@@ -974,7 +975,7 @@ export class ChatOrchestratorService {
         messageId,
         isAgent: true,
         pemNote: upd.reason,
-        payload: { op: 'update', patch: upd.patch },
+        payload: { op: 'update', patch: upd.patch, ...chatExtractLog },
       });
     }
 
@@ -1006,7 +1007,7 @@ export class ChatOrchestratorService {
         messageId,
         isAgent: true,
         pemNote: cmd.reason,
-        payload: { op: cmd.command },
+        payload: { op: cmd.command, ...chatExtractLog },
       });
     }
 
@@ -1129,7 +1130,7 @@ export class ChatOrchestratorService {
           messageId,
           isAgent: true,
           pemNote: 'Calendar event updated',
-          payload: { op: 'calendar_update', update: cu },
+          payload: { op: 'calendar_update', update: cu, ...chatExtractLog },
         });
       } catch (e) {
         this.log.warn(
@@ -1160,7 +1161,7 @@ export class ChatOrchestratorService {
           messageId,
           isAgent: true,
           pemNote: cd.reason || 'Calendar event deleted',
-          payload: { op: 'calendar_delete' },
+          payload: { op: 'calendar_delete', ...chatExtractLog },
         });
       } catch (e) {
         this.log.warn(

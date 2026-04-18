@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   NotFoundException,
   Param,
@@ -17,6 +18,7 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserRow } from '../database/schemas';
+import { extractMutationAuditFromHeaders } from './extract-audit-from-headers';
 import { ExtractsService } from './extracts.service';
 import { DraftService } from './draft.service';
 import { ExtractsQueryDto } from './dto/extracts-query.dto';
@@ -184,8 +186,16 @@ export class ExtractsController {
   async done(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
-    const row = await this.extracts.markDone(user.id, id);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    const row = await this.extracts.markDone(user.id, id, audit);
     return { item: this.extracts.serialize(row) };
   }
 
@@ -195,8 +205,16 @@ export class ExtractsController {
   async dismiss(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
-    const row = await this.extracts.dismiss(user.id, id);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    const row = await this.extracts.dismiss(user.id, id, audit);
     return { item: this.extracts.serialize(row) };
   }
 
@@ -206,8 +224,16 @@ export class ExtractsController {
   async undone(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
-    const row = await this.extracts.undone(user.id, id);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    const row = await this.extracts.undone(user.id, id, audit);
     return { item: this.extracts.serialize(row) };
   }
 
@@ -217,8 +243,16 @@ export class ExtractsController {
   async undismiss(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
-    const row = await this.extracts.undismiss(user.id, id);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    const row = await this.extracts.undismiss(user.id, id, audit);
     return { item: this.extracts.serialize(row) };
   }
 
@@ -262,8 +296,22 @@ export class ExtractsController {
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: SnoozeExtractDto,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
-    const row = await this.extracts.snooze(user.id, id, body.until, body.iso);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    const row = await this.extracts.snooze(
+      user.id,
+      id,
+      body.until,
+      body.iso,
+      audit,
+    );
     return { item: this.extracts.serialize(row) };
   }
 
@@ -274,8 +322,16 @@ export class ExtractsController {
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: RescheduleExtractDto,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
-    const row = await this.extracts.reschedule(user.id, id, body.target);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    const row = await this.extracts.reschedule(user.id, id, body.target, audit);
     return { item: this.extracts.serialize(row) };
   }
 
@@ -290,6 +346,9 @@ export class ExtractsController {
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: unknown,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
     const parsed = updateExtractBodySchema.safeParse(body ?? {});
     if (!parsed.success) {
@@ -299,7 +358,17 @@ export class ExtractsController {
     if (Object.keys(parsed.data).length === 0) {
       throw new BadRequestException('No fields to update');
     }
-    const row = await this.extracts.updateExtract(user.id, id, parsed.data);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    const row = await this.extracts.updateExtract(
+      user.id,
+      id,
+      parsed.data,
+      audit,
+    );
     return { item: this.extracts.serialize(row) };
   }
 
@@ -312,8 +381,16 @@ export class ExtractsController {
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: ReportExtractDto,
+    @Headers('x-pem-surface') pemSurface?: string,
+    @Headers('x-pem-request-id') pemRequestId?: string,
+    @Headers('x-request-id') requestId?: string,
   ) {
-    await this.extracts.report(user.id, id, body.reason);
+    const audit = extractMutationAuditFromHeaders(
+      pemSurface,
+      pemRequestId,
+      requestId,
+    );
+    await this.extracts.report(user.id, id, body.reason, audit);
     return { ok: true };
   }
 }

@@ -50,6 +50,16 @@ export default function ChatBubble({
     }).start();
   }, [isHighlighted, flashOpacity]);
 
+  const meta = message.metadata;
+  const photoRecallForDisplay = useMemo(
+    () =>
+      mergePhotoRecallWithPersisted(
+        meta?.photo_recall,
+        message._persistedPhotoRecall,
+      ),
+    [meta?.photo_recall, message._persistedPhotoRecall],
+  );
+
   if (message.kind === "image") {
     return (
       <UserPhotoBubble
@@ -112,15 +122,6 @@ export default function ChatBubble({
   });
   const tickColor = isUser ? colors.userBubbleMeta : colors.textTertiary;
 
-  const meta = message.metadata;
-  const photoRecallForDisplay = useMemo(
-    () =>
-      mergePhotoRecallWithPersisted(
-        meta?.photo_recall,
-        message._persistedPhotoRecall,
-      ),
-    [meta?.photo_recall, message._persistedPhotoRecall],
-  );
   const hasActions =
     meta &&
     ((meta.tasks_created ?? 0) > 0 ||
@@ -167,13 +168,9 @@ export default function ChatBubble({
             Daily Brief
           </Text>
         )}
-        {isUser ? (
-          <Text style={[styles.text, { color: textColor }]}>{content}</Text>
-        ) : (
-          <MarkdownText style={[styles.text, { color: textColor }]}>
-            {content}
-          </MarkdownText>
-        )}
+        <MarkdownText style={[styles.text, { color: textColor }]}>
+          {content}
+        </MarkdownText>
 
         {!isUser && photoRecallForDisplay.length > 0 && (
           <PemPhotoRecallStrip items={photoRecallForDisplay} />

@@ -3,6 +3,24 @@ import { getApiBaseUrl } from "@/lib/apiBaseUrl";
 const MAX_429_RETRIES = 3;
 const RETRY_BASE_MS = 500;
 
+/** Sent as `X-Pem-Surface` / `X-Pem-Request-Id` on extract mutations for server logs. */
+export type PemExtractMutationAudit = {
+  surface?: string;
+  requestId?: string;
+};
+
+function headersForExtractMutationAudit(
+  audit?: PemExtractMutationAudit,
+): Headers | undefined {
+  const surface = audit?.surface?.trim().slice(0, 64);
+  const requestId = audit?.requestId?.trim().slice(0, 128);
+  if (!surface && !requestId) return undefined;
+  const h = new Headers();
+  if (surface) h.set("X-Pem-Surface", surface);
+  if (requestId) h.set("X-Pem-Request-Id", requestId);
+  return h;
+}
+
 export async function apiFetch<T>(
   path: string,
   init: RequestInit & { getToken: () => Promise<string | null> },
@@ -383,11 +401,13 @@ export async function patchExtractUpdate(
   getToken: () => Promise<string | null>,
   id: string,
   body: UpdateExtractPayload,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ item: ApiExtract }>(`/extracts/${id}`, {
     method: "PATCH",
     getToken,
     body: JSON.stringify(body),
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
@@ -523,22 +543,26 @@ export async function retryDumpExtraction(
 export async function patchExtractDone(
   getToken: () => Promise<string | null>,
   id: string,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/done`, {
     method: "PATCH",
     getToken,
     body: "{}",
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
 export async function patchExtractDismiss(
   getToken: () => Promise<string | null>,
   id: string,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/dismiss`, {
     method: "PATCH",
     getToken,
     body: "{}",
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
@@ -618,22 +642,26 @@ export async function getExtractHistory(
 export async function patchExtractUndone(
   getToken: () => Promise<string | null>,
   id: string,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/undone`, {
     method: "PATCH",
     getToken,
     body: "{}",
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
 export async function patchExtractUndismiss(
   getToken: () => Promise<string | null>,
   id: string,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/undismiss`, {
     method: "PATCH",
     getToken,
     body: "{}",
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
@@ -642,11 +670,13 @@ export async function patchExtractSnooze(
   id: string,
   until: string,
   iso?: string,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/snooze`, {
     method: "PATCH",
     getToken,
     body: JSON.stringify({ until, ...(iso ? { iso } : {}) }),
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
@@ -661,11 +691,13 @@ export async function patchExtractReschedule(
   getToken: () => Promise<string | null>,
   id: string,
   target: RescheduleTarget,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/reschedule`, {
     method: "PATCH",
     getToken,
     body: JSON.stringify({ target }),
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
@@ -673,11 +705,13 @@ export async function reportExtract(
   getToken: () => Promise<string | null>,
   id: string,
   reason: string,
+  audit?: PemExtractMutationAudit,
 ) {
   return apiFetch<{ ok: boolean }>(`/extracts/${id}/report`, {
     method: "POST",
     getToken,
     body: JSON.stringify({ reason }),
+    headers: headersForExtractMutationAudit(audit),
   });
 }
 
