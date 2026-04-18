@@ -5,13 +5,12 @@ import ChatSearchBar from "@/components/chat/ChatSearchBar";
 import ChatStatusBubble from "@/components/chat/ChatStatusBubble";
 import TaskDrawer, { type TaskDrawerHandle } from "@/components/chat/TaskDrawer";
 import { fontFamily, fontSize, space } from "@/constants/typography";
-import { pemAmber } from "@/constants/theme";
+import { neutral, pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useMessageSearch } from "@/hooks/useMessageSearch";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import {
-  deleteMessage,
   getBrief,
   getChatMessages,
   getTaskCounts,
@@ -31,6 +30,10 @@ import {
   pendingImagesFromPickerAssets,
   type PendingChatImage,
 } from "@/lib/pendingChatImagesFromPicker";
+import {
+  loadPendingImagesDraft,
+  savePendingImagesDraft,
+} from "@/lib/pendingChatImagesDraft";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
@@ -128,10 +131,11 @@ type DisplayItem =
 
 export default function ChatScreen() {
   const { colors } = useTheme();
-  const { getToken } = useAuth();
+  const { getToken, userId, isLoaded: isAuthLoaded } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
+  const copyChipOpacity = useRef(new Animated.Value(0)).current;
 
   const [messages, setMessages] = useState<ClientMessage[]>([]);
   const [statusMap, setStatusMap] = useState<Record<string, string>>({});
@@ -141,6 +145,8 @@ export default function ChatScreen() {
   const [taskCounts, setTaskCounts] = useState<TaskCounts | null>(null);
   const [briefData, setBriefData] = useState<BriefResponse | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  /** After first auth-aware draft load — avoids overwriting disk before hydrate. */
+  const [pendingImagesHydrated, setPendingImagesHydrated] = useState(false);
   const pendingImageUris = pendingImages.map((p) => p.uri);
   const headerSummary = buildHeaderSummary(briefData);
   const drawerRef = useRef<TaskDrawerHandle>(null);
@@ -166,6 +172,32 @@ export default function ChatScreen() {
     });
     return () => { onShow.remove(); onHide.remove(); };
   }, [kbHeight, insets.bottom]);
+
+  useEffect(() => {
+    if (!isAuthLoaded) return;
+    if (!userId) {
+      setPendingImages([]);
+      setPendingImagesHydrated(true);
+      return;
+    }
+    setPendingImages([]);
+    setPendingImagesHydrated(false);
+    let cancelled = false;
+    void (async () => {
+      const restored = await loadPendingImagesDraft(userId);
+      if (cancelled) return;
+      setPendingImages(restored);
+      setPendingImagesHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthLoaded, userId]);
+
+  useEffect(() => {
+    if (!isAuthLoaded || !userId || !pendingImagesHydrated) return;
+    void savePendingImagesDraft(userId, pendingImages);
+  }, [isAuthLoaded, userId, pendingImages, pendingImagesHydrated]);
 
   const countsTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const fetchCounts = useCallback(() => {
@@ -596,6 +628,24 @@ export default function ChatScreen() {
     loadMessages(messages[0].created_at).finally(() => setLoadingMore(false));
   }, [hasMore, loading, loadingMore, messages, loadMessages]);
 
+  const handleOpenDrawer = useCallback(() => {
+    pemImpactLight();
+    drawerRef.current?.open();
+  }, []);
+
+  const triggerCopyFeedback = useCallback(() => {
+    copyChipOpacity.stopAnimation(() => {});
+    copyChipOpacity.setValue(1);
+    Animated.sequence([
+      Animated.delay(1800),
+      Animated.timing(copyChipOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [copyChipOpacity]);
+
   const displayItems: DisplayItem[] = [];
   const seenIds = new Set<string>();
   const deduped: ClientMessage[] = [];
@@ -633,7 +683,7 @@ export default function ChatScreen() {
         isHighlighted={item.message.id === search.highlightId}
         onRetry={handleRetry}
         onViewTasks={handleOpenDrawer}
-        onDelete={handleDelete}
+        onCopyFeedback={triggerCopyFeedback}
       />
     );
   };
@@ -643,12 +693,6 @@ export default function ChatScreen() {
     if (item.type === "date") return `date-${item.date}`;
     return "typing-indicator";
   };
-
-  const handleOpenDrawer = useCallback(() => {
-    pemImpactLight();
-    drawerRef.current?.open();
-  }, []);
-
 
   const scrollToMessage = useCallback(
     (messageId: string) => {
@@ -793,18 +837,6 @@ export default function ChatScreen() {
     setPendingImages([]);
   }, []);
 
-  const handleDelete = useCallback(
-    async (messageId: string) => {
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
-      try {
-        await deleteMessage(getTokenRef.current, messageId);
-      } catch {
-        loadMessages();
-      }
-    },
-    [loadMessages],
-  );
-
   return (
     <>
       <View style={[styles.root, { backgroundColor: colors.pageBackground }]}>
@@ -818,6 +850,20 @@ export default function ChatScreen() {
             },
           ]}
         >
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.copiedHeaderToast,
+              {
+                opacity: copyChipOpacity,
+                top: insets.top + space[2],
+              },
+            ]}
+          >
+            <View style={styles.copiedHeaderPill}>
+              <Text style={styles.copiedHeaderText}>Copied</Text>
+            </View>
+          </Animated.View>
           <Pressable
             onPress={handleOpenDrawer}
             style={styles.headerLeft}
@@ -1002,13 +1048,33 @@ const skeletonStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    position: "relative",
   },
   header: {
+    position: "relative",
     flexDirection: "row",
     alignItems: "center",
     paddingBottom: space[2],
     paddingHorizontal: space[4],
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  copiedHeaderToast: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 20,
+  },
+  copiedHeaderPill: {
+    paddingHorizontal: space[4],
+    paddingVertical: space[2],
+    borderRadius: radii.full,
+    backgroundColor: pemAmber,
+  },
+  copiedHeaderText: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.sm,
+    color: neutral.white,
   },
   headerLeft: {
     position: "absolute",

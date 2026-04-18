@@ -10,14 +10,18 @@ import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
 import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
 import {
-  getUserSummary,
-  updateUserSummary,
-  setNotificationTime,
+  deleteAccount,
   getMe,
+  getUserSummary,
+  setNotificationTime,
+  updateUserSummary,
 } from "@/lib/pemApi";
+import {
+  mergeSettingsScreenCache,
+  readSettingsScreenCache,
+} from "@/lib/settingsScreenCache";
 import { useAuth, useClerk, useUser } from "@clerk/expo";
 import { router } from "expo-router";
-import { deleteAccount } from "@/lib/pemApi";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   Bell,
@@ -75,7 +79,7 @@ const SUMMARY_MAX_CHARS = 2000;
 
 function SummaryCard() {
   const { colors } = useTheme();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   const [summary, setSummary] = useState<string | null>(null);
@@ -84,10 +88,28 @@ function SummaryCard() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getUserSummary(getTokenRef.current)
-      .then((r) => setSummary(r.summary))
-      .catch(() => {});
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      if (userId) {
+        const snap = await readSettingsScreenCache(userId);
+        if (!cancelled && snap) setSummary(snap.summary);
+      }
+      try {
+        const r = await getUserSummary(getTokenRef.current);
+        if (!cancelled) {
+          setSummary(r.summary);
+          if (userId) {
+            await mergeSettingsScreenCache(userId, { summary: r.summary });
+          }
+        }
+      } catch {
+        /* keep cache / prior state */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const handleOpen = useCallback(() => {
     setDraft(summary ?? "");
@@ -100,9 +122,10 @@ function SummaryCard() {
       await updateUserSummary(getTokenRef.current, draft);
       setSummary(draft);
       setOpen(false);
+      if (userId) await mergeSettingsScreenCache(userId, { summary: draft });
     } catch { /* ignore */ }
     setSaving(false);
-  }, [draft]);
+  }, [draft, userId]);
 
   const remaining = SUMMARY_MAX_CHARS - draft.length;
 
@@ -190,25 +213,55 @@ function SummaryCard() {
 
 function NotificationTimeCard() {
   const { colors, resolved } = useTheme();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   const [currentTime, setCurrentTime] = useState("07:00");
   const [showPicker, setShowPicker] = useState(false);
 
   useEffect(() => {
-    getMe(getTokenRef.current)
-      .then((r) => setCurrentTime(r.notification_time ?? "07:00"))
-      .catch(() => {});
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      if (userId) {
+        const snap = await readSettingsScreenCache(userId);
+        if (!cancelled && snap) setCurrentTime(snap.notification_time);
+      }
+      try {
+        const r = await getMe(getTokenRef.current);
+        if (!cancelled) {
+          const t = r.notification_time ?? "07:00";
+          setCurrentTime(t);
+          if (userId) {
+            await mergeSettingsScreenCache(userId, {
+              notification_time: t,
+              summary: r.summary ?? null,
+            });
+          }
+        }
+      } catch {
+        /* keep cache / defaults */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
-  const handleTimeChange = useCallback((_: unknown, date?: Date) => {
-    if (Platform.OS === "android") setShowPicker(false);
-    if (!date) return;
-    const hhmm = dateToHhmm(date);
-    setCurrentTime(hhmm);
-    setNotificationTime(getTokenRef.current, hhmm).catch(() => {});
-  }, []);
+  const handleTimeChange = useCallback(
+    async (_: unknown, date?: Date) => {
+      if (Platform.OS === "android") setShowPicker(false);
+      if (!date) return;
+      const hhmm = dateToHhmm(date);
+      setCurrentTime(hhmm);
+      try {
+        await setNotificationTime(getTokenRef.current, hhmm);
+        if (userId) await mergeSettingsScreenCache(userId, { notification_time: hhmm });
+      } catch {
+        /* ignore */
+      }
+    },
+    [userId],
+  );
 
   return (
     <>

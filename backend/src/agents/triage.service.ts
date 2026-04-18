@@ -40,6 +40,7 @@ export class TriageService {
 
 Rules:
 - trivial is EXTREMELY narrow: ONLY "ok", "thanks", "got it", "cool", emoji-only, thumbs up — pure acknowledgments with ZERO informational or conversational content. "hi" and "hey" are NOT trivial — they are conversation starters → needs_agent.
+- Bare "yes", "sure", "ok", "please" right after Pem offered to add something from a photo they just described → needs_agent (they are confirming an action), NOT trivial.
 - Questions about Pem itself ("who are you?", "who r u?", "what can you do?", "what's your name?", "how do you work?") → needs_agent. These are NEVER trivial or off_topic.
 - Personal sharing, feelings, venting, opinions, stories, conversation → needs_agent. Pem is a friend and listener.
 - Commands to modify tasks/calendar ("clear my afternoon", "cancel X", "reschedule Y", "delete Z") → needs_agent.
@@ -49,6 +50,7 @@ Rules:
 - Pure data lookups about their tasks/lists/calendar ("what's on my list?", "what's tomorrow?") → question_only.
 - Requests for factual internet knowledge Pem genuinely cannot answer (weather forecasts, stock prices, sports scores, math homework, Wikipedia facts) → off_topic.
 - Dumps, things to buy/do/remember, scheduling, journaling, preferences, life context → needs_agent.
+- Commitments and habits with "I must …", "I have to …" (run every day, wake at 6am, etc.) → needs_agent — they are new work to capture, not a lookup about existing tasks.
 - When in doubt → needs_agent. Always.`,
         prompt: `Classify this message:\n"""${content.slice(0, 2000)}"""`,
         maxRetries: 2,

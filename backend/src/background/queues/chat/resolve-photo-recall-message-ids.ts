@@ -2,7 +2,14 @@ import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../../../database/database.module';
 import { messagesTable } from '../../../database/schemas';
-import type { EmbeddingsService } from '../../../embeddings/embeddings.service';
+import type {
+  EmbeddingsService,
+  SimilaritySearchOpts,
+} from '../../../embeddings/embeddings.service';
+import {
+  RAG_IMAGE_RECALL_MIN_SIMILARITY,
+  RAG_IMAGE_RECALL_TOP_K,
+} from '../../../chat/chat.constants';
 
 export const PHOTO_RECALL_MAX_MESSAGE_IDS = 10;
 
@@ -16,10 +23,14 @@ export async function resolvePhotoRecallMessageIdsForQuery(
   userId: string,
   query: string,
   ragMessageIds: string[],
+  vectorSearchOpts?: SimilaritySearchOpts,
 ): Promise<string[]> {
   const imageHits = await embeddings.similaritySearchImageMessages(
     userId,
     query,
+    RAG_IMAGE_RECALL_TOP_K,
+    RAG_IMAGE_RECALL_MIN_SIMILARITY,
+    vectorSearchOpts,
   );
   const fromImages = [...new Set(imageHits.map((h) => h.messageId))];
   if (fromImages.length > 0) {

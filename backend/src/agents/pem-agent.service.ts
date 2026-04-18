@@ -10,6 +10,10 @@ import {
 import { DateTime } from 'luxon';
 
 import { formatChatRecallStamp } from '../chat/utils/format-chat-recall-stamp';
+import {
+  dedupeAgentLikeOutput,
+  dedupeExtractionLike,
+} from '../background/queues/chat/filter-deduped-creates';
 import { z } from 'zod';
 
 import { DRIZZLE } from '../database/database.constants';
@@ -199,17 +203,51 @@ const schedulingSchema = z.object({
   reasoning: z.string(),
 });
 
+/** Models often emit null for omitted numeric fields; optional() rejects null. */
+const recurrenceRuleSchema = z.object({
+  freq: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
+  interval: z
+    .number()
+    .nullish()
+    .transform((v) => (typeof v === 'number' && v >= 1 ? v : 1)),
+  by_day: z
+    .array(z.number())
+    .nullish()
+    .transform((v) => v ?? undefined),
+  by_month_day: z
+    .number()
+    .nullish()
+    .transform((v) => v ?? undefined),
+  until: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? undefined),
+  count: z
+    .number()
+    .nullish()
+    .transform((v) => v ?? undefined),
+});
+
 const recurrenceDetectionSchema = z.object({
   create_index: z.number(),
-  rule: z.object({
-    freq: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
-    interval: z.number().default(1),
-    by_day: z.array(z.number()).optional(),
-    by_month_day: z.number().optional(),
-    until: z.string().nullish(),
-    count: z.number().optional(),
-  }),
+  rule: recurrenceRuleSchema,
 });
+
+function coerceOrchestrationSummaryUpdate(v: unknown): string | null {
+  if (v == null) return null;
+  if (Array.isArray(v)) {
+    const joined = v
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .join('\n');
+    return joined.length ? joined : null;
+  }
+  if (typeof v === 'string') {
+    const s = v.trim();
+    return s.length ? s : null;
+  }
+  return null;
+}
 
 const rsvpActionSchema = z.object({
   extract_id: z.string(),
@@ -251,11 +289,11 @@ export const pemOrchestrationOutputSchema = z.object({
   recurrence_detections: z.array(recurrenceDetectionSchema).max(10).default([]),
   rsvp_actions: z.array(rsvpActionSchema).max(5).default([]),
   summary_update: z
-    .string()
+    .union([z.string(), z.array(z.string())])
     .nullish()
-    .transform((v) => v ?? null)
+    .transform((v) => coerceOrchestrationSummaryUpdate(v))
     .describe(
-      'If the user revealed important life context (goals, visions, relationships, preferences, worries, habits, life situation), provide ONLY the new information learned from this message. Do NOT repeat the existing summary — just the new facts. Keep under 200 tokens. The system merges this into the existing profile automatically.',
+      'If the user revealed important life context (goals, visions, relationships, preferences, worries, habits, life situation), provide ONLY the new information learned from this message. Do NOT repeat the existing summary — just the new facts. Keep under 200 tokens. The system merges this into the existing profile automatically. MUST be one string (never an array of bullets).',
     ),
   polished_text: nullStr.describe(
     'Cleaned up version of the user message for the thought log. For voice messages over 500 words, write a 2-3 sentence summary of what the user said — not a cleaned transcript.',
@@ -313,6 +351,7 @@ Rules for task extraction:
 - CRITICAL — updates patch: ONLY include fields the user explicitly asked to change. If the user says "change the name to X", the patch should ONLY contain { text: "X" }. Do NOT re-emit due_at, period_start, period_end, urgency, or any other field that wasn't mentioned. Omitted fields stay unchanged — including them risks overwriting correct values with stale or wrong data.
 - NEVER include a field in the updates patch with value null unless the user explicitly asked to clear it. Omit the field entirely if unchanged. The system treats null as "delete this value" — a null due_at will erase the existing deadline.
 - Dates: "tomorrow" means the next day. "next week" starts Monday.
+- CRITICAL — period_label must match period_start's calendar day in the user's timezone: NEVER set period_label to "today", "tomorrow", "tonight", or "now" unless period_start actually falls on that calendar day. Example: a weekday run habit created on Friday with first run Monday 6am → period_start Monday (with time), period_end that Monday 23:59, period_label the weekday name in lowercase ("monday") or "this week" — NOT "today".
 - CRITICAL — No past dates: NEVER set due_at, period_start, or event_start_at to a datetime in the past unless the user explicitly asks for it. If a period reference like "this week" or "this month" has already started, set period_start to NOW (not the beginning of the period that is already past). For example, if today is Wednesday and user says "this week", period_start = today, not last Monday.
 - CRITICAL — Period dates for ALL timelines: Every time reference MUST set period_start and period_end. The urgency field is ONLY for "someday" (aspirational, no timeline) or "none" (default). Do NOT use urgency for timing — use period dates instead.
   - "today" → period_start: today 00:00 local, period_end: today 23:59, period_label: "today"
@@ -334,8 +373,8 @@ Rules for task extraction:
   - "this afternoon" → period_start: today 12:00, period_end: today 17:00, period_label: "today"
   - "tonight" / "before sleeping" / "before bed" / "before I sleep" → period_start: today 18:00, period_end: today 23:59, period_label: "today"
   - "early next week" → period_start: Monday 00:00, period_end: Wednesday 23:59, period_label: "early next week"
-  - "everyday"/"daily"/"every day at X"/"every weekday" → period_start: today, period_end: today 23:59, period_label: "today". This is a RECURRING task that starts TODAY — NOT someday. Also set recurrence_detections with freq: "daily" and appropriate by_day if weekdays-only. by_day uses ISO weekdays: 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday, 7=Sunday. "every weekday" → by_day: [1,2,3,4,5].
-  - "every Monday"/"every week" → period_start: next occurrence, period_end: same day 23:59, period_label: day name. Also set recurrence_detections with freq: "weekly". by_day for specific days: "every Monday" → by_day: [1], "every Saturday and Sunday" → by_day: [6,7].
+  - "everyday"/"daily"/"every day at X"/"every weekday" → RECURRING: ALWAYS emit recurrence_detections for the matching create_index with freq "daily" (or "weekly" when anchored to specific weekdays) and by_day when not seven days a week. by_day uses ISO weekdays: 1=Monday … 7=Sunday. "every weekday" / "weekdays only" / "except weekends" → by_day: [1,2,3,4,5], freq: "daily" or "weekly" with interval 1 (pick "daily" for Mon–Fri runs). period_start and period_end: the **first** calendar window when the habit actually runs (often the next matching day at the stated local time — e.g. Friday dump for "6am weekdays" → next Monday 06:00 through that Monday 23:59). period_label must follow the period_label rule above (never "today" unless that first day is literally today).
+  - "every Monday"/"every week" → period_start: next occurrence, period_end: same day 23:59, period_label: day name (lowercase). Also set recurrence_detections with freq: "weekly". by_day: "every Monday" → [1], "every Saturday and Sunday" → [6,7].
   - "soon"/"sometime"/"eventually"/"someday" → NO dates, urgency: "someday"
   - Specific date with no exact time (e.g. "on Friday") → period_start: that day 00:00, period_end: that day 23:59, period_label: day name
   - "by Friday" (deadline) → due_at: Friday 17:00, PLUS period_start/period_end for that day
@@ -443,6 +482,8 @@ PIPELINE — Step 2 of 2 (orchestration):
 - The "## Locked extraction" JSON is authoritative for new tasks and task mutations. Do not contradict it.
 - You emit: response_text, polished_text, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update.
 - calendar_writes.linked_new_item_index, scheduling.create_index, and recurrence_detections.create_index use ZERO-BASED indices into locked extraction "creates" only (not open-task list ids).
+- When locked extraction includes a scheduled routine (daily, weekdays, weekly on named days, concrete time like "6am every weekday"), you MUST emit recurrence_detections for that habit's create_index with freq, interval, and by_day when applicable. Skipping recurrence_detections for a clear repeating habit is a pipeline failure.
+- If locked extraction's "creates" array is empty, do NOT say you added a task, put something on the list, or set a routine — there is nothing new to persist. Acknowledge briefly or ask a follow-up; never imply inbox changes.
 - When the user asked for a timed meeting and extraction created a matching row, add calendar_writes with times aligned to that row and set linked_new_item_index accordingly.
 
 CRITICAL — Visions vs memory (this step):
@@ -475,6 +516,7 @@ Journaling, venting, and emotional support:
 - If you have memory/context about the user (from "## User summary" or "## Memory facts"), reference what you know to show you truly listen: "I know you've been juggling a lot with [thing from memory] — that's a lot to carry."
 - NEVER dismiss emotions. NEVER immediately pivot to "is there anything I can add to your list?" after heavy venting. Sit with it first, then gently offer.
 - For journaling (stream of consciousness, reflections, life updates), acknowledge what they shared and store important context via summary_update and memory_writes. The user should feel heard, not processed.
+- Enjoyment, taste, and what restores them ("I enjoyed being in nature", "I love hiking", "the ocean calms me", "I hate crowded places") are durable personal context — NOT "routine task dumps". When locked extraction has no new tasks, still emit memory_write (memory_key: "preferences" or "lifestyle") plus summary_update so their profile and future tone stay accurate.
 
 Recall and memory questions:
 - If the user asks a recall question ("do you remember X?", "what do you know about Y?", "when did we discuss Z?", "have we talked about Z?", "who is X?", "did I mention X?"), answer from memory facts, user summary, RAG context, and recent messages. Anchor what you remember in time and feeling: when it was (use bracket timestamps in Recent conversation — today, yesterday, last Monday with date) and what it was like, not only a one-line fact. You do NOT need to create tasks for pure recall questions — just answer.
@@ -528,12 +570,12 @@ Rules for event descriptions:
 - When no useful context was given, omit description — don't fill with generic text.
 
 Rules for summary_update:
-- When the user shares life context (goals, visions, relationships, preferences, worries, habits, life situation), output ONLY the new information in summary_update.
+- When the user shares life context (goals, visions, relationships, preferences, worries, habits, life situation, what they enjoy or find restorative), output ONLY the new information in summary_update.
 - Do NOT repeat the existing summary. Just the new facts learned from THIS message.
 - Do NOT output summary_update if the fact is already clearly present in "## About the user". Only write genuinely new information — repeating known facts bloats the profile.
 - The system will merge your new info into the existing summary automatically.
 - Do NOT update the summary for routine task dumps or questions.
-- Even small personal facts are worth capturing — they compound over time.
+- Even small personal facts are worth capturing — they compound over time. That includes a single sentence about liking nature, music, solitude, people, travel, or how they recharge — those belong in summary_update (and usually memory_write too).
 
 CRITICAL — Memory trigger keywords:
 - When the user says "remember that...", "keep in mind that...", "note that...", "add to your knowledgebase...", "don't forget that...", "FYI...", "just so you know...", "for future reference...", "save this...", "know that..." — they are EXPLICITLY asking you to remember something. ALWAYS store it.
@@ -690,7 +732,7 @@ function messageLikelyContainsTasks(content: string): boolean {
     }
   }
   if (t.length > 60) return true;
-  return /\b(need|have to|should|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline|worried|concern|miss|missing|afraid|scared|prioritize|important|urgent|focus|stuff to do|things to do)\b/i.test(
+  return /\b(need|must|have to|should|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline|worried|concern|miss|missing|afraid|scared|prioritize|important|urgent|focus|stuff to do|things to do)\b/i.test(
     t,
   );
 }
@@ -783,6 +825,9 @@ export class PemAgentService {
       meetingCount: number;
       lastMetAt: Date | null;
     }[];
+    /** Normalized task-text keys already on open or recently dismissed tasks — applied before orchestration so the reply matches persisted actions. */
+    dedupeActiveTaskKeys?: string[];
+    dedupeDismissedTaskKeys?: string[];
   }): Promise<PemAgentOutput> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) throw new Error('OpenAI API key not configured');
@@ -815,6 +860,11 @@ export class PemAgentService {
       middleware: extractJsonMiddleware(),
     });
 
+    const activeDedupe = new Set(params.dedupeActiveTaskKeys ?? []);
+    const dismissedDedupe = new Set(params.dedupeDismissedTaskKeys ?? []);
+    const dedupeExtraction = (e: PemExtractionOutput): PemExtractionOutput =>
+      dedupeExtractionLike(e, activeDedupe, dismissedDedupe);
+
     /** Prompt chaining: extraction → orchestration (Anthropic “workflows” pattern). */
     let extraction = await this.runExtractionPhase(
       openai,
@@ -822,6 +872,7 @@ export class PemAgentService {
       model,
       prompt,
     );
+    extraction = dedupeExtraction(extraction);
 
     this.log.log(
       `PemAgent extraction: creates=${extraction.creates.length} updates=${extraction.updates.length} completions=${extraction.completions.length}`,
@@ -846,6 +897,7 @@ export class PemAgentService {
         model,
         `${prompt}\n\nIMPORTANT: The user message almost certainly contains at least one actionable item (buy/do/call/remember/time/worry/deadline/concern). Populate creates, updates, or completions — do not leave all three arrays empty unless there is truly nothing to capture. "I'm worried about missing X deadline" = update or create a task about X.${photoNudge}`,
       );
+      extraction = dedupeExtraction(extraction);
 
       this.log.log(
         `PemAgent extraction retry: creates=${extraction.creates.length} updates=${extraction.updates.length} completions=${extraction.completions.length}`,
@@ -864,10 +916,15 @@ export class PemAgentService {
         prompt,
         fallback,
       );
-      this.log.log(
-        `PemAgent monolithic result: creates=${mono.creates.length} updates=${mono.updates.length} completions=${mono.completions.length}`,
+      const monoDeduped = dedupeAgentLikeOutput(
+        mono,
+        activeDedupe,
+        dismissedDedupe,
       );
-      return mono;
+      this.log.log(
+        `PemAgent monolithic result: creates=${monoDeduped.creates.length} updates=${monoDeduped.updates.length} completions=${monoDeduped.completions.length}`,
+      );
+      return monoDeduped;
     }
 
     const orchPrompt = `${prompt}\n\n## Locked extraction\n${JSON.stringify(extraction)}`;
@@ -1454,8 +1511,7 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       scheduling,
       recurrence_detections,
       rsvp_actions,
-      summary_update:
-        typeof o.summary_update === 'string' ? o.summary_update : null,
+      summary_update: coerceOrchestrationSummaryUpdate(o.summary_update),
       polished_text:
         typeof o.polished_text === 'string' ? o.polished_text : null,
       detected_theme:
@@ -1622,8 +1678,7 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       scheduling,
       recurrence_detections,
       rsvp_actions,
-      summary_update:
-        typeof o.summary_update === 'string' ? o.summary_update : null,
+      summary_update: coerceOrchestrationSummaryUpdate(o.summary_update),
       polished_text:
         typeof o.polished_text === 'string' ? o.polished_text : null,
       detected_theme:

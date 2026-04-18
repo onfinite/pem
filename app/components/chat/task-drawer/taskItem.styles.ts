@@ -58,6 +58,15 @@ export const itemStyles = StyleSheet.create({
   metaText: { fontFamily: fontFamily.sans.regular, fontSize: fontSize.xs },
   chip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   chipText: { fontFamily: fontFamily.sans.medium, fontSize: 10 },
+  recurrenceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   sourceBadge: {
     paddingHorizontal: 5,
     paddingVertical: 3,

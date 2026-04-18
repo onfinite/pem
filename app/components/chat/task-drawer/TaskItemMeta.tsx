@@ -1,10 +1,12 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { openNativeMapsForPlace } from "@/lib/placeLinks";
-import { Clock, ExternalLink, MapPin, Repeat } from "lucide-react-native";
+import { formatExtractRecurrence } from "@/utils/formatExtractRecurrence";
+import { Clock, ExternalLink, MapPin } from "lucide-react-native";
 import { useCallback, useMemo } from "react";
 import { Pressable, View, Text } from "react-native";
 import { itemStyles } from "./taskItem.styles";
+import { TaskRecurrenceChip } from "./TaskRecurrenceChip";
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -13,20 +15,6 @@ function capitalize(s: string): string {
 function formatBatchKey(key: string): string {
   if (key === "follow_ups") return "Follow-ups";
   return capitalize(key);
-}
-
-function formatRecurrence(rule: NonNullable<ApiExtract["recurrence_rule"]>): string {
-  const { freq, interval } = rule;
-  if (freq === "daily" && interval === 1) return "Daily";
-  if (freq === "daily" && interval === 2) return "Every other day";
-  if (freq === "daily" && interval > 2) return `Every ${interval} days`;
-  if (freq === "weekly" && interval === 1) return "Weekly";
-  if (freq === "weekly" && interval === 2) return "Every 2 weeks";
-  if (freq === "weekly" && interval > 2) return `Every ${interval} weeks`;
-  if (freq === "monthly" && interval === 1) return "Monthly";
-  if (freq === "monthly") return `Every ${interval} months`;
-  if (freq === "yearly") return "Yearly";
-  return capitalize(freq);
 }
 
 export function TaskItemMeta({
@@ -71,7 +59,19 @@ export function TaskItemMeta({
     const diffDays = Math.round((startDay.getTime() - todayDay.getTime()) / 86_400_000);
     if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Tomorrow";
-    return item.period_label ? capitalize(item.period_label) : null;
+    // Do not trust server period_label for relative words if the anchor day disagrees
+    // (e.g. period_label "today" with period_start on Monday).
+    const raw = item.period_label?.trim();
+    if (raw) {
+      const key = raw.toLowerCase();
+      const isMisleadingRelative =
+        (key === "today" && diffDays !== 0) ||
+        (key === "tomorrow" && diffDays !== 1) ||
+        ((key === "tonight" || key === "now") && diffDays !== 0);
+      if (isMisleadingRelative) return null;
+      return capitalize(raw);
+    }
+    return null;
   }, [item.period_start, item.period_label]);
 
   const durationLine =
@@ -90,7 +90,7 @@ export function TaskItemMeta({
   }, [item.event_location]);
 
   const recurrenceLabel = useMemo(() => {
-    if (item.recurrence_rule) return formatRecurrence(item.recurrence_rule);
+    if (item.recurrence_rule) return formatExtractRecurrence(item.recurrence_rule);
     if (item.recurrence_parent_id) return "Recurring";
     return null;
   }, [item.recurrence_rule, item.recurrence_parent_id]);
@@ -99,14 +99,7 @@ export function TaskItemMeta({
 
   return (
     <View style={itemStyles.meta}>
-      {recurrenceLabel && (
-        <View style={itemStyles.metaRow}>
-          <Repeat size={11} color={colors.textTertiary} />
-          <Text style={[itemStyles.metaText, { color: colors.textTertiary }]}>
-            {recurrenceLabel}
-          </Text>
-        </View>
-      )}
+      {recurrenceLabel && <TaskRecurrenceChip label={recurrenceLabel} />}
       {isOverdue && (
         <Text style={[itemStyles.metaText, { color: "#e74c3c" }]}>Overdue</Text>
       )}

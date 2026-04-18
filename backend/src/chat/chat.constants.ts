@@ -10,6 +10,16 @@ export const RAG_IMAGE_RECALL_TOP_K = 12;
 /** Max vector hits to fetch and consider after threshold filter. */
 export const RAG_TOP_K = 15;
 
+/**
+ * When the user's message implies a calendar window (yesterday, last month, April 12…),
+ * add this to cosine similarity for rows whose message `created_at` falls in that window
+ * so RAG prefers in-band hits without dropping strong out-of-band matches.
+ */
+export const RAG_TEMPORAL_WINDOW_BOOST = 0.12;
+
+/** When temporal boost is on, fetch extra vector hits before reranking (cap). */
+export const RAG_TEMPORAL_PREFETCH_CAP = 48;
+
 /** Recent chat messages included in agent context (chronological). */
 export const AGENT_RECENT_MESSAGES_LIMIT = 30;
 

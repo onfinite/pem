@@ -8,7 +8,10 @@ import { z } from 'zod';
 import { DRIZZLE } from '../../../database/database.constants';
 import type { DrizzleDb } from '../../../database/database.module';
 import { messagesTable } from '../../../database/schemas';
-import { EmbeddingsService } from '../../../embeddings/embeddings.service';
+import {
+  EmbeddingsService,
+  type SimilaritySearchOpts,
+} from '../../../embeddings/embeddings.service';
 import {
   photoRecallIntentSystemPrompt,
   photoRecallIntentUserPrompt,
@@ -17,6 +20,7 @@ import {
   PHOTO_RECALL_MAX_MESSAGE_IDS,
   resolvePhotoRecallMessageIdsForQuery,
 } from './resolve-photo-recall-message-ids';
+import { shouldSkipPhotoRecallStrip } from './photo-recall-strip-guard';
 
 const CANDIDATE_LIMIT = 12;
 const VISION_SNIP = 260;
@@ -62,11 +66,18 @@ export class ChatPhotoRecallIntentService {
   async resolveStripAndMessageIds(params: {
     userId: string;
     userText: string;
+    /** Augmented text for vector search only (e.g. ISO time window). Defaults to userText. */
+    vectorQueryText?: string;
     ragMessageIds: string[];
     excludeMessageId?: string;
+    vectorSearchOpts?: SimilaritySearchOpts;
   }): Promise<{ attachStrip: boolean; messageIds: string[] }> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) {
+      return { attachStrip: false, messageIds: [] };
+    }
+
+    if (shouldSkipPhotoRecallStrip(params.userText)) {
       return { attachStrip: false, messageIds: [] };
     }
 
@@ -104,13 +115,15 @@ export class ChatPhotoRecallIntentService {
     }
 
     const searchText =
-      intent.embeddingSearchHint?.trim() || params.userText.trim();
+      intent.embeddingSearchHint?.trim() ||
+      (params.vectorQueryText ?? params.userText).trim();
     const resolved = await resolvePhotoRecallMessageIdsForQuery(
       this.db,
       this.embeddings,
       params.userId,
       searchText,
       params.ragMessageIds,
+      params.vectorSearchOpts,
     );
     return {
       attachStrip: resolved.length > 0,

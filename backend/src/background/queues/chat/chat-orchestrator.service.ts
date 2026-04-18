@@ -26,6 +26,7 @@ import {
 import { ChatEventsService } from '../../chat-events/chat-events.service';
 import { EmbeddingsService } from '../../../embeddings/embeddings.service';
 import { ExtractsService } from '../../../extracts/extracts.service';
+import { reconcileRelativePeriodLabel } from '../../../extracts/reconcile-relative-period-label';
 import { ProfileService } from '../../../profile/profile.service';
 import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
 import { PushService } from '../../../push/push.service';
@@ -42,16 +43,20 @@ import {
   AGENT_RECENT_MESSAGES_LIMIT,
   DISMISSED_EXTRACTS_LOOKBACK_DAYS,
   DONE_EXTRACTS_LOOKBACK_DAYS,
+  RAG_MIN_SIMILARITY,
+  RAG_TOP_K,
 } from '../../../chat/chat.constants';
+import {
+  buildRecallEmbeddingAugmentation,
+  detectQuestionTemporalRange,
+} from './chat-question-temporal';
+import { shouldEscalateTrivialForPhotoFollowup } from './photo-offer-followup';
+import { normalizeDedupeTaskKey } from './filter-deduped-creates';
 
 function parseIsoDate(s: string | null | undefined): Date | null {
   if (!s || !String(s).trim()) return null;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function normalizeDedupeKey(text: string): string {
-  return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /** ISO weekday (1=Mon … 7=Sun) → RRULE day abbreviation. */
@@ -257,7 +262,13 @@ export class ChatOrchestratorService {
         messageId,
         'Understanding your message...',
       );
-      const category = await this.triage.classify(content);
+      const categoryRaw = await this.triage.classify(content);
+      // Habits / commitments ("I must run every day…") must run the task pipeline, not Ask-only.
+      const category =
+        categoryRaw === 'question_only' &&
+        /\b(i\s+must|i\s+have\s+to)\b/i.test(content.trim())
+          ? 'needs_agent'
+          : categoryRaw;
 
       await this.db
         .update(messagesTable)
@@ -265,14 +276,19 @@ export class ChatOrchestratorService {
         .where(eq(messagesTable.id, messageId));
 
       if (category === 'trivial') {
-        await this.savePemResponse(
-          userId,
-          messageId,
-          this.trivialResponse(content),
+        const recentForOffer = (await this.getRecentMessages(userId)).map(
+          (m) => ({ role: m.role, content: m.content }),
         );
-        this.queueUserMessageEmbedding(msg, content);
-        this.tryLightweightMemoryExtraction(userId, messageId, content);
-        return;
+        if (!shouldEscalateTrivialForPhotoFollowup(content, recentForOffer)) {
+          await this.savePemResponse(
+            userId,
+            messageId,
+            this.trivialResponse(content),
+          );
+          this.queueUserMessageEmbedding(msg, content);
+          this.tryLightweightMemoryExtraction(userId, messageId, content);
+          return;
+        }
       }
 
       if (category === 'off_topic') {
@@ -318,9 +334,29 @@ export class ChatOrchestratorService {
 
       const ctx = await this.gatherContext(userId);
 
+      const temporalRange = detectQuestionTemporalRange(
+        content,
+        new Date(),
+        ctx.tz,
+      );
+      const ragVectorQuery = temporalRange
+        ? `${content}\n\n${buildRecallEmbeddingAugmentation(temporalRange)}`
+        : content;
+      const ragSimilarityOpts = temporalRange
+        ? {
+            temporalBoost: {
+              start: temporalRange.start,
+              end: temporalRange.end,
+            },
+          }
+        : undefined;
+
       const ragResults = await this.embeddings.similaritySearch(
         userId,
-        content,
+        ragVectorQuery,
+        RAG_TOP_K,
+        RAG_MIN_SIMILARITY,
+        ragSimilarityOpts,
       );
       const ragContext = ragResults.map((r) => r.content).join('\n');
 
@@ -328,8 +364,10 @@ export class ChatOrchestratorService {
         await this.photoRecallIntent.resolveStripAndMessageIds({
           userId,
           userText: content,
+          vectorQueryText: ragVectorQuery,
           ragMessageIds: ragResults.map((r) => r.messageId),
           excludeMessageId: messageId,
+          vectorSearchOpts: ragSimilarityOpts,
         });
       let photoRecallMeta: Awaited<ReturnType<typeof buildPhotoRecallMetadata>>;
       if (attachStrip && photoRecallMessageIds.length > 0) {
@@ -401,13 +439,13 @@ export class ChatOrchestratorService {
         userActivityLine: ctx.userActivityLine,
         userLists: ctx.userLists,
         contacts: ctx.contacts,
+        dedupeActiveTaskKeys: [...ctx.activeTaskKeys],
+        dedupeDismissedTaskKeys: [...ctx.dismissedKeys],
       });
 
       clearTimeout(slowStatusTimer);
 
-      const agentOutput = clampAgentOutput(
-        this.filterDedupedCreates(agentOutputRaw, ctx),
-      );
+      const agentOutput = clampAgentOutput(agentOutputRaw);
 
       // Apply actions
       await this.applyAgentActions(userId, messageId, agentOutput, ctx);
@@ -575,12 +613,12 @@ export class ChatOrchestratorService {
 
     const activeTaskKeys = new Set(
       openRows
-        .map((r) => normalizeDedupeKey(r.extractText))
+        .map((r) => normalizeDedupeTaskKey(r.extractText))
         .filter((k) => k.length > 0),
     );
     const dismissedKeys = new Set(
       dismissedRows
-        .map((r) => normalizeDedupeKey(r.extractText))
+        .map((r) => normalizeDedupeTaskKey(r.extractText))
         .filter((k) => k.length > 0),
     );
 
@@ -695,22 +733,6 @@ export class ChatOrchestratorService {
       userLists,
       contacts,
     };
-  }
-
-  private filterDedupedCreates(
-    output: PemAgentOutput,
-    ctx: Awaited<ReturnType<typeof this.gatherContext>>,
-  ): PemAgentOutput {
-    if (!output.creates.length) return output;
-    const filtered = output.creates.filter((c) => {
-      const k = normalizeDedupeKey(c.text);
-      if (!k) return false;
-      if (ctx.activeTaskKeys.has(k)) return false;
-      if (ctx.dismissedKeys.has(k)) return false;
-      return true;
-    });
-    if (filtered.length === output.creates.length) return output;
-    return { ...output, creates: filtered };
   }
 
   private queueUserMessageEmbedding(
@@ -909,6 +931,24 @@ export class ChatOrchestratorService {
         patch.periodEnd = parseIsoDate(upd.patch.period_end);
       if (upd.patch.period_label !== undefined)
         patch.periodLabel = upd.patch.period_label;
+      const periodTouched =
+        upd.patch.period_start !== undefined ||
+        upd.patch.period_end !== undefined ||
+        upd.patch.period_label !== undefined;
+      if (periodTouched) {
+        const nextStart = patch.periodStart ?? row.periodStart;
+        const nextLabel = patch.periodLabel ?? row.periodLabel;
+        if (nextStart && nextLabel && typeof nextLabel === 'string') {
+          const fixed = reconcileRelativePeriodLabel(
+            nextLabel,
+            nextStart instanceof Date ? nextStart : new Date(nextStart),
+            ctx.tz,
+          );
+          if (fixed !== nextLabel) {
+            patch.periodLabel = fixed ?? null;
+          }
+        }
+      }
       if (upd.patch.pem_note !== undefined) patch.pemNote = upd.patch.pem_note;
       if (upd.patch.draft_text !== undefined)
         patch.draftText = upd.patch.draft_text;
@@ -1198,7 +1238,8 @@ export class ChatOrchestratorService {
       }
     }
 
-    // Memory writes — skip entries with empty notes
+    // Memory writes — skip entries with empty notes; collect lines for summary when model omits summary_update
+    const memoryLinesForSummary: string[] = [];
     for (const mw of output.memory_writes) {
       if (!mw.note) continue;
       await this.profile.saveFromAgent(
@@ -1207,6 +1248,7 @@ export class ChatOrchestratorService {
         mw.note,
         messageId,
       );
+      memoryLinesForSummary.push(`[${mw.memory_key}] ${mw.note.trim()}`);
     }
 
     if (output.detected_theme) {
@@ -1216,15 +1258,20 @@ export class ChatOrchestratorService {
         output.detected_theme,
         messageId,
       );
+      memoryLinesForSummary.push(
+        `[recurring_theme] ${output.detected_theme.trim()}`,
+      );
     }
 
-    // Summary update — merge new info into existing summary incrementally
-    if (output.summary_update) {
-      const existingSummary = ctx.userSummary;
-      const merged = await this.mergeSummary(
-        existingSummary,
-        output.summary_update,
-      );
+    // Summary: merge explicit summary_update, else fold new memory_facts into the profile summary
+    const explicitSummary = output.summary_update?.trim() || null;
+    const inferredFromMemory =
+      !explicitSummary && memoryLinesForSummary.length > 0
+        ? memoryLinesForSummary.join('\n')
+        : null;
+    const summaryDelta = explicitSummary ?? inferredFromMemory;
+    if (summaryDelta) {
+      const merged = await this.mergeSummary(ctx.userSummary, summaryDelta);
       if (merged) {
         await this.db
           .update(usersTable)
@@ -1298,6 +1345,12 @@ export class ChatOrchestratorService {
         ? new Date(timeAnchor.getTime() - 60 * 60 * 1000)
         : null;
 
+    const periodLabel = reconcileRelativePeriodLabel(
+      item.period_label ?? null,
+      pStart,
+      tz,
+    );
+
     const [row] = await this.db
       .insert(extractsTable)
       .values({
@@ -1314,7 +1367,7 @@ export class ChatOrchestratorService {
         dueAt,
         periodStart: pStart,
         periodEnd: pEnd,
-        periodLabel: item.period_label,
+        periodLabel,
         timezonePending: tzPending,
         reminderAt: defaultReminderAt,
         pemNote: item.pem_note?.trim() || null,
@@ -1403,11 +1456,13 @@ export class ChatOrchestratorService {
           model: openai('gpt-4o-mini'),
           maxOutputTokens: 512,
           temperature: 0,
-          system: `You extract durable personal facts from casual messages. Output ONLY a JSON array of {memory_key, note} objects for facts worth remembering about the user — name, location, job, family, preferences, habits, allergies, pets, etc. If there are NO durable facts, output an empty array []. Examples:
+          system: `You extract durable personal facts from casual messages. Output ONLY a JSON array of {memory_key, note} objects for facts worth remembering about the user — name, location, job, family, preferences, habits, allergies, pets, what they enjoy or find restorative, etc. If there are NO durable facts, output an empty array []. Examples:
 - "thanks, I'm heading to the gym now" → [{"memory_key": "exercise", "note": "Goes to the gym regularly"}]
 - "hey" → []
 - "what's the weather like in paris" → []
-- "btw I'm vegan" → [{"memory_key": "diet", "note": "Vegan"}]`,
+- "btw I'm vegan" → [{"memory_key": "diet", "note": "Vegan"}]
+- "I really enjoyed being in nature this weekend" → [{"memory_key": "preferences", "note": "Enjoys time in nature; finds it restorative"}]
+- "I love hiking" → [{"memory_key": "preferences", "note": "Loves hiking"}]`,
           prompt: content.slice(0, 500),
         });
 
@@ -1422,6 +1477,7 @@ export class ChatOrchestratorService {
         }
         if (!Array.isArray(raw) || raw.length === 0) return;
 
+        const savedLines: string[] = [];
         for (const item of raw.slice(0, 3)) {
           if (
             item &&
@@ -1439,7 +1495,26 @@ export class ChatOrchestratorService {
                 f.note,
                 messageId,
               );
+              savedLines.push(`[${f.memory_key}] ${f.note.trim()}`);
             }
+          }
+        }
+
+        if (savedLines.length > 0) {
+          const [u] = await this.db
+            .select({ summary: usersTable.summary })
+            .from(usersTable)
+            .where(eq(usersTable.id, userId))
+            .limit(1);
+          const merged = await this.mergeSummary(
+            u?.summary ?? null,
+            savedLines.join('\n'),
+          );
+          if (merged) {
+            await this.db
+              .update(usersTable)
+              .set({ summary: merged })
+              .where(eq(usersTable.id, userId));
           }
         }
       } catch (e) {

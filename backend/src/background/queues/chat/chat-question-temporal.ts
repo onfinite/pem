@@ -219,6 +219,17 @@ matchers.push((q, nowZ) => {
 });
 
 matchers.push((q, nowZ) => {
+  if (!/\bthis\s+month\b/i.test(q)) return null;
+  const start = nowZ.startOf('month');
+  const end = start.endOf('month');
+  return {
+    start: start.startOf('day').toUTC().toJSDate(),
+    end: end.toUTC().toJSDate(),
+    label: `this month (${start.toFormat('MMMM yyyy')})`,
+  };
+});
+
+matchers.push((q, nowZ) => {
   if (!/\blast\s+week\b/i.test(q)) return null;
   const thisMon = startOfIsoWeekMonday(nowZ);
   const start = thisMon.minus({ weeks: 1 });
@@ -247,6 +258,199 @@ matchers.push((q, nowZ) => {
     label: `summer ${year}`,
   };
 });
+
+const MONTH_NAME_RE =
+  'january|february|march|april|may|june|july|august|september|october|november|december';
+
+function dayRangeFromLuxonDay(
+  dayLux: DateTime,
+  label: string,
+): QuestionTemporalRange {
+  return {
+    start: dayLux.startOf('day').toUTC().toJSDate(),
+    end: dayLux.endOf('day').toUTC().toJSDate(),
+    label,
+  };
+}
+
+function namedMonthDayYearMatcher(
+  q: string,
+  nowZ: DateTime,
+): QuestionTemporalRange | null {
+  const re = new RegExp(
+    `\\b(${MONTH_NAME_RE})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`,
+    'i',
+  );
+  const m = re.exec(q);
+  if (!m) return null;
+  const idx = monthIndex(m[1]);
+  if (idx < 0) return null;
+  const day = parseInt(m[2], 10);
+  const year = parseInt(m[3], 10);
+  if (year < 1970 || year > 2100) return null;
+  const local = DateTime.fromObject(
+    { year, month: idx + 1, day },
+    { zone: nowZ.zone },
+  );
+  if (!local.isValid) return null;
+  const md = local.toFormat('MMMM d, yyyy');
+  return dayRangeFromLuxonDay(local, md);
+}
+
+function namedMonthDayThisOrLastYearMatcher(
+  q: string,
+  nowZ: DateTime,
+): QuestionTemporalRange | null {
+  const re = new RegExp(
+    `\\b(${MONTH_NAME_RE})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(this\\s+year|last\\s+year)\\b`,
+    'i',
+  );
+  const m = re.exec(q);
+  if (!m) return null;
+  const idx = monthIndex(m[1]);
+  if (idx < 0) return null;
+  const day = parseInt(m[2], 10);
+  const year = /last\s+year/i.test(m[3]) ? nowZ.year - 1 : nowZ.year;
+  const local = DateTime.fromObject(
+    { year, month: idx + 1, day },
+    { zone: nowZ.zone },
+  );
+  if (!local.isValid) return null;
+  const md = local.toFormat('MMMM d, yyyy');
+  return dayRangeFromLuxonDay(local, md);
+}
+
+function namedMonthDayHeuristicMatcher(
+  q: string,
+  nowZ: DateTime,
+): QuestionTemporalRange | null {
+  const re = new RegExp(
+    `\\b(${MONTH_NAME_RE})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!\\s*,?\\s*(?:\\d{4}|this\\s+year|last\\s+year))`,
+    'i',
+  );
+  const m = re.exec(q);
+  if (!m) return null;
+  const idx = monthIndex(m[1]);
+  if (idx < 0) return null;
+  const day = parseInt(m[2], 10);
+  let year = nowZ.year;
+  let local = DateTime.fromObject(
+    { year, month: idx + 1, day },
+    { zone: nowZ.zone },
+  );
+  if (!local.isValid) return null;
+  if (local.startOf('day') > nowZ.endOf('day')) {
+    year -= 1;
+    local = DateTime.fromObject(
+      { year, month: idx + 1, day },
+      { zone: nowZ.zone },
+    );
+    if (!local.isValid) return null;
+  }
+  const md = local.toFormat('MMMM d, yyyy');
+  return dayRangeFromLuxonDay(local, md);
+}
+
+function usSlashDateMatcher(
+  q: string,
+  nowZ: DateTime,
+): QuestionTemporalRange | null {
+  const m = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/.exec(q);
+  if (!m) return null;
+  const month = parseInt(m[1], 10);
+  const day = parseInt(m[2], 10);
+  const year = parseInt(m[3], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (year < 1970 || year > 2100) return null;
+  const local = DateTime.fromObject({ year, month, day }, { zone: nowZ.zone });
+  if (!local.isValid) return null;
+  const md = local.toFormat('M/d/yyyy');
+  return dayRangeFromLuxonDay(local, md);
+}
+
+function europeanDayMonthYearMatcher(
+  q: string,
+  nowZ: DateTime,
+): QuestionTemporalRange | null {
+  const re = new RegExp(
+    `\\b(\\d{1,2})\\s+(${MONTH_NAME_RE})\\s+(\\d{4})\\b`,
+    'i',
+  );
+  const m = re.exec(q);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const idx = monthIndex(m[2]);
+  if (idx < 0) return null;
+  const year = parseInt(m[3], 10);
+  if (year < 1970 || year > 2100) return null;
+  const local = DateTime.fromObject(
+    { year, month: idx + 1, day },
+    { zone: nowZ.zone },
+  );
+  if (!local.isValid) return null;
+  const md = local.toFormat('d MMMM yyyy');
+  return dayRangeFromLuxonDay(local, md);
+}
+
+function recallVerbWithRelativeMatcher(
+  q: string,
+  nowZ: DateTime,
+): QuestionTemporalRange | null {
+  const recall =
+    /\b(remember|recall|remind me|what did i|what did we|anything from|messages from|photos?\s+from|show me|find my|look up)\b/i;
+  if (!recall.test(q)) return null;
+  if (/\byesterday\b/i.test(q)) return dayRange(nowZ, -1, 'yesterday');
+  if (/\btoday\b/i.test(q)) return dayRange(nowZ, 0, 'today');
+  if (/\blast\s+month\b/i.test(q)) {
+    const start = nowZ.minus({ months: 1 }).startOf('month');
+    const end = start.endOf('month');
+    return {
+      start: start.startOf('day').toUTC().toJSDate(),
+      end: end.toUTC().toJSDate(),
+      label: 'last month',
+    };
+  }
+  if (/\bthis\s+month\b/i.test(q)) {
+    const start = nowZ.startOf('month');
+    const end = start.endOf('month');
+    return {
+      start: start.startOf('day').toUTC().toJSDate(),
+      end: end.toUTC().toJSDate(),
+      label: `this month (${start.toFormat('MMMM yyyy')})`,
+    };
+  }
+  if (/\blast\s+week\b/i.test(q)) {
+    const thisMon = startOfIsoWeekMonday(nowZ);
+    const start = thisMon.minus({ weeks: 1 });
+    const end = thisMon.minus({ days: 1 }).endOf('day');
+    return {
+      start: start.startOf('day').toUTC().toJSDate(),
+      end: end.toUTC().toJSDate(),
+      label: `last week (${start.toFormat('M/d')}\u2013${end.toFormat('M/d/yyyy')})`,
+    };
+  }
+  return null;
+}
+
+const priorityMatchers: Matcher[] = [
+  namedMonthDayYearMatcher,
+  namedMonthDayThisOrLastYearMatcher,
+  namedMonthDayHeuristicMatcher,
+  usSlashDateMatcher,
+  europeanDayMonthYearMatcher,
+];
+
+[...priorityMatchers].reverse().forEach((fn) => matchers.unshift(fn));
+matchers.push(recallVerbWithRelativeMatcher);
+
+/**
+ * Appended to the vector query so embeddings align with bracket timestamps on stored lines.
+ */
+export function buildRecallEmbeddingAugmentation(
+  range: QuestionTemporalRange,
+): string {
+  return `Time focus for retrieval: prefer chat lines whose timestamps fall between ${range.start.toISOString()} and ${range.end.toISOString()} (${range.label}).`;
+}
 
 export function detectQuestionTemporalRange(
   question: string,

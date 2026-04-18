@@ -6,7 +6,7 @@ import type { ClientMessage } from "@/app/(app)/chat";
 import { AlertCircle, Check, CheckCheck, ListTodo } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef } from "react";
-import { Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import InviteRsvpActions from "./InviteRsvpActions";
 import { MarkdownText } from "./MarkdownText";
 import VoiceBubble from "./VoiceBubble";
@@ -20,10 +20,17 @@ type Props = {
   isHighlighted?: boolean;
   onRetry?: (message: ClientMessage) => void;
   onViewTasks?: () => void;
-  onDelete?: (messageId: string) => void;
+  /** Shown in chat header after long-press copy. */
+  onCopyFeedback?: () => void;
 };
 
-export default function ChatBubble({ message, isHighlighted, onRetry, onViewTasks, onDelete }: Props) {
+export default function ChatBubble({
+  message,
+  isHighlighted,
+  onRetry,
+  onViewTasks,
+  onCopyFeedback,
+}: Props) {
   const { colors } = useTheme();
   const isUser = message.role === "user";
   const isBrief = message.kind === "brief";
@@ -31,6 +38,7 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
   const isFailed = message._clientStatus === "failed";
 
   const flashOpacity = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (!isHighlighted) return;
     flashOpacity.setValue(1);
@@ -48,6 +56,7 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
         isSending={isSending}
         isFailed={isFailed}
         onRetry={onRetry ? () => onRetry(message) : undefined}
+        onCopyFeedback={onCopyFeedback}
       />
     );
   }
@@ -110,21 +119,11 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
       (meta.calendar_written ?? 0) > 0);
 
   const handleLongPress = () => {
+    const text = content.trim();
+    if (!text) return;
     pemImpactLight();
-    const buttons: { text: string; onPress?: () => void; style?: "cancel" | "destructive" }[] = [];
-    if (content) {
-      buttons.push({ text: "Copy", onPress: () => Clipboard.setStringAsync(content) });
-    }
-    if (onDelete) {
-      buttons.push({
-        text: "Delete",
-        style: "destructive",
-        onPress: () => onDelete(message.id),
-      });
-    }
-    buttons.push({ text: "Cancel", style: "cancel" });
-    if (buttons.length <= 1) return;
-    Alert.alert("Message", undefined, buttons);
+    void Clipboard.setStringAsync(text);
+    onCopyFeedback?.();
   };
 
   return (
@@ -140,14 +139,18 @@ export default function ChatBubble({ message, isHighlighted, onRetry, onViewTask
       )}
       <Pressable
         onLongPress={handleLongPress}
-        style={[
-          styles.bubble,
-          { backgroundColor: bubbleBg },
-          isUser ? styles.bubbleUser : styles.bubblePem,
-          isBrief && { borderWidth: 1, borderColor: colors.borderMuted },
-          isSending && { opacity: 0.8 },
-          isFailed && { opacity: 0.6 },
-        ]}
+        style={({ pressed }) => {
+          const base = [
+            styles.bubble,
+            { backgroundColor: bubbleBg },
+            isUser ? styles.bubbleUser : styles.bubblePem,
+            isBrief && { borderWidth: 1, borderColor: colors.borderMuted },
+          ];
+          if (isFailed) return [...base, { opacity: 0.6 }];
+          if (isSending) return [...base, { opacity: 0.8 }];
+          if (pressed) return [...base, { opacity: 0.88 }];
+          return base;
+        }}
       >
         {isBrief && (
           <Text style={[styles.briefLabel, { color: pemAmber }]}>
@@ -244,6 +247,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[3],
     paddingVertical: space[2],
     borderRadius: radii.lg,
+    overflow: "hidden",
   },
   bubbleUser: {
     borderBottomRightRadius: radii.sm,

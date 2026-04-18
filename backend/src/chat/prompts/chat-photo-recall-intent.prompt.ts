@@ -9,6 +9,7 @@ Set attachRelevantPastPhotos to true when ANY of these apply AND at least one ca
 Set attachRelevantPastPhotos to false when:
 - They are mainly describing or captioning what they are sending right now ("here is a photo from my meeting", "pic from lunch") without asking to remember past discussion or past photos.
 - They ask about tasks, calendar, or lists with no recall of a person/meeting/conversation and no ask for images.
+- Bare confirmations ("yes", "ok", "sure", "go ahead") or short commands like "add them to my shopping list" with no mention of past photos, pictures, or remembering — never attach a strip for those.
 - None of the candidates plausibly relate to their message (do not attach unrelated photos just because they exist).
 
 When true, optional embeddingSearchHint: short English phrase for semantic image search (e.g. "Farin meeting discussion", "LA trip beach"). Use names/topics from their message.

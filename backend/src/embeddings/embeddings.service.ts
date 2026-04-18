@@ -11,8 +11,21 @@ import {
   RAG_IMAGE_RECALL_MIN_SIMILARITY,
   RAG_IMAGE_RECALL_TOP_K,
   RAG_MIN_SIMILARITY,
+  RAG_TEMPORAL_PREFETCH_CAP,
+  RAG_TEMPORAL_WINDOW_BOOST,
   RAG_TOP_K,
 } from '../chat/chat.constants';
+
+export type SimilaritySearchOpts = {
+  temporalBoost?: { start: Date; end: Date };
+};
+
+type SimilarityRow = {
+  messageId: string;
+  content: string;
+  similarity: number;
+  messageCreatedAt: Date;
+};
 
 @Injectable()
 export class EmbeddingsService {
@@ -22,6 +35,39 @@ export class EmbeddingsService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly config: ConfigService,
   ) {}
+
+  private isMessageInTemporalWindow(
+    createdAt: Date,
+    window: { start: Date; end: Date },
+  ): boolean {
+    const t = createdAt.getTime();
+    return t >= window.start.getTime() && t <= window.end.getTime();
+  }
+
+  private applyTemporalRerank(
+    rows: SimilarityRow[],
+    limit: number,
+    window: { start: Date; end: Date } | undefined,
+  ): { messageId: string; content: string; similarity: number }[] {
+    if (!window || rows.length === 0) {
+      return rows.slice(0, limit).map(({ messageId, content, similarity }) => ({
+        messageId,
+        content,
+        similarity,
+      }));
+    }
+    const adjusted = rows.map((r) => ({
+      messageId: r.messageId,
+      content: r.content,
+      similarity:
+        r.similarity +
+        (this.isMessageInTemporalWindow(r.messageCreatedAt, window)
+          ? RAG_TEMPORAL_WINDOW_BOOST
+          : 0),
+    }));
+    adjusted.sort((a, b) => b.similarity - a.similarity);
+    return adjusted.slice(0, limit);
+  }
 
   /**
    * Embed a chat line after the message is persisted. Idempotent per message_id.
@@ -83,6 +129,7 @@ export class EmbeddingsService {
     query: string,
     limit = RAG_TOP_K,
     minSimilarity = RAG_MIN_SIMILARITY,
+    opts?: SimilaritySearchOpts,
   ): Promise<{ messageId: string; content: string; similarity: number }[]> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) return [];
@@ -94,6 +141,9 @@ export class EmbeddingsService {
     });
 
     const vectorStr = `[${embedding.join(',')}]`;
+    const fetchCap = opts?.temporalBoost
+      ? Math.min(RAG_TEMPORAL_PREFETCH_CAP, Math.max(limit * 3, limit))
+      : limit;
 
     const results = await this.db.execute(sql`
       SELECT
@@ -101,28 +151,37 @@ export class EmbeddingsService {
         me.content,
         1 - (me.embedding <=> ${vectorStr}::vector) as cosine_sim,
         me.created_at,
+        m.created_at as msg_created_at,
         (1 - (me.embedding <=> ${vectorStr}::vector))
           + LEAST(0.05, 0.05 * (1.0 - EXTRACT(EPOCH FROM (NOW() - me.created_at)) / (30.0 * 86400)))
           as boosted_sim
       FROM message_embeddings me
+      INNER JOIN messages m ON m.id = me.message_id AND m.user_id = me.user_id
       WHERE me.user_id = ${userId}
         AND (1 - (me.embedding <=> ${vectorStr}::vector)) >= ${minSimilarity}
       ORDER BY boosted_sim DESC
-      LIMIT ${limit}
+      LIMIT ${fetchCap}
     `);
 
-    return (
+    const rows: SimilarityRow[] = (
       results.rows as {
         message_id: string;
         content: string;
         cosine_sim: string;
         boosted_sim: string;
+        msg_created_at: string | Date;
       }[]
     ).map((r) => ({
       messageId: r.message_id,
       content: r.content,
       similarity: Number(r.boosted_sim),
+      messageCreatedAt:
+        r.msg_created_at instanceof Date
+          ? r.msg_created_at
+          : new Date(r.msg_created_at),
     }));
+
+    return this.applyTemporalRerank(rows, limit, opts?.temporalBoost);
   }
 
   /**
@@ -134,6 +193,7 @@ export class EmbeddingsService {
     query: string,
     limit = RAG_IMAGE_RECALL_TOP_K,
     minSimilarity = RAG_IMAGE_RECALL_MIN_SIMILARITY,
+    opts?: SimilaritySearchOpts,
   ): Promise<{ messageId: string; content: string; similarity: number }[]> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) return [];
@@ -145,6 +205,9 @@ export class EmbeddingsService {
     });
 
     const vectorStr = `[${embedding.join(',')}]`;
+    const fetchCap = opts?.temporalBoost
+      ? Math.min(RAG_TEMPORAL_PREFETCH_CAP, Math.max(limit * 3, limit))
+      : limit;
 
     const results = await this.db.execute(sql`
       SELECT
@@ -152,6 +215,7 @@ export class EmbeddingsService {
         me.content,
         1 - (me.embedding <=> ${vectorStr}::vector) as cosine_sim,
         me.created_at,
+        m.created_at as msg_created_at,
         (1 - (me.embedding <=> ${vectorStr}::vector))
           + LEAST(0.05, 0.05 * (1.0 - EXTRACT(EPOCH FROM (NOW() - me.created_at)) / (30.0 * 86400)))
           as boosted_sim
@@ -161,20 +225,27 @@ export class EmbeddingsService {
         AND m.kind = 'image'
         AND (1 - (me.embedding <=> ${vectorStr}::vector)) >= ${minSimilarity}
       ORDER BY boosted_sim DESC
-      LIMIT ${limit}
+      LIMIT ${fetchCap}
     `);
 
-    return (
+    const rows: SimilarityRow[] = (
       results.rows as {
         message_id: string;
         content: string;
         cosine_sim: string;
         boosted_sim: string;
+        msg_created_at: string | Date;
       }[]
     ).map((r) => ({
       messageId: r.message_id,
       content: r.content,
       similarity: Number(r.boosted_sim),
+      messageCreatedAt:
+        r.msg_created_at instanceof Date
+          ? r.msg_created_at
+          : new Date(r.msg_created_at),
     }));
+
+    return this.applyTemporalRerank(rows, limit, opts?.temporalBoost);
   }
 }

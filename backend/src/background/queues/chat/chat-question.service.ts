@@ -13,7 +13,10 @@ import {
   type ExtractRow,
 } from '../../../database/schemas';
 import { formatChatRecallStamp } from '../../../chat/utils/format-chat-recall-stamp';
-import { detectQuestionTemporalRange } from './chat-question-temporal';
+import {
+  buildRecallEmbeddingAugmentation,
+  detectQuestionTemporalRange,
+} from './chat-question-temporal';
 import { EmbeddingsService } from '../../../embeddings/embeddings.service';
 import {
   ExtractsService,
@@ -137,8 +140,30 @@ export class ChatQuestionService {
         dismissedSince.getUTCDate() - DISMISSED_EXTRACTS_LOOKBACK_DAYS,
       );
 
+      const [userTzRow] = await this.db
+        .select({ timezone: usersTable.timezone })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId))
+        .limit(1);
+      const userTimeZone = userTzRow?.timezone ?? null;
+      const temporalRange = detectQuestionTemporalRange(
+        question,
+        now,
+        userTimeZone,
+      );
+      const ragVectorQuery = temporalRange
+        ? `${question}\n\n${buildRecallEmbeddingAugmentation(temporalRange)}`
+        : question;
+      const ragSimilarityOpts = temporalRange
+        ? {
+            temporalBoost: {
+              start: temporalRange.start,
+              end: temporalRange.end,
+            },
+          }
+        : undefined;
+
       const [
-        userTzRow,
         allOpen,
         buckets,
         ragHits,
@@ -147,11 +172,6 @@ export class ChatQuestionService {
         doneRows,
         dismissedRows,
       ] = await Promise.all([
-        this.db
-          .select({ timezone: usersTable.timezone })
-          .from(usersTable)
-          .where(eq(usersTable.id, userId))
-          .limit(1),
         this.db
           .select()
           .from(extractsTable)
@@ -166,9 +186,10 @@ export class ChatQuestionService {
         this.extracts.getAskOpenTimelineBuckets(userId),
         this.embeddings.similaritySearch(
           userId,
-          question,
+          ragVectorQuery,
           RAG_TOP_K,
           RAG_MIN_SIMILARITY,
+          ragSimilarityOpts,
         ),
         this.profile.buildMemoryPromptSection(userId),
         this.db
@@ -213,8 +234,6 @@ export class ChatQuestionService {
           .limit(40),
       ]);
 
-      const userTimeZone = userTzRow[0]?.timezone ?? null;
-
       const allOpenBlock = formatAllOpen(allOpen);
       const timelineBlock = formatBuckets(buckets);
 
@@ -222,7 +241,9 @@ export class ChatQuestionService {
         await this.photoRecallIntent.resolveStripAndMessageIds({
           userId,
           userText: question,
+          vectorQueryText: ragVectorQuery,
           ragMessageIds: ragHits.map((h) => h.messageId),
+          vectorSearchOpts: ragSimilarityOpts,
         });
       let photoRecall: Awaited<ReturnType<typeof buildPhotoRecallMetadata>>;
       if (attachStrip && photoRecallMessageIds.length > 0) {
@@ -279,11 +300,6 @@ export class ChatQuestionService {
           : '';
 
       let temporalBlock = '';
-      const temporalRange = detectQuestionTemporalRange(
-        question,
-        now,
-        userTimeZone,
-      );
       if (temporalRange && temporalRange.label) {
         try {
           const historicalMsgs = await this.db
@@ -348,7 +364,7 @@ Recall questions ("do you remember X?", "what were we talking about last month?"
 - Piece together everything from memory, user summary, past messages, and completed tasks.
 - Always anchor memory in time and substance: say when it was (using the bracket stamps in context — today, yesterday, last Monday with calendar date, or the dated line) and what the conversation or moment was like — themes, tone, what they cared about — not only a flat fact.
 - For "when did we discuss X?", use message timestamps and RAG hits; give the clearest date phrasing you can (if it was last Monday, say both "last Monday" and the numeric date shown in context).
-- For time-based recall ("last month", "last week", "recently"), look at message dates and task creation dates in the context. When a "Messages from {period}" section is present, use it as the primary source for that time range.
+- For time-based recall ("last month", "yesterday", "this month", "recently", or a specific calendar day like "April 12 last year" / "4/5/2007"), look at message dates and task creation dates in the context. When a "Messages from {period}" section is present, use it as the primary source for that time range.
 - When the client shows a thumbnail row of past chat photos for this question, those images were chosen as relevant to what they asked — describe the same scenes in your answer; weave them into the story of what you remember.
 - If you have partial info, share what you have and note what you're unsure about.
 - If you truly have nothing: "I don't have anything about that yet. Tell me and I'll remember for next time."

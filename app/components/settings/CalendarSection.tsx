@@ -9,6 +9,10 @@ import {
   setCalendarPrimary,
   type CalendarConnection,
 } from "@/lib/pemApi";
+import {
+  mergeSettingsScreenCache,
+  readSettingsScreenCache,
+} from "@/lib/settingsScreenCache";
 import { useAuth } from "@clerk/expo";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
@@ -19,7 +23,7 @@ import { Alert, Animated, Easing, Pressable, StyleSheet, View } from "react-nati
 
 export default function CalendarSection() {
   const { colors } = useTheme();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
 
@@ -31,12 +35,25 @@ export default function CalendarSection() {
     try {
       const res = await getCalendarConnections(() => getTokenRef.current());
       setConnections(res.connections);
+      if (userId) {
+        await mergeSettingsScreenCache(userId, { connections: res.connections });
+      }
     } catch {}
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      if (userId) {
+        const snap = await readSettingsScreenCache(userId);
+        if (!cancelled && snap) setConnections(snap.connections);
+      }
+      await load();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, load]);
 
   const connectGoogle = useCallback(async () => {
     setLoading(true);

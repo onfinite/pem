@@ -1,4 +1,4 @@
-import { fontFamily, fontSize, space, radii } from "@/constants/typography";
+import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
 import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -67,6 +67,7 @@ const styles = StyleSheet.create({
   thumbPlaceholder: { alignItems: "center", justifyContent: "center" },
   placeholderText: {
     fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.base,
+    lineHeight: lh(fontSize.base, 1.4),
   },
 });

@@ -1,12 +1,13 @@
 import { useTheme } from "@/contexts/ThemeContext";
-import { fontFamily, fontSize, space, radii } from "@/constants/typography";
+import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import type { ClientMessage } from "@/app/(app)/chat";
 import { collectUserPhotoDisplayUris } from "@/utils/collectUserPhotoDisplayUris";
 import { UserPhotoPreviewModal } from "@/components/chat/UserPhotoPreviewModal";
 import { UserPhotoBubbleThumbnails } from "@/components/chat/UserPhotoBubbleThumbnails";
 import { AlertCircle, Check, CheckCheck } from "lucide-react-native";
-import { useState } from "react";
+import * as Clipboard from "expo-clipboard";
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -14,9 +15,16 @@ type Props = {
   isSending: boolean;
   isFailed: boolean;
   onRetry?: () => void;
+  onCopyFeedback?: () => void;
 };
 
-export function UserPhotoBubble({ message, isSending, isFailed, onRetry }: Props) {
+export function UserPhotoBubble({
+  message,
+  isSending,
+  isFailed,
+  onRetry,
+  onCopyFeedback,
+}: Props) {
   const { colors } = useTheme();
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const uris = collectUserPhotoDisplayUris(message);
@@ -27,10 +35,18 @@ export function UserPhotoBubble({ message, isSending, isFailed, onRetry }: Props
   });
   const tickColor = colors.userBubbleMeta;
 
+  const handleLongPress = useCallback(() => {
+    if (!caption) return;
+    pemImpactLight();
+    void Clipboard.setStringAsync(caption);
+    onCopyFeedback?.();
+  }, [caption, onCopyFeedback]);
+
   return (
     <View style={[styles.row, styles.rowRight]}>
       <Pressable
         onPress={() => uris.length > 0 && setIsPreviewOpen(true)}
+        onLongPress={caption ? handleLongPress : undefined}
         style={[
           styles.bubble,
           { backgroundColor: colors.userBubble },
@@ -94,7 +110,8 @@ const styles = StyleSheet.create({
   dim: { opacity: 0.75 },
   caption: {
     fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.base,
+    lineHeight: lh(fontSize.base, 1.4),
     marginTop: space[2],
   },
   metaRow: {
