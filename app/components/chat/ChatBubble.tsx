@@ -5,7 +5,7 @@ import { pemImpactLight } from "@/lib/pemHaptics";
 import type { ClientMessage } from "@/app/(app)/chat";
 import { AlertCircle, Check, CheckCheck, ListTodo } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import InviteRsvpActions from "./InviteRsvpActions";
 import { MarkdownText } from "./MarkdownText";
@@ -14,6 +14,7 @@ import { UserPhotoBubble } from "./UserPhotoBubble";
 import { UserPhotoBubbleThumbnails } from "./UserPhotoBubbleThumbnails";
 import { PemPhotoRecallStrip } from "./PemPhotoRecallStrip";
 import { collectUserPhotoDisplayUris } from "@/utils/collectUserPhotoDisplayUris";
+import { mergePhotoRecallWithPersisted } from "@/utils/mergePhotoRecallWithPersisted";
 
 type Props = {
   message: ClientMessage;
@@ -71,6 +72,7 @@ export default function ChatBubble({
             uris={voicePhotoUris}
             userBubbleText={colors.userBubbleText}
             secondarySurface={colors.secondarySurface}
+            isSending={isSending}
           />
           <VoiceBubble
             key={message.id}
@@ -111,6 +113,14 @@ export default function ChatBubble({
   const tickColor = isUser ? colors.userBubbleMeta : colors.textTertiary;
 
   const meta = message.metadata;
+  const photoRecallForDisplay = useMemo(
+    () =>
+      mergePhotoRecallWithPersisted(
+        meta?.photo_recall,
+        message._persistedPhotoRecall,
+      ),
+    [meta?.photo_recall, message._persistedPhotoRecall],
+  );
   const hasActions =
     meta &&
     ((meta.tasks_created ?? 0) > 0 ||
@@ -165,11 +175,9 @@ export default function ChatBubble({
           </MarkdownText>
         )}
 
-        {!isUser &&
-          Array.isArray(meta?.photo_recall) &&
-          meta.photo_recall.length > 0 && (
-            <PemPhotoRecallStrip items={meta.photo_recall} />
-          )}
+        {!isUser && photoRecallForDisplay.length > 0 && (
+          <PemPhotoRecallStrip items={photoRecallForDisplay} />
+        )}
 
         {isFailed && (
           <Pressable

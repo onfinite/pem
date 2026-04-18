@@ -30,6 +30,11 @@ import {
   pendingImagesFromPickerAssets,
   type PendingChatImage,
 } from "@/lib/pendingChatImagesFromPicker";
+import type { PersistedPhotoRecallRow } from "@/lib/chatCachePersistedImages";
+import {
+  hydrateCachedImagePaths,
+  persistImagesForCacheMessages,
+} from "@/lib/chatCachePersistedImages";
 import {
   loadPendingImagesDraft,
   savePendingImagesDraft,
@@ -86,13 +91,15 @@ function buildHeaderSummary(brief: BriefResponse | null): {
 }
 
 const CACHE_KEY = "@pem/chat_messages_v1";
+/** Offline slice + disk image budget; older rows stay in RAM via pagination and load from the API when scrolled up. */
 const CACHE_LIMIT = 50;
 
 async function readCache(): Promise<ClientMessage[]> {
   try {
     const raw = await AsyncStorage.getItem(CACHE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as ClientMessage[];
+    const parsed = JSON.parse(raw) as ClientMessage[];
+    return hydrateCachedImagePaths(parsed);
   } catch {
     return [];
   }
@@ -109,10 +116,39 @@ async function writeCache(messages: ClientMessage[]) {
           !m._pendingLocalUris?.length,
       )
       .slice(-CACHE_LIMIT);
-    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cacheable));
+    const withDiskImages = await persistImagesForCacheMessages(cacheable);
+    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(withDiskImages));
   } catch {
     // Non-critical — ignore cache write errors
   }
+}
+
+/** Keep on-device photo URIs when the server list is re-fetched (API rows omit them). */
+function mergeServerMessagesWithClientLocals(
+  prev: ClientMessage[],
+  fromServer: ClientMessage[],
+): ClientMessage[] {
+  const prevById = new Map(prev.map((m) => [m.id, m]));
+  return fromServer.map((msg) => {
+    const old = prevById.get(msg.id);
+    if (!old) return msg;
+    return {
+      ...msg,
+      ...(old._localUri ? { _localUri: old._localUri } : {}),
+      ...(old._pendingLocalUris?.length
+        ? { _pendingLocalUris: old._pendingLocalUris }
+        : {}),
+      ...(old._pendingImageUris?.length
+        ? { _pendingImageUris: old._pendingImageUris }
+        : {}),
+      ...(old._persistedImageUris?.length
+        ? { _persistedImageUris: old._persistedImageUris }
+        : {}),
+      ...(old._persistedPhotoRecall?.length
+        ? { _persistedPhotoRecall: old._persistedPhotoRecall }
+        : {}),
+    };
+  });
 }
 
 export type ClientMessage = ApiMessage & {
@@ -122,6 +158,10 @@ export type ClientMessage = ApiMessage & {
   _pendingLocalUris?: string[];
   /** Voice + photos optimistic: image URIs (audio uses `_localUri`). */
   _pendingImageUris?: string[];
+  /** documentDirectory file URIs saved with chat cache for offline reload. */
+  _persistedImageUris?: string[];
+  /** Local files for Pem "from your photos" recall (same message id as Pem bubble). */
+  _persistedPhotoRecall?: PersistedPhotoRecallRow[];
 };
 
 type DisplayItem =
@@ -232,8 +272,11 @@ export default function ChatScreen() {
             return [...fresh, ...prev];
           });
         } else {
-          setMessages(withStatus);
-          writeCache(withStatus);
+          setMessages((prev) => {
+            const merged = mergeServerMessagesWithClientLocals(prev, withStatus);
+            void writeCache(merged);
+            return merged;
+          });
         }
         setHasMore(res.has_more);
       } catch (e) {
@@ -383,8 +426,9 @@ export default function ChatScreen() {
             m.id === tempId
               ? {
                   ...res.message,
-                  _localUri: localUris[0],
-                  _pendingLocalUris: undefined,
+                  _localUri: localUris.length === 1 ? localUris[0] : undefined,
+                  _pendingLocalUris:
+                    localUris.length > 1 ? localUris : undefined,
                   _clientStatus: "sent" as const,
                 }
               : m,

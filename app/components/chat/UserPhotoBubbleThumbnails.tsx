@@ -1,16 +1,30 @@
+import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { CachedChatPhotoTile } from "@/components/chat/CachedChatPhotoTile";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 type Props = {
   uris: string[];
   userBubbleText: string;
   secondarySurface: string;
+  /** When true and there are no URIs yet, show a spinner instead of "Photo". */
+  isSending?: boolean;
 };
+
+const THUMB_LARGE = 200;
+const THUMB_SMALL = 72;
 
 export function UserPhotoBubbleThumbnails({
   uris,
   userBubbleText,
   secondarySurface,
+  isSending = false,
 }: Props) {
   if (uris.length === 0) {
     return (
@@ -21,9 +35,13 @@ export function UserPhotoBubbleThumbnails({
           { backgroundColor: secondarySurface },
         ]}
       >
-        <Text style={[styles.placeholderText, { color: userBubbleText }]}>
-          Photo
-        </Text>
+        {isSending ? (
+          <ActivityIndicator color={pemAmber} />
+        ) : (
+          <Text style={[styles.placeholderText, { color: userBubbleText }]}>
+            Photo
+          </Text>
+        )}
       </View>
     );
   }
@@ -36,32 +54,37 @@ export function UserPhotoBubbleThumbnails({
         contentContainerStyle={styles.thumbRow}
       >
         {uris.map((uri, i) => (
-          <Image
+          <CachedChatPhotoTile
             key={`${uri}-${i}`}
-            source={{ uri }}
-            style={styles.thumbSmall}
-            resizeMode="cover"
+            uri={uri}
+            width={THUMB_SMALL}
+            height={THUMB_SMALL}
+            borderRadius={radii.md}
+            skeletonFill={secondarySurface}
           />
         ))}
       </ScrollView>
     );
   }
 
+  const first = uris[0]!;
   return (
-    <Image source={{ uri: uris[0]! }} style={styles.thumb} resizeMode="cover" />
+    <CachedChatPhotoTile
+      key={first}
+      uri={first}
+      width={THUMB_LARGE}
+      height={THUMB_LARGE}
+      borderRadius={radii.md}
+      skeletonFill={secondarySurface}
+    />
   );
 }
 
 const styles = StyleSheet.create({
   thumbRow: { flexDirection: "row", gap: space[1], paddingVertical: 2 },
   thumb: {
-    width: 200,
-    height: 200,
-    borderRadius: radii.md,
-  },
-  thumbSmall: {
-    width: 72,
-    height: 72,
+    width: THUMB_LARGE,
+    height: THUMB_LARGE,
     borderRadius: radii.md,
   },
   thumbPlaceholder: { alignItems: "center", justifyContent: "center" },

@@ -3,8 +3,9 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, space, radii } from "@/constants/typography";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import type { PhotoRecallItem } from "@/lib/pemApi";
+import { Image as ExpoImage } from "expo-image";
 import { useCallback, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 type Props = {
   items: PhotoRecallItem[];
@@ -37,10 +38,11 @@ export function PemPhotoRecallStrip({ items }: Props) {
               onPress={() => handleOpenAt(index)}
               style={[styles.tile, { borderColor: colors.borderMuted }]}
             >
-              <Image
+              <ExpoImage
                 source={{ uri: item.signed_url }}
                 style={[styles.thumb, { backgroundColor: colors.secondarySurface }]}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
               />
             </Pressable>
           ))}

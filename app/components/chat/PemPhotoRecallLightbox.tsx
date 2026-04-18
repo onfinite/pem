@@ -9,8 +9,8 @@ import { fontFamily, fontSize, space } from "@/constants/typography";
 import type { PhotoRecallItem } from "@/lib/pemApi";
 import { stripDocumentTypeFromVisionSummary } from "@/utils/stripDocumentTypeFromVisionSummary";
 import { useCallback, useEffect, useState } from "react";
+import { Image as ExpoImage } from "expo-image";
 import {
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -83,10 +83,11 @@ export function PemPhotoRecallLightbox({ items, startIndex, onClose }: Props) {
               initialPageIndex={startIndex ?? 0}
               onPageIndexChange={handlePageChange}
               renderPage={(index) => (
-                <Image
+                <ExpoImage
                   source={{ uri: items[index].signed_url }}
                   style={{ width: winW, height: slot }}
-                  resizeMode="contain"
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
                 />
               )}
             />
@@ -94,10 +95,11 @@ export function PemPhotoRecallLightbox({ items, startIndex, onClose }: Props) {
             <View
               style={[styles.singlePage, { width: winW, height: slot }]}
             >
-              <Image
+              <ExpoImage
                 source={{ uri: items[0]?.signed_url ?? "" }}
                 style={{ width: winW, height: slot }}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
               />
             </View>
           )}

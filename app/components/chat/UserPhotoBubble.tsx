@@ -58,6 +58,7 @@ export function UserPhotoBubble({
           uris={uris}
           userBubbleText={colors.userBubbleText}
           secondarySurface={colors.secondarySurface}
+          isSending={isSending}
         />
         {caption ? (
           <Text style={[styles.caption, { color: colors.userBubbleText }]}>
