@@ -135,7 +135,7 @@ export class SchedulerService {
       .where(
         and(
           eq(extractsTable.userId, userId),
-          ne(extractsTable.status, 'dismissed'),
+          ne(extractsTable.status, 'closed'),
           or(
             and(
               isNotNull(extractsTable.eventStartAt),

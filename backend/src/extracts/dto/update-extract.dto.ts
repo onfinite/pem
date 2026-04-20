@@ -13,12 +13,9 @@ export const updateExtractBodySchema = z
   .object({
     text: z.string().min(1).max(2000).optional(),
     original_text: z.string().max(4000).optional(),
-    tone: z.enum(['confident', 'tentative', 'someday']).optional(),
-    urgency: z.enum(['someday', 'none']).optional(),
-    batch_key: z
-      .enum(['shopping', 'errands', 'follow_ups'])
-      .nullable()
-      .optional(),
+    tone: z.enum(['confident', 'tentative', 'holding']).optional(),
+    urgency: z.enum(['holding', 'none']).optional(),
+    batch_key: z.enum(['shopping', 'follow_ups']).nullable().optional(),
     due_at: isoInstantOrNull.optional(),
     period_start: isoInstantOrNull.optional(),
     period_end: isoInstantOrNull.optional(),
@@ -49,14 +46,14 @@ export class UpdateExtractDto {
   @ApiPropertyOptional()
   original_text?: string;
 
-  @ApiPropertyOptional({ enum: ['confident', 'tentative', 'someday'] })
+  @ApiPropertyOptional({ enum: ['confident', 'tentative', 'holding'] })
   tone?: string;
 
-  @ApiPropertyOptional({ enum: ['someday', 'none'] })
+  @ApiPropertyOptional({ enum: ['holding', 'none'] })
   urgency?: string;
 
   @ApiPropertyOptional({
-    enum: ['shopping', 'errands', 'follow_ups'],
+    enum: ['shopping', 'follow_ups'],
     nullable: true,
   })
   batch_key?: string | null;

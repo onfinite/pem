@@ -2,7 +2,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
 import { pemImpactLight } from "@/lib/pemHaptics";
-import type { ClientMessage } from "@/app/(app)/chat";
+import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 import { AlertCircle, Check, CheckCheck, ListTodo } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useRef } from "react";

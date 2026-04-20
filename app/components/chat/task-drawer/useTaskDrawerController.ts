@@ -4,12 +4,9 @@ import { useTheme } from "@/contexts/ThemeContext";
 import {
   getExtractsOpen,
   getExtractsCalendar,
-  getExtractsDone,
   triggerCalendarSync,
-  patchExtractDone,
-  patchExtractUndone,
-  patchExtractDismiss,
-  patchExtractUndismiss,
+  patchExtractClose,
+  patchExtractUnclose,
   patchExtractUpdate,
   type ApiExtract,
   type CalendarViewResponse,
@@ -27,18 +24,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { Animated, Dimensions, PanResponder } from "react-native";
 import { buildMarkedDates } from "./buildMarkedDates";
 import { SWIPE_THRESHOLD } from "./constants";
-import { TASK_DRAWER_DONE_PAGE_SIZE } from "./inbox.constants";
 import { toDateKey, toMonthKey } from "./dateKeys";
-import {
-  readOpenCache,
-  writeOpenCache,
-  readDoneCache,
-  writeDoneCache,
-} from "./taskCache";
+import { readOpenCache, writeOpenCache } from "./taskCache";
+import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
 import type { TaskDrawerHandle } from "./types";
 
 export type Tab = "calendar" | "inbox" | "lists";
@@ -63,10 +54,6 @@ export function useTaskDrawerController(
   const [editExtract, setEditExtract] = useState<ApiExtract | null>(null);
   const [editVisible, setEditVisible] = useState(false);
   const [undoItem, setUndoItem] = useState<UndoItem | null>(null);
-  const [doneItems, setDoneItems] = useState<ApiExtract[]>([]);
-  const [doneNextCursor, setDoneNextCursor] = useState<string | null>(null);
-  const [doneLoadingMore, setDoneLoadingMore] = useState(false);
-  const doneLoadInFlight = useRef(false);
 
   const [calData, setCalData] = useState<CalendarViewResponse | null>(null);
   const [calLoading, setCalLoading] = useState(false);
@@ -128,73 +115,19 @@ export function useTaskDrawerController(
   const fetchTasks = useCallback(async () => {
     setTasksLoading(true);
     setTasksError(false);
-    const [cachedOpen, cachedDone] = await Promise.all([
-      readOpenCache(),
-      readDoneCache(),
-    ]);
+    const cachedOpen = await readOpenCache();
     if (cachedOpen.length > 0) setTasks(cachedOpen);
-    if (cachedDone.length > 0) setDoneItems(cachedDone);
     if (cachedOpen.length > 0) setTasksLoading(false);
     try {
-      const [openRes, doneRes] = await Promise.all([
-        getExtractsOpen(getToken, { limit: 200 }),
-        getExtractsDone(getToken, { limit: TASK_DRAWER_DONE_PAGE_SIZE }),
-      ]);
+      const openRes = await getExtractsOpen(getToken, { limit: 200 });
       setTasks(openRes.items);
-      setDoneItems(doneRes.items);
-      setDoneNextCursor(doneRes.next_cursor);
       void writeOpenCache(openRes.items);
-      void writeDoneCache(doneRes.items);
     } catch {
       if (cachedOpen.length === 0) setTasksError(true);
     } finally {
       setTasksLoading(false);
     }
   }, [getToken]);
-
-  const loadMoreDone = useCallback(async () => {
-    if (!doneNextCursor || doneLoadInFlight.current) return;
-    doneLoadInFlight.current = true;
-    setDoneLoadingMore(true);
-    try {
-      const res = await getExtractsDone(getToken, {
-        limit: TASK_DRAWER_DONE_PAGE_SIZE,
-        cursor: doneNextCursor,
-      });
-      setDoneItems((prev) => {
-        const ids = new Set(prev.map((x) => x.id));
-        const next = [...prev];
-        for (const it of res.items) {
-          if (!ids.has(it.id)) {
-            ids.add(it.id);
-            next.push(it);
-          }
-        }
-        return next;
-      });
-      setDoneNextCursor(res.next_cursor);
-    } catch (e) {
-      console.warn("Failed to load more done:", e);
-    } finally {
-      doneLoadInFlight.current = false;
-      setDoneLoadingMore(false);
-    }
-  }, [getToken, doneNextCursor]);
-
-  const onInboxScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (!doneNextCursor || doneLoadingMore) return;
-      const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-      const pad = 160;
-      if (
-        layoutMeasurement.height + contentOffset.y >=
-        contentSize.height - pad
-      ) {
-        void loadMoreDone();
-      }
-    },
-    [doneNextCursor, doneLoadingMore, loadMoreDone],
-  );
 
   const [calError, setCalError] = useState(false);
   const [tasksError, setTasksError] = useState(false);
@@ -216,7 +149,9 @@ export function useTaskDrawerController(
   );
 
   const mutationsInFlight = useRef(0);
-  const reconcileTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconcileTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 
   const scheduleReconcile = useCallback(() => {
     clearTimeout(reconcileTimer.current);
@@ -337,26 +272,18 @@ export function useTaskDrawerController(
     });
   }, []);
 
-  const handleDone = useCallback(
+  const handleClose = useCallback(
     async (id: string) => {
       pemNotificationSuccess();
       const item = tasks.find((t) => t.id === id);
       removeItem(id);
       if (item) {
-        setUndoItem({ id: item.id, text: item.text, action: "done" });
+        setUndoItem({ id: item.id, text: item.text });
       }
       mutationsInFlight.current++;
       try {
-        const { item: doneRow } = await patchExtractDone(
-          getToken,
-          id,
-          TASK_DRAWER_EXTRACT_AUDIT,
-        );
+        await patchExtractClose(getToken, id, TASK_DRAWER_EXTRACT_AUDIT);
         onCountsChanged?.(id);
-        setDoneItems((prev) => {
-          if (prev.some((x) => x.id === id)) return prev;
-          return [doneRow, ...prev];
-        });
       } catch {
         // error — reconcile will correct state
       } finally {
@@ -370,50 +297,19 @@ export function useTaskDrawerController(
   const handleUndo = useCallback(
     async (id: string) => {
       pemImpactLight();
-      const action = undoItem?.action;
-      const restoredItem = doneItems.find((x) => x.id === id);
       setUndoItem(null);
       mutationsInFlight.current++;
       try {
-        if (action === "dismissed") {
-          await patchExtractUndismiss(
-            getToken,
-            id,
-            TASK_DRAWER_EXTRACT_AUDIT,
-          );
-        } else {
-          await patchExtractUndone(getToken, id, TASK_DRAWER_EXTRACT_AUDIT);
-        }
-        if (restoredItem) {
-          setTasks((prev) => [restoredItem, ...prev]);
-          setDoneItems((prev) => prev.filter((x) => x.id !== id));
-        }
-        onCountsChanged?.(id);
-      } catch {
-        // error — reconcile will correct state
-      } finally {
-        mutationsInFlight.current--;
-      }
-      scheduleReconcile();
-    },
-    [getToken, onCountsChanged, undoItem, doneItems, scheduleReconcile],
-  );
-
-  const handleUndone = useCallback(
-    async (id: string) => {
-      pemImpactLight();
-      const item = doneItems.find((x) => x.id === id);
-      if (item) {
-        setDoneItems((prev) => prev.filter((x) => x.id !== id));
+        const { item } = await patchExtractUnclose(
+          getToken,
+          id,
+          TASK_DRAWER_EXTRACT_AUDIT,
+        );
         setTasks((prev) => {
-          const next = [item, ...prev];
+          const next = [item, ...prev.filter((t) => t.id !== id)];
           void writeOpenCache(next);
           return next;
         });
-      }
-      mutationsInFlight.current++;
-      try {
-        await patchExtractUndone(getToken, id, TASK_DRAWER_EXTRACT_AUDIT);
         onCountsChanged?.(id);
       } catch {
         // error — reconcile will correct state
@@ -422,7 +318,7 @@ export function useTaskDrawerController(
       }
       scheduleReconcile();
     },
-    [getToken, doneItems, onCountsChanged, scheduleReconcile],
+    [getToken, onCountsChanged, scheduleReconcile],
   );
 
   const handleUndoExpire = useCallback(
@@ -434,6 +330,7 @@ export function useTaskDrawerController(
 
   const handleTabSwitch = useCallback(
     (t: Tab) => {
+      dismissOpenTaskSwipe();
       setTab(t);
       if (t === "calendar" && !calData) fetchCalendar(calMonth);
       else if ((t === "inbox" || t === "lists") && tasks.length === 0) fetchTasks();
@@ -473,34 +370,12 @@ export function useTaskDrawerController(
     [getToken, scheduleReconcile],
   );
 
-  const handleEditDone = useCallback(
+  const handleEditClose = useCallback(
     (id: string) => {
       closeTaskEdit();
-      handleDone(id);
+      handleClose(id);
     },
-    [closeTaskEdit, handleDone],
-  );
-
-  const handleEditDismiss = useCallback(
-    async (id: string) => {
-      const item = tasks.find((t) => t.id === id);
-      closeTaskEdit();
-      removeItem(id);
-      if (item) {
-        setUndoItem({ id: item.id, text: item.text, action: "dismissed" });
-      }
-      mutationsInFlight.current++;
-      try {
-        await patchExtractDismiss(getToken, id, TASK_DRAWER_EXTRACT_AUDIT);
-        onCountsChanged?.(id);
-      } catch {
-        // error — reconcile will correct state
-      } finally {
-        mutationsInFlight.current--;
-      }
-      scheduleReconcile();
-    },
-    [closeTaskEdit, removeItem, getToken, onCountsChanged, tasks, scheduleReconcile],
+    [closeTaskEdit, handleClose],
   );
 
 
@@ -544,11 +419,13 @@ export function useTaskDrawerController(
   );
 
   const onDayPress = useCallback((day: DateData) => {
+    dismissOpenTaskSwipe();
     setSelectedDate(day.dateString);
   }, []);
 
   const onMonthChange = useCallback(
     (month: DateData) => {
+      dismissOpenTaskSwipe();
       const mk = `${month.year}-${String(month.month).padStart(2, "0")}`;
       setCalMonth(mk);
       fetchCalendar(mk);
@@ -562,11 +439,6 @@ export function useTaskDrawerController(
     tasks,
     tasksLoading,
     undoItem,
-    doneItems,
-    doneLoading: false,
-    doneHasMore: !!doneNextCursor,
-    doneLoadingMore,
-    onInboxScroll,
     calData,
     calLoading,
     calError,
@@ -579,9 +451,8 @@ export function useTaskDrawerController(
     scrollOffset,
     animateOut,
     handleTabSwitch,
-    handleDone,
+    handleClose,
     handleUndo,
-    handleUndone,
     handleUndoExpire,
     markedDates,
     dayItems,
@@ -594,8 +465,7 @@ export function useTaskDrawerController(
     editVisible,
     closeTaskEdit,
     handleEditSave,
-    handleEditDone,
-    handleEditDismiss,
+    handleEditClose,
     refreshing,
     handleRefresh,
     removeTasksByListId,

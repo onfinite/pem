@@ -93,7 +93,7 @@ export class WeeklyReflectionProcessor extends WorkerHost {
     const [
       userMessages,
       createdThisWeek,
-      doneThisWeek,
+      closedThisWeek,
       allOpen,
       memorySection,
       ragResults,
@@ -131,8 +131,8 @@ export class WeeklyReflectionProcessor extends WorkerHost {
         .where(
           and(
             eq(extractsTable.userId, userId),
-            eq(extractsTable.status, 'done'),
-            gte(extractsTable.doneAt, weekAgo),
+            eq(extractsTable.status, 'closed'),
+            gte(extractsTable.closedAt, weekAgo),
           ),
         )
         .limit(100),
@@ -171,10 +171,10 @@ export class WeeklyReflectionProcessor extends WorkerHost {
       .map((e) => `- ${e.text}${e.tone ? ` (${e.tone})` : ''}`)
       .join('\n');
 
-    const doneText = doneThisWeek.map((e) => `- ${e.text}`).join('\n');
+    const closedText = closedThisWeek.map((e) => `- ${e.text}`).join('\n');
 
     const openText = allOpen
-      .map((e) => `- ${e.text}${e.urgency === 'someday' ? ' (someday)' : ''}`)
+      .map((e) => `- ${e.text}${e.urgency === 'holding' ? ' (holding)' : ''}`)
       .join('\n');
 
     const ragText = ragResults
@@ -189,8 +189,8 @@ ${userMsgText || '(no messages this week)'}
 Tasks created this week (${createdThisWeek.length}):
 ${createdText || '(none)'}
 
-Tasks completed this week (${doneThisWeek.length}):
-${doneText || '(none)'}
+Tasks closed this week (${closedThisWeek.length}):
+${closedText || '(none)'}
 
 Still open (${allOpen.length}):
 ${openText || '(none)'}

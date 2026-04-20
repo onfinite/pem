@@ -13,6 +13,7 @@ import {
   type TriageCategory,
   type ProcessingStatus,
 } from '../database/schemas';
+import { decodePhotoVisionStored } from './utils/photo-vision-stored';
 
 @Injectable()
 export class ChatService {
@@ -180,6 +181,9 @@ export class ChatService {
   }
 
   serializeMessage(m: MessageRow) {
+    const { focus, detail } = decodePhotoVisionStored(m.visionSummary ?? '');
+    const visionForClient = focus ?? m.visionSummary ?? null;
+    const visionDetailForClient = focus && detail.length > 0 ? detail : null;
     return {
       id: m.id,
       role: m.role,
@@ -189,7 +193,8 @@ export class ChatService {
       transcript: m.transcript,
       image_keys: m.imageKeys ?? null,
       image_urls: null as { key: string; url: string }[] | null,
-      vision_summary: m.visionSummary ?? null,
+      vision_summary: visionForClient,
+      vision_summary_detail: visionDetailForClient,
       triage_category: m.triageCategory,
       processing_status: m.processingStatus,
       polished_text: m.polishedText,

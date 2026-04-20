@@ -18,15 +18,19 @@ import {
   type UserPreferences,
 } from '../../../database/schemas';
 import { TriageService } from '../../../agents/triage.service';
-import {
-  PemAgentService,
-  type PemAgentOutput,
-  type ExtractAction,
-} from '../../../agents/pem-agent.service';
+import { PemAgentService } from '../../../agents/pem-agent.service';
+import type {
+  ExtractAction,
+  PemAgentOutput,
+} from '../../../agents/pem-agent.schemas';
 import { ChatEventsService } from '../../chat-events/chat-events.service';
 import { EmbeddingsService } from '../../../embeddings/embeddings.service';
 import { ExtractsService } from '../../../extracts/extracts.service';
 import { reconcileRelativePeriodLabel } from '../../../extracts/reconcile-relative-period-label';
+import {
+  decodePhotoVisionStored,
+  visionLineForHumans,
+} from '../../../chat/utils/photo-vision-stored';
 import { ProfileService } from '../../../profile/profile.service';
 import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
 import { PushService } from '../../../push/push.service';
@@ -41,7 +45,6 @@ import { ImageReferenceOnlyReplyService } from './image-reference-only-reply.ser
 import { PhotoAttachmentIntentService } from './photo-attachment-intent.service';
 import {
   AGENT_RECENT_MESSAGES_LIMIT,
-  DISMISSED_EXTRACTS_LOOKBACK_DAYS,
   DONE_EXTRACTS_LOOKBACK_DAYS,
   RAG_MIN_SIMILARITY,
   RAG_TOP_K,
@@ -52,92 +55,8 @@ import {
 } from './chat-question-temporal';
 import { shouldEscalateTrivialForPhotoFollowup } from './photo-offer-followup';
 import { normalizeDedupeTaskKey } from './filter-deduped-creates';
-
-function parseIsoDate(s: string | null | undefined): Date | null {
-  if (!s || !String(s).trim()) return null;
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** ISO weekday (1=Mon … 7=Sun) → RRULE day abbreviation. */
-const ISO_TO_RRULE: Record<number, string> = {
-  1: 'MO',
-  2: 'TU',
-  3: 'WE',
-  4: 'TH',
-  5: 'FR',
-  6: 'SA',
-  7: 'SU',
-};
-
-function buildRrule(rule: {
-  freq: string;
-  interval?: number;
-  by_day?: number[];
-  by_month_day?: number;
-  until?: string | null;
-  count?: number;
-}): string {
-  const parts = [`FREQ=${rule.freq.toUpperCase()}`];
-  if (rule.interval && rule.interval > 1)
-    parts.push(`INTERVAL=${rule.interval}`);
-  if (rule.by_day?.length) {
-    parts.push(
-      `BYDAY=${rule.by_day.map((d) => ISO_TO_RRULE[d] ?? 'MO').join(',')}`,
-    );
-  }
-  if (rule.by_month_day != null) parts.push(`BYMONTHDAY=${rule.by_month_day}`);
-  if (rule.until) {
-    const u = rule.until
-      .replace(/[-:]/g, '')
-      .replace(/\.\d+/, '')
-      .replace('Z', '');
-    parts.push(`UNTIL=${u}Z`);
-  }
-  if (rule.count) parts.push(`COUNT=${rule.count}`);
-  return `RRULE:${parts.join(';')}`;
-}
-
-const SAFETY_CAPS = {
-  creates: 10,
-  updates: 10,
-  completions: 10,
-  calendar_writes: 5,
-  calendar_updates: 5,
-  calendar_deletes: 3,
-  scheduling: 10,
-  recurrence_detections: 10,
-  rsvp_actions: 5,
-  memory_writes: 10,
-} as const;
-
-function clampAgentOutput(output: PemAgentOutput): PemAgentOutput {
-  return {
-    ...output,
-    creates: output.creates.slice(0, SAFETY_CAPS.creates),
-    updates: output.updates.slice(0, SAFETY_CAPS.updates),
-    completions: output.completions.slice(0, SAFETY_CAPS.completions),
-    calendar_writes: output.calendar_writes.slice(
-      0,
-      SAFETY_CAPS.calendar_writes,
-    ),
-    calendar_updates: output.calendar_updates.slice(
-      0,
-      SAFETY_CAPS.calendar_updates,
-    ),
-    calendar_deletes: output.calendar_deletes.slice(
-      0,
-      SAFETY_CAPS.calendar_deletes,
-    ),
-    scheduling: output.scheduling.slice(0, SAFETY_CAPS.scheduling),
-    recurrence_detections: output.recurrence_detections.slice(
-      0,
-      SAFETY_CAPS.recurrence_detections,
-    ),
-    rsvp_actions: output.rsvp_actions.slice(0, SAFETY_CAPS.rsvp_actions),
-    memory_writes: output.memory_writes.slice(0, SAFETY_CAPS.memory_writes),
-  };
-}
+import { clampAgentOutput } from './chat-orchestrator-clamp-output';
+import { buildRrule, parseIsoDate } from './chat-orchestrator-rrule';
 
 @Injectable()
 export class ChatOrchestratorService {
@@ -433,14 +352,13 @@ export class ChatOrchestratorService {
         userSummary: ctx.userSummary,
         schedulingContext,
         userPreferences,
-        recentDoneSection: ctx.recentDoneSection,
-        recentDismissedSection: ctx.recentDismissedSection,
+        recentClosedSection: ctx.recentClosedSection,
         todayCalendarSection: ctx.todayCalendarSection,
         userActivityLine: ctx.userActivityLine,
         userLists: ctx.userLists,
         contacts: ctx.contacts,
         dedupeActiveTaskKeys: [...ctx.activeTaskKeys],
-        dedupeDismissedTaskKeys: [...ctx.dismissedKeys],
+        dedupeClosedTaskKeys: [...ctx.closedKeys],
       });
 
       clearTimeout(slowStatusTimer);
@@ -539,8 +457,7 @@ export class ChatOrchestratorService {
       .where(
         and(
           eq(extractsTable.userId, userId),
-          ne(extractsTable.status, 'done'),
-          ne(extractsTable.status, 'dismissed'),
+          ne(extractsTable.status, 'closed'),
         ),
       );
 
@@ -562,39 +479,23 @@ export class ChatOrchestratorService {
       period_label: r.periodLabel,
     }));
 
-    const doneSince = new Date(now);
-    doneSince.setUTCDate(doneSince.getUTCDate() - DONE_EXTRACTS_LOOKBACK_DAYS);
-    const dismissedSince = new Date(now);
-    dismissedSince.setUTCDate(
-      dismissedSince.getUTCDate() - DISMISSED_EXTRACTS_LOOKBACK_DAYS,
+    const closedSince = new Date(now);
+    closedSince.setUTCDate(
+      closedSince.getUTCDate() - DONE_EXTRACTS_LOOKBACK_DAYS,
     );
 
-    const doneRows = await this.db
+    const recentlyClosedRows = await this.db
       .select()
       .from(extractsTable)
       .where(
         and(
           eq(extractsTable.userId, userId),
-          eq(extractsTable.status, 'done'),
-          isNotNull(extractsTable.doneAt),
-          gte(extractsTable.doneAt, doneSince),
+          eq(extractsTable.status, 'closed'),
+          isNotNull(extractsTable.closedAt),
+          gte(extractsTable.closedAt, closedSince),
         ),
       )
-      .orderBy(desc(extractsTable.doneAt))
-      .limit(120);
-
-    const dismissedRows = await this.db
-      .select()
-      .from(extractsTable)
-      .where(
-        and(
-          eq(extractsTable.userId, userId),
-          eq(extractsTable.status, 'dismissed'),
-          isNotNull(extractsTable.dismissedAt),
-          gte(extractsTable.dismissedAt, dismissedSince),
-        ),
-      )
-      .orderBy(desc(extractsTable.dismissedAt))
+      .orderBy(desc(extractsTable.closedAt))
       .limit(120);
 
     const thirtyAgo = new Date(now);
@@ -616,8 +517,8 @@ export class ChatOrchestratorService {
         .map((r) => normalizeDedupeTaskKey(r.extractText))
         .filter((k) => k.length > 0),
     );
-    const dismissedKeys = new Set(
-      dismissedRows
+    const closedKeys = new Set(
+      recentlyClosedRows
         .map((r) => normalizeDedupeTaskKey(r.extractText))
         .filter((k) => k.length > 0),
     );
@@ -663,19 +564,16 @@ export class ChatOrchestratorService {
         ? todayLines.join('\n')
         : '(no timed items on your list for today)';
 
-    const recentDoneSection =
-      doneRows.length > 0
-        ? doneRows
+    const recentClosedSection =
+      recentlyClosedRows.length > 0
+        ? recentlyClosedRows
             .map((r) => {
-              const when = r.doneAt ? r.doneAt.toISOString().slice(0, 10) : '';
-              return `- ${r.extractText}${when ? ` (done ${when})` : ''}`;
+              const when = r.closedAt
+                ? r.closedAt.toISOString().slice(0, 10)
+                : '';
+              return `- ${r.extractText}${when ? ` (closed ${when})` : ''}`;
             })
             .join('\n')
-        : '(none in lookback window)';
-
-    const recentDismissedSection =
-      dismissedRows.length > 0
-        ? dismissedRows.map((r) => `- ${r.extractText}`).join('\n')
         : '(none in lookback window)';
 
     const userActivityLine = `User messages in Pem (last 30 days): ${userMsgCount}.`;
@@ -721,13 +619,12 @@ export class ChatOrchestratorService {
       openExtracts,
       calendarEvents,
       activeTaskKeys,
-      dismissedKeys,
+      closedKeys,
       memorySection,
       userName: userRow?.name ?? null,
       userSummary: userRow?.summary ?? null,
       prefs: (userRow?.preferences as UserPreferences) ?? null,
-      recentDoneSection,
-      recentDismissedSection,
+      recentClosedSection,
       todayCalendarSection,
       userActivityLine,
       userLists,
@@ -777,7 +674,7 @@ export class ChatOrchestratorService {
     if (m.role === 'pem') return m.content ?? '';
     if (m.kind === 'image') {
       const cap = (m.content ?? '').trim();
-      const vis = (m.visionSummary ?? '').trim();
+      const vis = visionLineForHumans(m.visionSummary ?? '');
       if (cap && vis) return `${cap}\n[Photo: ${vis}]`;
       if (vis) return `[Photo: ${vis}]`;
       if (cap) return `${cap} [photo]`;
@@ -786,7 +683,7 @@ export class ChatOrchestratorService {
     const voiceLine = m.transcript ?? m.content ?? '';
     const imgCount = (m.imageKeys ?? []).filter((a) => a.key).length;
     if (m.kind === 'voice' && imgCount > 0) {
-      const vis = (m.visionSummary ?? '').trim();
+      const vis = visionLineForHumans(m.visionSummary ?? '');
       const t = voiceLine.trim();
       if (t && vis) return `${t}\n[Photo: ${vis}]`;
       if (vis) return `[Photo: ${vis}]`;
@@ -853,7 +750,16 @@ export class ChatOrchestratorService {
     const n = imageAssets.length;
     const parts: string[] = [];
     if (cap) parts.push(`User photo caption: ${cap}`);
-    if (visionFlat) parts.push(`Image description: ${visionFlat}`);
+    if (visionFlat) {
+      const { focus, detail } = decodePhotoVisionStored(visionFlat);
+      if (focus && detail) {
+        parts.push(
+          `Image — for your reply (keep response_text grounded here; short and natural; do not invent):\n${focus}\n\nImage — full detail for tasks / memory / calendar (do not read this aloud; use for extraction and follow-ups):\n${detail}`,
+        );
+      } else {
+        parts.push(`Image description: ${visionFlat}`);
+      }
+    }
     if (parts.length > 0) {
       return parts.join('\n\n');
     }
@@ -893,7 +799,7 @@ export class ChatOrchestratorService {
     // Updates
     for (const upd of output.updates) {
       const row = await this.extracts.findForUser(userId, upd.extract_id);
-      if (!row || row.status === 'done') continue;
+      if (!row || row.status === 'closed') continue;
 
       // Strip null values that the model included without the user asking.
       // Only list_name uses null intentionally ("remove from list").
@@ -982,13 +888,13 @@ export class ChatOrchestratorService {
     // Completions
     for (const cmd of output.completions) {
       const row = await this.extracts.findForUser(userId, cmd.extract_id);
-      if (!row || row.status === 'done') continue;
-      if (cmd.command === 'mark_done') {
-        await this.extracts.markDone(userId, cmd.extract_id, {
+      if (!row || row.status === 'closed') continue;
+      if (cmd.command === 'close') {
+        await this.extracts.markClosed(userId, cmd.extract_id, {
           initiatedBy: 'agent',
         });
-      } else if (cmd.command === 'dismiss') {
-        await this.extracts.dismiss(userId, cmd.extract_id, {
+      } else if (cmd.command === 'reopen') {
+        await this.extracts.unclose(userId, cmd.extract_id, {
           initiatedBy: 'agent',
         });
       } else if (cmd.command === 'snooze' && cmd.snooze_until_iso) {
@@ -1150,9 +1056,12 @@ export class ChatOrchestratorService {
           row.externalEventId,
         );
 
-        await this.extracts.dismiss(userId, cd.extract_id, {
-          initiatedBy: 'agent',
-        });
+        await this.extracts.markClosed(
+          userId,
+          cd.extract_id,
+          { initiatedBy: 'agent' },
+          { skipCalendarEffects: true },
+        );
 
         await this.logEntry({
           userId,

@@ -25,22 +25,17 @@ import { Observable } from 'rxjs';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { MessageImageAsset, UserRow } from '../database/schemas';
-import { TriageService, type TriageCategory } from '../agents/triage.service';
 import { BriefCronService } from '../background/queues/brief/brief-cron.service';
+import { ChatImageDedupService } from './chat-image-dedup.service';
 import { ChatService } from './chat.service';
 import { ChatStreamService, type SseEvent } from './chat-stream.service';
 import { SummarizeTranscriptService } from './summarize-transcript.service';
 import { TranscriptionService } from '../transcription/transcription.service';
 import { StorageService } from '../storage/storage.service';
-import {
-  CHAT_JOB_DELAY_MS_DUMP,
-  CHAT_JOB_DELAY_MS_QUESTION,
-  CHAT_JOB_ID_PREFIX,
-} from './chat.constants';
+import { CHAT_JOB_DELAY_MS_DUMP, CHAT_JOB_ID_PREFIX } from './chat.constants';
 import { randomUUID } from 'node:crypto';
 
 import { SendMessageDto } from './dto/send-message.dto';
-import { validateChatImageKeysForUser } from './validate-chat-image-keys';
 import {
   MAX_PHOTO_UPLOAD_BYTES,
   PhotoUploadUrlDto,
@@ -54,12 +49,12 @@ import type { MessageRow } from '../database/schemas';
 export class ChatController {
   constructor(
     private readonly chat: ChatService,
+    private readonly chatImageDedup: ChatImageDedupService,
     private readonly stream: ChatStreamService,
     private readonly summarize: SummarizeTranscriptService,
     private readonly transcription: TranscriptionService,
     private readonly storage: StorageService,
     private readonly briefCron: BriefCronService,
-    private readonly triage: TriageService,
     @InjectQueue('chat') private readonly chatQueue: Queue,
   ) {}
 
@@ -79,6 +74,21 @@ export class ChatController {
     if (body.byte_size != null && body.byte_size > MAX_PHOTO_UPLOAD_BYTES) {
       throw new BadRequestException('File too large');
     }
+    if (body.content_sha256?.trim()) {
+      const existing = await this.chatImageDedup.findExistingByHash(
+        user.id,
+        body.content_sha256,
+      );
+      if (existing) {
+        return {
+          is_duplicate: true,
+          image_key: existing.imageKey,
+          first_shared_at: existing.firstSharedAt.toISOString(),
+          upload_url: null,
+          expires_in_seconds: 0,
+        };
+      }
+    }
     const ext = photoKeyExtension(body.content_type);
     const key = `chat-images/${user.id}/${randomUUID()}.${ext}`;
     const uploadUrl = await this.storage.getPresignedPutUrl(
@@ -89,6 +99,7 @@ export class ChatController {
       throw new BadRequestException('Could not create upload URL');
     }
     return {
+      is_duplicate: false,
       upload_url: uploadUrl,
       image_key: key,
       expires_in_seconds: 900,
@@ -125,6 +136,7 @@ export class ChatController {
           ? body.image_keys.map((k) => ({
               key: k.key,
               mime: k.mime ?? null,
+              content_sha256: k.content_sha256 ?? null,
             }))
           : null;
       const keysRaw =
@@ -132,7 +144,10 @@ export class ChatController {
         (body.image_key
           ? [{ key: body.image_key, mime: null as string | null }]
           : null);
-      const keys = validateChatImageKeysForUser(user.id, keysRaw ?? []);
+      const keys = await this.chatImageDedup.prepareImageKeysForPersistence(
+        user.id,
+        keysRaw ?? [],
+      );
       const msg = await this.chat.saveMessage({
         userId: user.id,
         role: 'user',
@@ -143,6 +158,7 @@ export class ChatController {
         processingStatus: 'pending',
         idempotencyKey: body.idempotency_key?.trim() || null,
       });
+      await this.chatImageDedup.registerHashes(user.id, keys);
       await this.chatQueue.add(
         'process-message',
         { messageId: msg.id, userId: user.id },
@@ -162,14 +178,6 @@ export class ChatController {
       };
     }
 
-    const textContent =
-      body.kind === 'text' ? (body.content?.trim() ?? '') : '';
-
-    let triageCategory: TriageCategory | null = null;
-    if (textContent) {
-      triageCategory = await this.triage.classify(textContent);
-    }
-
     const msg = await this.chat.saveMessage({
       userId: user.id,
       role: 'user',
@@ -177,16 +185,10 @@ export class ChatController {
       content: body.kind === 'text' ? body.content : null,
       voiceUrl: body.kind === 'voice' ? body.voice_url : null,
       audioKey: body.kind === 'voice' ? body.audio_key : null,
-      triageCategory,
+      triageCategory: null,
       processingStatus: 'pending',
       idempotencyKey: body.idempotency_key?.trim() || null,
     });
-
-    const isInstant =
-      triageCategory === 'question_only' || triageCategory === 'trivial';
-    const delay = isInstant
-      ? CHAT_JOB_DELAY_MS_QUESTION
-      : CHAT_JOB_DELAY_MS_DUMP;
 
     await this.chatQueue.add(
       'process-message',
@@ -196,7 +198,7 @@ export class ChatController {
       },
       {
         jobId: `${CHAT_JOB_ID_PREFIX}${msg.id}`,
-        delay,
+        delay: CHAT_JOB_DELAY_MS_DUMP,
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
       },
@@ -256,19 +258,32 @@ export class ChatController {
       if (!Array.isArray(parsed)) {
         throw new BadRequestException('image_keys must be a JSON array');
       }
-      const raw = parsed.map((item): { key: string; mime?: string | null } => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-          throw new BadRequestException('Invalid image_keys entry');
-        }
-        const o = item as Record<string, unknown>;
-        const key = typeof o.key === 'string' ? o.key : '';
-        if (!key) {
-          throw new BadRequestException('Each image_keys item needs a key');
-        }
-        const mime = typeof o.mime === 'string' ? o.mime : null;
-        return { key, mime };
-      });
-      imageKeys = validateChatImageKeysForUser(user.id, raw);
+      const raw = parsed.map(
+        (
+          item,
+        ): {
+          key: string;
+          mime?: string | null;
+          content_sha256?: string | null;
+        } => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            throw new BadRequestException('Invalid image_keys entry');
+          }
+          const o = item as Record<string, unknown>;
+          const key = typeof o.key === 'string' ? o.key : '';
+          if (!key) {
+            throw new BadRequestException('Each image_keys item needs a key');
+          }
+          const mime = typeof o.mime === 'string' ? o.mime : null;
+          const content_sha256 =
+            typeof o.content_sha256 === 'string' ? o.content_sha256 : null;
+          return { key, mime, content_sha256 };
+        },
+      );
+      imageKeys = await this.chatImageDedup.prepareImageKeysForPersistence(
+        user.id,
+        raw,
+      );
     }
 
     const transcript = await this.transcription.transcribe(audio);
@@ -297,30 +312,16 @@ export class ChatController {
       processingStatus: 'pending',
       idempotencyKey: idempotencyKey?.trim() || null,
     });
-
-    let triageCat: TriageCategory | null = null;
-    if (transcript) {
-      triageCat = await this.triage.classify(transcript);
+    if (imageKeys?.length) {
+      await this.chatImageDedup.registerHashes(user.id, imageKeys);
     }
-    if (triageCat) {
-      await this.chat.updateMessage(
-        msg.id,
-        { triageCategory: triageCat },
-        user.id,
-      );
-    }
-
-    const isInstantVoice =
-      triageCat === 'question_only' || triageCat === 'trivial';
 
     await this.chatQueue.add(
       'process-message',
       { messageId: msg.id, userId: user.id },
       {
         jobId: `${CHAT_JOB_ID_PREFIX}${msg.id}`,
-        delay: isInstantVoice
-          ? CHAT_JOB_DELAY_MS_QUESTION
-          : CHAT_JOB_DELAY_MS_DUMP,
+        delay: CHAT_JOB_DELAY_MS_DUMP,
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
       },

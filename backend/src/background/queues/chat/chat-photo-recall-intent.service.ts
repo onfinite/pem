@@ -16,6 +16,7 @@ import {
   photoRecallIntentSystemPrompt,
   photoRecallIntentUserPrompt,
 } from '../../../chat/prompts/chat-photo-recall-intent.prompt';
+import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
 import {
   PHOTO_RECALL_MAX_MESSAGE_IDS,
   resolvePhotoRecallMessageIdsForQuery,
@@ -163,7 +164,7 @@ export class ChatPhotoRecallIntentService {
     return withAssets.slice(0, CANDIDATE_LIMIT).map((r) => ({
       id: r.id,
       caption: (r.content ?? '').trim().slice(0, CAPTION_SNIP),
-      vision: (r.visionSummary ?? '').trim().slice(0, VISION_SNIP),
+      vision: visionLineForHumans(r.visionSummary ?? '').slice(0, VISION_SNIP),
     }));
   }
 

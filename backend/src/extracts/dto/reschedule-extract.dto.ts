@@ -6,7 +6,7 @@ const URGENCY_VALUES = [
   'tomorrow',
   'this_week',
   'next_week',
-  'someday',
+  'holding',
 ] as const;
 
 export type RescheduleTarget = (typeof URGENCY_VALUES)[number];

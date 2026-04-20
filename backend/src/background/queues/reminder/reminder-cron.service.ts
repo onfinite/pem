@@ -31,8 +31,7 @@ export class ReminderCronService {
         and(
           lte(extractsTable.reminderAt, now),
           eq(extractsTable.reminderSent, false),
-          ne(extractsTable.status, 'done'),
-          ne(extractsTable.status, 'dismissed'),
+          ne(extractsTable.status, 'closed'),
         ),
       );
 

@@ -10,6 +10,7 @@ import {
   asc,
   desc,
   eq,
+  gt,
   inArray,
   isNotNull,
   lt,
@@ -34,39 +35,30 @@ import {
   type LogRow,
 } from '../database/schemas';
 import type { UpdateExtractBody } from './dto/update-extract.dto';
-export type SnoozeUntil =
-  | 'later_today'
-  | 'tomorrow'
-  | 'weekend'
-  | 'next_week'
-  | 'someday';
+import { classifyExtractBriefBucket } from './extract-brief-bucket';
+import { buildBriefBuckets, type BriefBuckets } from './build-brief-buckets';
+import {
+  decodeCursor,
+  decodeOpenCursor,
+  encodeCursor,
+  encodeOpenCursor,
+} from './extract-cursors';
+import {
+  collapseRecurringRowsForDisplay,
+  isRecurringExtract,
+} from './recurring-series-display';
+import type {
+  ExtractMutationAudit,
+  ExtractQueryFilters,
+  SnoozeUntil,
+} from './extracts.types';
 
-export type ExtractQueryFilters = {
-  status?: 'open' | 'inbox' | 'snoozed' | 'dismissed' | 'done';
-  batch_key?: string;
-  tone?: string;
-  exclude_tone?: string;
-  urgency?: string;
-};
-
-/** When `'agent'`, skip user audit row — caller must log (e.g. chat `logEntry`). */
-export type ExtractMutationAudit = {
-  initiatedBy?: 'user' | 'agent';
-  /** Client surface (e.g. `task_drawer`) — stored on log payload when present. */
-  surface?: string;
-  /** Correlation id from client or proxy — stored as `request_id` on log payload. */
-  requestId?: string;
-};
-
-export type BriefBuckets = {
-  overdue: ExtractRow[];
-  today: ExtractRow[];
-  tomorrow: ExtractRow[];
-  this_week: ExtractRow[];
-  next_week: ExtractRow[];
-  later: ExtractRow[];
-  batch_counts: { batch_key: string; count: number }[];
-};
+export type {
+  ExtractMutationAudit,
+  ExtractQueryFilters,
+  SnoozeUntil,
+} from './extracts.types';
+export type { BriefBuckets } from './build-brief-buckets';
 
 @Injectable()
 export class ExtractsService {
@@ -86,8 +78,7 @@ export class ExtractsService {
       urgency: r.urgency,
       due_at: r.dueAt?.toISOString() ?? null,
       snoozed_until: r.snoozedUntil?.toISOString() ?? null,
-      done_at: r.doneAt?.toISOString() ?? null,
-      dismissed_at: r.dismissedAt?.toISOString() ?? null,
+      closed_at: r.closedAt?.toISOString() ?? null,
       batch_key: r.batchKey ?? null,
     };
   }
@@ -195,15 +186,14 @@ export class ExtractsService {
       status: a.status,
       tone: a.tone,
       urgency: a.urgency,
-      batch_key: a.batchKey,
+      batch_key: a.batchKey === 'errands' ? null : a.batchKey,
       due_at: a.dueAt?.toISOString() ?? null,
       period_start: a.periodStart?.toISOString() ?? null,
       period_end: a.periodEnd?.toISOString() ?? null,
       period_label: a.periodLabel,
       timezone_pending: a.timezonePending,
       snoozed_until: a.snoozedUntil?.toISOString() ?? null,
-      done_at: a.doneAt?.toISOString() ?? null,
-      dismissed_at: a.dismissedAt?.toISOString() ?? null,
+      closed_at: a.closedAt?.toISOString() ?? null,
       pem_note: a.pemNote,
       recommended_at: a.recommendedAt?.toISOString() ?? null,
       draft_text: a.draftText,
@@ -264,8 +254,8 @@ export class ExtractsService {
 
   async listAllForUser(userId: string): Promise<{
     dated: ExtractRow[];
-    someday: ExtractRow[];
-    dismissed: ExtractRow[];
+    holding: ExtractRow[];
+    closed: ExtractRow[];
     batch_groups: { batch_key: string; items: ExtractRow[] }[];
     batch_slots: { batch_key: string; items: ExtractRow[]; count: number }[];
   }> {
@@ -281,29 +271,33 @@ export class ExtractsService {
       .orderBy(asc(extractsTable.periodStart), asc(extractsTable.dueAt));
 
     const dated: ExtractRow[] = [];
-    const somedayRows: ExtractRow[] = [];
+    const holdingRows: ExtractRow[] = [];
     for (const r of allInbox) {
       const hasDate =
         r.periodStart || r.dueAt || r.eventStartAt || r.scheduledAt;
-      if (r.urgency === 'someday' || !hasDate) {
-        somedayRows.push(r);
-      } else {
+      if (r.batchKey === 'shopping' && !hasDate) {
+        // Listed under batch_slots only — not holding bucket
+        continue;
+      }
+      if (hasDate && (r.batchKey === 'shopping' || r.urgency !== 'holding')) {
         dated.push(r);
+      } else {
+        holdingRows.push(r);
       }
     }
 
-    const dismissed = await this.db
+    const closed = await this.db
       .select()
       .from(extractsTable)
       .where(
         and(
           eq(extractsTable.userId, userId),
-          eq(extractsTable.status, 'dismissed'),
+          eq(extractsTable.status, 'closed'),
         ),
       )
-      .orderBy(desc(extractsTable.dismissedAt));
+      .orderBy(desc(extractsTable.closedAt));
 
-    const batchKeys = ['shopping', 'errands', 'follow_ups'] as const;
+    const batchKeys = ['shopping', 'follow_ups'] as const;
     const batch_groups: { batch_key: string; items: ExtractRow[] }[] = [];
     const batch_slots: {
       batch_key: string;
@@ -325,8 +319,8 @@ export class ExtractsService {
 
     return {
       dated,
-      someday: somedayRows,
-      dismissed,
+      holding: holdingRows,
+      closed,
       batch_groups,
       batch_slots,
     };
@@ -344,8 +338,7 @@ export class ExtractsService {
 
     const st = filters.status ?? 'open';
     if (st === 'open') {
-      parts.push(ne(extractsTable.status, 'done'));
-      parts.push(ne(extractsTable.status, 'dismissed'));
+      parts.push(ne(extractsTable.status, 'closed'));
       parts.push(
         sql`not (${extractsTable.externalEventId} is not null and ${extractsTable.eventEndAt} is not null and ${extractsTable.eventEndAt} < now())`,
       );
@@ -392,10 +385,12 @@ export class ExtractsService {
     };
   }
 
-  async markDone(
+  /** Single end state: off the active list (no distinction between "did it" vs "not doing it"). */
+  async markClosed(
     userId: string,
     id: string,
     audit?: ExtractMutationAudit,
+    options?: { skipCalendarEffects?: boolean },
   ): Promise<ExtractRow> {
     await this.wakeSnoozedThrottled(userId);
     const row = await this.findForUser(userId, id);
@@ -404,9 +399,8 @@ export class ExtractsService {
     const [u] = await this.db
       .update(extractsTable)
       .set({
-        status: 'done',
-        doneAt: now,
-        dismissedAt: null,
+        status: 'closed',
+        closedAt: now,
         snoozedUntil: null,
         updatedAt: now,
       })
@@ -418,50 +412,18 @@ export class ExtractsService {
         userId,
         extractId: id,
         messageId: row.messageId,
-        op: 'mark_done',
-        before: this.extractStateSnapshot(row),
-        after: this.extractStateSnapshot(u),
-        audit,
-      });
-    }
-    return u;
-  }
-
-  async dismiss(
-    userId: string,
-    id: string,
-    audit?: ExtractMutationAudit,
-  ): Promise<ExtractRow> {
-    await this.wakeSnoozedThrottled(userId);
-    const row = await this.findForUser(userId, id);
-    if (!row) throw new NotFoundException('Extract not found');
-
-    const now = new Date();
-    const [u] = await this.db
-      .update(extractsTable)
-      .set({
-        status: 'dismissed',
-        dismissedAt: now,
-        snoozedUntil: null,
-        updatedAt: now,
-      })
-      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
-      .returning();
-    if (!u) throw new NotFoundException('Extract not found');
-
-    if (audit?.initiatedBy !== 'agent') {
-      await this.logUserChange({
-        userId,
-        extractId: id,
-        messageId: row.messageId,
-        op: 'dismiss',
+        op: 'close',
         before: this.extractStateSnapshot(row),
         after: this.extractStateSnapshot(u),
         audit,
       });
     }
 
-    if (row.externalEventId && row.calendarConnectionId) {
+    if (
+      !options?.skipCalendarEffects &&
+      row.externalEventId &&
+      row.calendarConnectionId
+    ) {
       const isOwnEvent = row.isOrganizer || row.source !== 'calendar';
       if (isOwnEvent) {
         this.calendarSync
@@ -471,7 +433,7 @@ export class ExtractsService {
           )
           .catch((e) =>
             this.log.warn(
-              `Calendar delete on dismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+              `Calendar delete on close failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
             ),
           );
       } else {
@@ -483,7 +445,7 @@ export class ExtractsService {
           )
           .catch((e) =>
             this.log.warn(
-              `Calendar RSVP decline on dismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+              `Calendar RSVP decline on close failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
             ),
           );
       }
@@ -492,7 +454,7 @@ export class ExtractsService {
     return u;
   }
 
-  async undone(
+  async unclose(
     userId: string,
     id: string,
     audit?: ExtractMutationAudit,
@@ -503,7 +465,7 @@ export class ExtractsService {
     const now = new Date();
     const [u] = await this.db
       .update(extractsTable)
-      .set({ status: 'inbox', doneAt: null, updatedAt: now })
+      .set({ status: 'inbox', closedAt: null, updatedAt: now })
       .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
@@ -511,34 +473,7 @@ export class ExtractsService {
       userId,
       extractId: id,
       messageId: row.messageId,
-      op: 'undone',
-      before: this.extractStateSnapshot(row),
-      after: this.extractStateSnapshot(u),
-      audit,
-    });
-    return u;
-  }
-
-  async undismiss(
-    userId: string,
-    id: string,
-    audit?: ExtractMutationAudit,
-  ): Promise<ExtractRow> {
-    await this.wakeSnoozedThrottled(userId);
-    const row = await this.findForUser(userId, id);
-    if (!row) throw new NotFoundException('Extract not found');
-    const now = new Date();
-    const [u] = await this.db
-      .update(extractsTable)
-      .set({ status: 'inbox', dismissedAt: null, updatedAt: now })
-      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
-      .returning();
-    if (!u) throw new NotFoundException('Extract not found');
-    await this.logUserChange({
-      userId,
-      extractId: id,
-      messageId: row.messageId,
-      op: 'undismiss',
+      op: 'unclose',
       before: this.extractStateSnapshot(row),
       after: this.extractStateSnapshot(u),
       audit,
@@ -549,7 +484,7 @@ export class ExtractsService {
         .rsvpOnGoogle(row.calendarConnectionId, row.externalEventId, 'accepted')
         .catch((e) =>
           this.log.warn(
-            `Calendar RSVP accept on undismiss failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
+            `Calendar RSVP accept on unclose failed extractId=${id}: ${e instanceof Error ? e.message : String(e)}`,
           ),
         );
     }
@@ -586,8 +521,8 @@ export class ExtractsService {
     if (response === 'declined') {
       await this.db
         .update(extractsTable)
-        .set({ status: 'dismissed', dismissedAt: now })
-        .where(eq(extractsTable.id, id));
+        .set({ status: 'closed', closedAt: now, updatedAt: now })
+        .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)));
     }
 
     return u;
@@ -616,8 +551,8 @@ export class ExtractsService {
     let nextStatus: 'inbox' | 'snoozed' = 'inbox';
     let urgency = row.urgency;
 
-    if (until === 'someday') {
-      urgency = 'someday';
+    if (until === 'holding') {
+      urgency = 'holding';
       snoozedUntil = null;
       nextStatus = 'inbox';
     } else if (isoOverride) {
@@ -707,7 +642,10 @@ export class ExtractsService {
       upd.originalText = patch.original_text.trim();
     if (patch.tone !== undefined) upd.tone = patch.tone;
     if (patch.urgency !== undefined) upd.urgency = patch.urgency;
-    if (patch.batch_key !== undefined) upd.batchKey = patch.batch_key;
+    if (patch.batch_key !== undefined) {
+      const bk = patch.batch_key as string | null;
+      upd.batchKey = bk === 'errands' ? null : patch.batch_key;
+    }
     if (patch.duration_minutes !== undefined)
       upd.durationMinutes = patch.duration_minutes;
     if (patch.pem_note !== undefined) upd.pemNote = patch.pem_note;
@@ -774,7 +712,7 @@ export class ExtractsService {
   async reschedule(
     userId: string,
     id: string,
-    target: 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'someday',
+    target: 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'holding',
     audit?: ExtractMutationAudit,
   ): Promise<ExtractRow> {
     const row = await this.findForUser(userId, id);
@@ -819,8 +757,8 @@ export class ExtractsService {
       periodStart = mon.toJSDate();
       periodEnd = mon.plus({ days: 6 }).endOf('day').toJSDate();
       periodLabel = 'next week';
-    } else if (target === 'someday') {
-      urgency = 'someday';
+    } else if (target === 'holding') {
+      urgency = 'holding';
     }
 
     const [u] = await this.db
@@ -919,29 +857,14 @@ export class ExtractsService {
     overdue: number;
     total_open: number;
     this_week: number;
-    someday: number;
+    holding: number;
   }> {
     await this.wakeSnoozedThrottled(userId);
     const zone = await this.getUserTimezone(userId);
-    const now = DateTime.now().setZone(zone);
-    const todayStart = now.startOf('day').toJSDate();
-    const todayEnd = now.endOf('day').toJSDate();
-    const weekEnd = now
-      .plus({ days: 7 - now.weekday })
-      .endOf('day')
-      .toJSDate();
+    const nowLux = DateTime.now().setZone(zone);
+    const jsNow = nowLux.toJSDate();
 
-    const jsNow = now.toJSDate();
-    const anchor = sql`coalesce(${extractsTable.eventStartAt}, ${extractsTable.scheduledAt}, ${extractsTable.dueAt}, ${extractsTable.periodStart})`;
     const isPastCalEvent = sql`(${extractsTable.externalEventId} is not null and ${extractsTable.eventEndAt} is not null and ${extractsTable.eventEndAt} < ${jsNow})`;
-    const overdueCondition = sql`(
-      ${extractsTable.externalEventId} is null
-      and ${anchor} is not null and ${anchor} < ${todayStart}
-      and (
-        (${extractsTable.periodEnd} is not null and ${extractsTable.periodEnd} < ${todayStart})
-        or (${extractsTable.periodEnd} is null and ${extractsTable.dueAt} is not null and ${extractsTable.dueAt} < ${todayStart})
-      )
-    )`;
     const openFilter = and(
       eq(extractsTable.userId, userId),
       or(
@@ -951,23 +874,54 @@ export class ExtractsService {
       sql`not (${isPastCalEvent})`,
     );
 
-    const [counts] = await this.db
-      .select({
-        total_open: sql<number>`count(*)::int`,
-        overdue: sql<number>`count(*) filter (where ${overdueCondition})::int`,
-        today: sql<number>`count(*) filter (where not (${overdueCondition}) and ${anchor} >= ${todayStart} and ${anchor} <= ${todayEnd})::int`,
-        this_week: sql<number>`count(*) filter (where ${anchor} > ${todayEnd} and ${anchor} <= ${weekEnd})::int`,
-        someday: sql<number>`count(*) filter (where ${anchor} is null and ${extractsTable.urgency} = 'someday')::int`,
-      })
-      .from(extractsTable)
-      .where(openFilter);
+    const TASK_COUNTS_PAGE = 2000;
+    const rows: ExtractRow[] = [];
+    let lastId: string | null = null;
+    for (;;) {
+      const page = await this.db
+        .select()
+        .from(extractsTable)
+        .where(
+          lastId ? and(openFilter, gt(extractsTable.id, lastId)) : openFilter,
+        )
+        .orderBy(asc(extractsTable.id))
+        .limit(TASK_COUNTS_PAGE);
+      if (!page.length) break;
+      rows.push(...page);
+      lastId = page[page.length - 1].id;
+      if (page.length < TASK_COUNTS_PAGE) break;
+    }
+    const collapsed = collapseRecurringRowsForDisplay(rows, nowLux);
+
+    let today = 0;
+    let overdue = 0;
+    let thisWeek = 0;
+    let holding = 0;
+
+    for (const row of collapsed) {
+      const rawAnchor =
+        row.scheduledAt ??
+        row.eventStartAt ??
+        row.dueAt ??
+        row.periodStart ??
+        null;
+      const bk = row.batchKey === 'errands' ? null : row.batchKey;
+      if (!rawAnchor && row.urgency === 'holding' && bk !== 'shopping') {
+        holding++;
+      }
+
+      const kind = classifyExtractBriefBucket(row, nowLux);
+      if (kind === 'overdue') overdue++;
+      else if (kind === 'today') today++;
+      else if (kind === 'tomorrow' || kind === 'this_week') thisWeek++;
+    }
 
     return {
-      today: counts?.today ?? 0,
-      overdue: counts?.overdue ?? 0,
-      total_open: counts?.total_open ?? 0,
-      this_week: counts?.this_week ?? 0,
-      someday: counts?.someday ?? 0,
+      today,
+      overdue,
+      total_open: collapsed.length,
+      this_week: thisWeek,
+      holding,
     };
   }
 
@@ -1019,6 +973,8 @@ export class ExtractsService {
       .orderBy(asc(extractsTable.createdAt))
       .limit(500);
 
+    const displayOpen = collapseRecurringRowsForDisplay(allOpen, now);
+
     const items: ExtractRow[] = [];
     const undated: ExtractRow[] = [];
     const overdue: ExtractRow[] = [];
@@ -1026,7 +982,7 @@ export class ExtractsService {
 
     const jsNow = now.toJSDate();
 
-    for (const row of allOpen) {
+    for (const row of displayOpen) {
       const isCalEvent = row.source === 'calendar' || !!row.externalEventId;
       if (isCalEvent && row.eventEndAt && row.eventEndAt < jsNow) continue;
 
@@ -1039,7 +995,7 @@ export class ExtractsService {
 
       const anchorDate = new Date(anchor);
 
-      if (!isCalEvent) {
+      if (!isCalEvent && !isRecurringExtract(row)) {
         const anchorBeforeToday = anchorDate < todayStart;
         if (anchorBeforeToday) {
           const periodEndDate = row.periodEnd ? new Date(row.periodEnd) : null;
@@ -1112,7 +1068,10 @@ export class ExtractsService {
     cursor: string | null,
   ): Promise<{ rows: ExtractRow[]; next_cursor: string | null }> {
     await this.wakeSnoozedThrottled(userId);
-    const lim = Math.min(Math.max(limit, 1), 50);
+    const lim = Math.min(Math.max(limit, 1), 200);
+    const zone = await this.getUserTimezone(userId);
+    const nowLux = DateTime.now().setZone(zone);
+    const fetchCap = Math.min(500, Math.max(lim * 15, 120));
     const base = and(
       eq(extractsTable.userId, userId),
       or(
@@ -1135,20 +1094,24 @@ export class ExtractsService {
         )
       : base;
 
-    const rows = await this.db
+    const rawRows = await this.db
       .select()
       .from(extractsTable)
       .where(where)
       .orderBy(desc(extractsTable.createdAt), desc(extractsTable.id))
-      .limit(lim + 1);
+      .limit(fetchCap + 1);
 
-    const hasMore = rows.length > lim;
-    const page = hasMore ? rows.slice(0, lim) : rows;
-    const last = page[page.length - 1];
+    const hasMoreRaw = rawRows.length > fetchCap;
+    const rawPage = hasMoreRaw ? rawRows.slice(0, fetchCap) : rawRows;
+    const deduped = collapseRecurringRowsForDisplay(rawPage, nowLux);
+    const page = deduped.slice(0, lim);
+    const lastRaw = rawPage[rawPage.length - 1];
     return {
       rows: page,
       next_cursor:
-        hasMore && last ? encodeOpenCursor(last.createdAt, last.id) : null,
+        hasMoreRaw && lastRaw
+          ? encodeOpenCursor(lastRaw.createdAt, lastRaw.id)
+          : null,
     };
   }
 
@@ -1159,7 +1122,7 @@ export class ExtractsService {
       'inbox',
       'snoozed',
     ]);
-    return this.buildBriefBuckets(rows, zone);
+    return buildBriefBuckets(rows, zone);
   }
 
   /** Open actionable timeline for Ask Pem (inbox + snoozed), same bucketing as the daily brief. */
@@ -1170,7 +1133,7 @@ export class ExtractsService {
       'inbox',
       'snoozed',
     ]);
-    return this.buildBriefBuckets(rows, zone);
+    return buildBriefBuckets(rows, zone);
   }
 
   /** Every open shopping-tagged extract (any urgency), for shopping-list questions. */
@@ -1190,7 +1153,7 @@ export class ExtractsService {
       .limit(200);
   }
 
-  /** Done or dismissed rows when the user explicitly asks about completed or dismissed items. */
+  /** Closed rows when the user asks about things they finished or cleared. */
   async getAskClosedExtracts(
     userId: string,
     limit: number,
@@ -1202,7 +1165,7 @@ export class ExtractsService {
       .where(
         and(
           eq(extractsTable.userId, userId),
-          inArray(extractsTable.status, ['done', 'dismissed']),
+          eq(extractsTable.status, 'closed'),
         ),
       )
       .orderBy(desc(extractsTable.updatedAt))
@@ -1235,105 +1198,6 @@ export class ExtractsService {
       .limit(500);
   }
 
-  private buildBriefBuckets(rows: ExtractRow[], zone: string): BriefBuckets {
-    const nowLux = DateTime.now().setZone(zone);
-    const now = nowLux.toJSDate();
-    const todayStart = nowLux.startOf('day').toJSDate();
-    const todayEnd = nowLux.endOf('day').toJSDate();
-    const tomorrowEnd = nowLux.plus({ days: 1 }).endOf('day').toJSDate();
-
-    const daysToSunday = 7 - nowLux.weekday;
-    const thisWeekEnd = nowLux
-      .plus({ days: daysToSunday })
-      .endOf('day')
-      .toJSDate();
-    const nextWeekEnd = nowLux
-      .plus({ days: daysToSunday + 7 })
-      .endOf('day')
-      .toJSDate();
-
-    const overdue: ExtractRow[] = [];
-    const today: ExtractRow[] = [];
-    const tomorrow: ExtractRow[] = [];
-    const thisWeek: ExtractRow[] = [];
-    const nextWeek: ExtractRow[] = [];
-    const later: ExtractRow[] = [];
-
-    for (const row of rows) {
-      if (row.urgency === 'someday') continue;
-
-      const isCalEvent = row.source === 'calendar' || !!row.externalEventId;
-      if (isCalEvent && row.eventEndAt && row.eventEndAt < now) continue;
-
-      const anchor =
-        row.status === 'snoozed' && row.snoozedUntil
-          ? row.snoozedUntil
-          : (row.scheduledAt ??
-            row.eventStartAt ??
-            row.dueAt ??
-            row.periodStart ??
-            null);
-
-      const periodCoversToday =
-        row.periodStart &&
-        row.periodEnd &&
-        row.periodStart <= todayEnd &&
-        row.periodEnd >= todayStart;
-
-      const anchorBeforeToday = anchor && anchor < todayStart;
-      const isDueOverdue =
-        !isCalEvent && anchorBeforeToday && row.dueAt && row.dueAt < todayStart;
-
-      if (isDueOverdue) {
-        overdue.push(row);
-      } else if (periodCoversToday || (anchor && anchor <= todayEnd)) {
-        today.push(row);
-      } else if (anchor && anchor <= tomorrowEnd) {
-        tomorrow.push(row);
-      } else if (anchor && anchor <= thisWeekEnd) {
-        thisWeek.push(row);
-      } else if (anchor && anchor <= nextWeekEnd) {
-        nextWeek.push(row);
-      } else if (anchor) {
-        later.push(row);
-      }
-      // Undated non-someday items are excluded from the brief (they appear in inbox only)
-    }
-
-    const sortByAnchor = (a: ExtractRow, b: ExtractRow) => {
-      const getTime = (r: ExtractRow) =>
-        r.status === 'snoozed' && r.snoozedUntil
-          ? r.snoozedUntil.getTime()
-          : (r.scheduledAt?.getTime() ??
-            r.eventStartAt?.getTime() ??
-            r.dueAt?.getTime() ??
-            r.periodStart?.getTime() ??
-            Infinity);
-      return getTime(a) - getTime(b);
-    };
-    today.sort(sortByAnchor);
-    tomorrow.sort(sortByAnchor);
-    thisWeek.sort(sortByAnchor);
-    nextWeek.sort(sortByAnchor);
-    later.sort(sortByAnchor);
-
-    const batchKeys = ['shopping', 'errands', 'follow_ups'] as const;
-    const batch_counts = batchKeys.map((bk) => ({
-      batch_key: bk,
-      count: rows.filter((r) => r.batchKey === bk).length,
-    }));
-
-    return {
-      overdue,
-      today,
-      tomorrow,
-      this_week: thisWeek,
-      next_week: nextWeek,
-      later,
-      batch_counts,
-    };
-  }
-
   async getHistory(userId: string, extractId: string): Promise<LogRow[]> {
     return this.db
       .select()
@@ -1345,7 +1209,7 @@ export class ExtractsService {
       .limit(100);
   }
 
-  async listDone(
+  async listClosed(
     userId: string,
     limit: number,
     cursor: string | null,
@@ -1354,16 +1218,19 @@ export class ExtractsService {
     const lim = Math.min(Math.max(limit, 1), 50);
     const base = and(
       eq(extractsTable.userId, userId),
-      eq(extractsTable.status, 'done'),
-      isNotNull(extractsTable.doneAt),
+      eq(extractsTable.status, 'closed'),
+      isNotNull(extractsTable.closedAt),
     );
     const cur = cursor ? decodeCursor(cursor) : null;
     const where = cur
       ? and(
           base,
           or(
-            lt(extractsTable.doneAt, cur.d),
-            and(eq(extractsTable.doneAt, cur.d), lt(extractsTable.id, cur.id)),
+            lt(extractsTable.closedAt, cur.d),
+            and(
+              eq(extractsTable.closedAt, cur.d),
+              lt(extractsTable.id, cur.id),
+            ),
           ),
         )
       : base;
@@ -1372,7 +1239,7 @@ export class ExtractsService {
       .select()
       .from(extractsTable)
       .where(where)
-      .orderBy(desc(extractsTable.doneAt), desc(extractsTable.id))
+      .orderBy(desc(extractsTable.closedAt), desc(extractsTable.id))
       .limit(lim + 1);
 
     const hasMore = rows.length > lim;
@@ -1381,49 +1248,9 @@ export class ExtractsService {
     return {
       rows: page,
       next_cursor:
-        hasMore && last?.doneAt ? encodeCursor(last.doneAt, last.id) : null,
+        hasMore && last?.closedAt
+          ? encodeCursor(last.closedAt, last.id)
+          : null,
     };
-  }
-}
-
-function encodeCursor(d: Date, id: string): string {
-  return Buffer.from(
-    JSON.stringify({ d: d.toISOString(), i: id }),
-    'utf8',
-  ).toString('base64url');
-}
-
-function decodeCursor(raw: string): { d: Date; id: string } | null {
-  try {
-    const j = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
-      d?: string;
-      i?: string;
-    };
-    if (typeof j.d !== 'string' || typeof j.i !== 'string') return null;
-    const dt = new Date(j.d);
-    return Number.isNaN(dt.getTime()) ? null : { d: dt, id: j.i };
-  } catch {
-    return null;
-  }
-}
-
-function encodeOpenCursor(createdAt: Date, id: string): string {
-  return Buffer.from(
-    JSON.stringify({ ca: createdAt.toISOString(), i: id }),
-    'utf8',
-  ).toString('base64url');
-}
-
-function decodeOpenCursor(raw: string): { createdAt: Date; id: string } | null {
-  try {
-    const j = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
-      ca?: string;
-      i?: string;
-    };
-    if (typeof j.ca !== 'string' || typeof j.i !== 'string') return null;
-    const dt = new Date(j.ca);
-    return Number.isNaN(dt.getTime()) ? null : { createdAt: dt, id: j.i };
-  } catch {
-    return null;
   }
 }

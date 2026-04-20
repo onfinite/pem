@@ -1,5 +1,4 @@
 import PemText from "@/components/ui/PemText";
-import { pemAmber } from "@/constants/theme";
 import { space } from "@/constants/typography";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { onboardingStyles as s } from "./onboarding.styles";
@@ -16,7 +15,7 @@ export function OnboardingCompleteStep({ isFinishing, onFinish }: OnboardingComp
     <View style={s.centered}>
       <Image source={pemLogo} style={local.logo} />
       <PemText variant="display" style={s.heading}>
-        You're all set
+        {`You're all set`}
       </PemText>
       <PemText variant="bodyMuted" style={s.body}>
         Start by dumping whatever is on your mind.{"\n"}

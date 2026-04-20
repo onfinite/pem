@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../../../database/database.module';
 import { MAX_CHAT_MESSAGE_IMAGES } from '../../../chat/chat.constants';
+import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
 import { messagesTable, type MessageRow } from '../../../database/schemas';
 import { StorageService } from '../../../storage/storage.service';
 
@@ -73,11 +74,12 @@ export async function buildPhotoRecallMetadata(
       const key = keys[i].key;
       const signed = await storage.getSignedUrl(key, URL_TTL_SEC);
       if (!signed) continue;
+      const section = perKeyVision[i] ?? visionFull;
       items.push({
         message_id: m.id,
         image_key: key,
         signed_url: signed,
-        vision_summary: perKeyVision[i] ?? visionFull,
+        vision_summary: visionLineForHumans(section) || section.trim(),
       });
     }
   }

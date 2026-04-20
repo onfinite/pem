@@ -23,10 +23,12 @@ export const MESSAGE_KINDS = [
 ] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
-/** One stored image asset (R2 key + optional mime). v1: single item. */
+/** One stored image asset (R2 key + optional mime + optional content hash). */
 export type MessageImageAsset = {
   key: string;
   mime?: string | null;
+  /** Lowercase SHA-256 hex of raw object bytes; used for exact duplicate dedup. */
+  content_sha256?: string | null;
 };
 
 export const TRIAGE_CATEGORIES = [

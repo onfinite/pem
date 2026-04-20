@@ -5,11 +5,20 @@ import { generateText, Output } from 'ai';
 import { z } from 'zod';
 
 import { photoVisionSystemPrompt } from '../../../chat/prompts/photo-vision.prompt';
+import { encodePhotoVisionStored } from '../../../chat/utils/photo-vision-stored';
 
 const visionSchema = z.object({
   summary: z
     .string()
-    .describe('Searchable 2–5 sentence description of what is in the image'),
+    .describe(
+      'Retrieval-rich 2–6 sentences for search/RAG: scene, objects, brands, colors, layout, anything on paper — concrete and literal; no invented text.',
+    ),
+  reply_focus: z
+    .string()
+    .max(900)
+    .describe(
+      '1–3 sentences for Pem’s user-facing reply: note/receipt/whiteboard → meaning + key text/structure first, minimal scene fluff. Scenic photo → one tight scene line.',
+    ),
   visible_text: z
     .string()
     .describe('Verbatim visible text, or empty string if none'),
@@ -36,7 +45,12 @@ export class PhotoVisionService {
     if (!v.is_readable) {
       parts.push('Image was difficult to read clearly.');
     }
-    return parts.join('\n\n');
+    const detail = parts.join('\n\n');
+    let focus = v.reply_focus.trim();
+    if (!focus) {
+      focus = v.summary.trim().slice(0, 420);
+    }
+    return encodePhotoVisionStored(focus, detail);
   }
 
   async analyzeImage(

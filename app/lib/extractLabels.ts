@@ -5,13 +5,13 @@ export function toneChipLabel(tone: string | null | undefined): string | null {
   if (!tone) return null;
   if (tone === "confident") return null;
   if (tone === "tentative") return "Tentative";
-  if (tone === "someday") return "Someday";
+  if (tone === "holding") return "Holding";
   return null;
 }
 
 export function urgencyChipLabel(urgency: string | null | undefined): string | null {
   if (!urgency || urgency === "none") return null;
-  if (urgency === "someday") return "Someday";
+  if (urgency === "holding") return "Holding";
   return null;
 }
 
@@ -20,7 +20,6 @@ export function batchKeyLabel(batchKey: string | null | undefined): string | nul
   const map: Record<string, string> = {
     shopping: "Shopping",
     follow_ups: "Follow-ups",
-    errands: "Errands",
   };
   return map[batchKey] ?? null;
 }

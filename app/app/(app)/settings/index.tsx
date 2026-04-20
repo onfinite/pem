@@ -16,6 +16,7 @@ import {
   setNotificationTime,
   updateUserSummary,
 } from "@/lib/pemApi";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import {
   mergeSettingsScreenCache,
   readSettingsScreenCache,
@@ -37,7 +38,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -568,12 +568,18 @@ export default function SettingsScreen() {
           Legal
         </PemText>
         <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted, padding: 0, overflow: "hidden" }]}>
-          <Pressable style={styles.legalRow} onPress={() => Linking.openURL("https://heypem.com/terms")}>
+          <Pressable
+            style={styles.legalRow}
+            onPress={() => void openExternalUrl("https://heypem.com/terms")}
+          >
             <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>Terms of Service</PemText>
             <ChevronRight size={16} stroke={colors.textTertiary} />
           </Pressable>
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.borderMuted }} />
-          <Pressable style={styles.legalRow} onPress={() => Linking.openURL("https://heypem.com/privacy")}>
+          <Pressable
+            style={styles.legalRow}
+            onPress={() => void openExternalUrl("https://heypem.com/privacy")}
+          >
             <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>Privacy Policy</PemText>
             <ChevronRight size={16} stroke={colors.textTertiary} />
           </Pressable>

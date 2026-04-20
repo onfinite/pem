@@ -26,8 +26,8 @@ export const AGENT_RECENT_MESSAGES_LIMIT = 30;
 /** Done extracts included for context (days). */
 export const DONE_EXTRACTS_LOOKBACK_DAYS = 90;
 
-/** Dismissed extracts included so agent does not re-extract (days). */
-export const DISMISSED_EXTRACTS_LOOKBACK_DAYS = 30;
+/** Max completed-task rows injected into Ask-mode prompts (all-time or window). */
+export const ASK_DONE_EXTRACTS_CAP = 80;
 
 /** BullMQ job id prefix — one active job per message (no `:` — BullMQ forbids it). */
 export const CHAT_JOB_ID_PREFIX = 'chat-msg-';

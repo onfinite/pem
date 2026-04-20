@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 export const PHOTO_UPLOAD_ALLOWED_MIMES = [
   'image/jpeg',
@@ -22,4 +30,13 @@ export class PhotoUploadUrlDto {
   @Min(1)
   @Max(MAX_PHOTO_UPLOAD_BYTES)
   byte_size?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'SHA-256 (hex) of raw file bytes. When set, server may return is_duplicate with an existing image_key.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  content_sha256?: string;
 }

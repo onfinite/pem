@@ -11,7 +11,7 @@ globs: backend/**
 
 **Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA, **`notification_time`** for morning brief), **`messages`** (**`role`**: `user` | `pem`, **`kind`**: `text` | `voice` | `brief`, content, voice_url, transcript, **`triage_category`**, **`processing_status`**, polished_text, parent_message_id), **`message_embeddings`** (pgvector 1536-dim, FK to messages), **`extracts`** (tone, **urgency** `'someday'|'none'` — all timing via `period_start`/`period_end`/`due_at`, **`meta`** jsonb for rarely-queried fields, batch_key, status; **`message_id`** FK to messages; calendar event fields), **`calendar_connections`**, **`reported_issues`**, **`logs`** (unified audit: types include `chat`), **`memory_facts`**.
 
-**Chat pipeline (workflow-style agent):** User sends message → `POST /chat/messages` → save → enqueue BullMQ `chat` job → return immediately.
+**Chat pipeline (workflow-style agent):** User sends message → `POST /chat/messages` → save → enqueue BullMQ `chat` job → return immediately (no AI on the HTTP path; triage runs in the worker).
 
 `ChatOrchestratorService` processes:
 1. **Transcribe** (voice messages via Whisper)
@@ -32,7 +32,7 @@ globs: backend/**
 
 **Morning brief:** `BriefCronService` — hourly cron checks user timezones, generates brief at midnight (user local), saves as `kind: 'brief'` Pem message, delayed push at user's `notification_time`.
 
-**Calendar integration:** Google Calendar only (server-side OAuth + API via `googleapis`). Agent can emit `calendar_writes` to create events.
+**Calendar integration:** Google Calendar only (server-side OAuth + API via `googleapis`). Agent can emit `calendar_writes` to create events. OAuth `state` is **HMAC-signed** with env **`GOOGLE_OAUTH_STATE_SECRET`** (required whenever `GET /calendar/google/auth-url` is used); callback verifies signature + expiry before `upsertGoogle`.
 
 **AI models:** `gpt-4o-mini` for triage. `gpt-4o` for PemAgent, question answering, morning brief. `text-embedding-3-small` for pgvector embeddings. `whisper-1` for voice.
 
@@ -80,6 +80,6 @@ DELETE /calendar/connections/:id
 
 **Drizzle:** Change schema in TS → **`npm run db:generate`** → review → **`npm run db:migrate`**. Never hand-edit `drizzle/*.sql` or `drizzle/meta/`.
 
-**Security:** Validate input; **`ClerkAuthGuard`** + DB user id from JWT.
+**Security:** Validate input; **`ClerkAuthGuard`** + DB user id from JWT. **CORS:** `ALLOWED_ORIGINS` must be a non-empty comma-separated list — bootstrap throws if missing (no wildcard / reflective fallback). **Prod:** **`OPENAI_API_KEY`** must be set or config load fails (fail-fast).
 
 **Maintenance:** When **schema, routes, queues, or env** change, update **this file** in the same effort. See **`pem-project.mdc`**.

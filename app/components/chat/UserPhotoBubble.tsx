@@ -1,7 +1,7 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
 import { pemImpactLight } from "@/lib/pemHaptics";
-import type { ClientMessage } from "@/app/(app)/chat";
+import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 import { collectUserPhotoDisplayUris } from "@/utils/collectUserPhotoDisplayUris";
 import { UserPhotoPreviewModal } from "@/components/chat/UserPhotoPreviewModal";
 import { UserPhotoBubbleThumbnails } from "@/components/chat/UserPhotoBubbleThumbnails";

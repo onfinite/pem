@@ -3,6 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { google, type calendar_v3 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 
+import {
+  signGoogleOAuthState,
+  verifyGoogleOAuthState,
+} from './sign-google-oauth-state';
+
 export type GoogleEventAttendee = {
   email: string;
   name: string | null;
@@ -41,12 +46,16 @@ export class GoogleCalendarService {
 
   /** URL the frontend opens so the user can grant calendar access. */
   getAuthUrl(userId: string, appRedirect?: string): string {
+    const secret = this.config
+      .get<string>('googleCalendar.oauthStateSecret')
+      ?.trim();
+    if (!secret) {
+      throw new Error(
+        'GOOGLE_OAUTH_STATE_SECRET is required for calendar OAuth (signs the state parameter)',
+      );
+    }
     const client = this.getOAuthClient();
-    const statePayload = JSON.stringify({
-      userId,
-      appRedirect: appRedirect ?? '',
-    });
-    const state = Buffer.from(statePayload).toString('base64url');
+    const state = signGoogleOAuthState(secret, userId, appRedirect ?? '');
     return client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
@@ -59,18 +68,17 @@ export class GoogleCalendarService {
     });
   }
 
-  /** Decode the state parameter returned by Google in the callback. */
+  /** Decode and verify the state parameter returned by Google in the callback. */
   decodeState(state: string): { userId: string; appRedirect: string } {
-    try {
-      const json = Buffer.from(state, 'base64url').toString('utf8');
-      const parsed = JSON.parse(json) as {
-        userId: string;
-        appRedirect: string;
-      };
-      return { userId: parsed.userId, appRedirect: parsed.appRedirect ?? '' };
-    } catch {
-      return { userId: state, appRedirect: '' };
+    const secret = this.config
+      .get<string>('googleCalendar.oauthStateSecret')
+      ?.trim();
+    if (!secret) {
+      throw new Error(
+        'GOOGLE_OAUTH_STATE_SECRET is required to verify calendar OAuth state',
+      );
     }
+    return verifyGoogleOAuthState(secret, state);
   }
 
   /** Exchange the authorization code for tokens. */

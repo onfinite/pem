@@ -19,6 +19,8 @@ export type AppConfig = {
     clientSecret: string | undefined;
     redirectUri: string | undefined;
     webhookUrl: string | undefined;
+    /** HMAC secret for signing OAuth `state` (prevents userId tampering on callback). */
+    oauthStateSecret: string | undefined;
   };
 };
 
@@ -34,8 +36,13 @@ export default (): AppConfig => {
     throw new Error('DATABASE_URL or DATABASE_URL_SYNC is required');
   }
 
+  const env = process.env.ENV ?? process.env.NODE_ENV ?? 'dev';
+  if (env === 'prod' && !process.env.OPENAI_API_KEY?.trim()) {
+    throw new Error('OPENAI_API_KEY is required in production');
+  }
+
   return {
-    env: process.env.ENV ?? process.env.NODE_ENV ?? 'dev',
+    env,
     port: Number.parseInt(process.env.PORT ?? '8000', 10),
     database: { url: databaseUrl },
     clerk: {
@@ -55,6 +62,7 @@ export default (): AppConfig => {
       clientSecret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
       redirectUri: process.env.GOOGLE_CALENDAR_REDIRECT_URI,
       webhookUrl: process.env.GOOGLE_CALENDAR_WEBHOOK_URL,
+      oauthStateSecret: process.env.GOOGLE_OAUTH_STATE_SECRET,
     },
   };
 };

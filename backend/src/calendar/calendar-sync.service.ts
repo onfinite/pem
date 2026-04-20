@@ -246,12 +246,12 @@ export class CalendarSyncService {
     }
   }
 
-  /** Auto-done: mark past calendar extracts as done. */
+  /** Auto-close: mark past calendar extracts as closed. */
   async autoDonePastEvents(): Promise<number> {
     const now = new Date();
     const rows = await this.db
       .update(extractsTable)
-      .set({ status: 'done', doneAt: now, updatedAt: now })
+      .set({ status: 'closed', closedAt: now, updatedAt: now })
       .where(
         and(
           eq(extractsTable.source, 'calendar'),
@@ -263,16 +263,16 @@ export class CalendarSyncService {
       .returning({ id: extractsTable.id, userId: extractsTable.userId });
 
     if (rows.length > 0) {
-      this.log.log(`Auto-done ${rows.length} past calendar events`);
+      this.log.log(`Auto-closed ${rows.length} past calendar events`);
       for (const row of rows) {
         await this.db.insert(logsTable).values({
           userId: row.userId,
           type: 'calendar',
           extractId: row.id,
           isAgent: true,
-          pemNote: 'auto_done_past_calendar_event',
+          pemNote: 'auto_closed_past_calendar_event',
           payload: {
-            op: 'auto_done_calendar',
+            op: 'auto_closed_calendar',
             source: 'cron',
           },
         });
@@ -556,8 +556,8 @@ export class CalendarSyncService {
       const cancelled = await this.db
         .update(extractsTable)
         .set({
-          status: 'dismissed',
-          dismissedAt: new Date(),
+          status: 'closed',
+          closedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(
@@ -618,8 +618,8 @@ export class CalendarSyncService {
           isOrganizer: event.isOrganizer ?? false,
           rsvpStatus: event.selfRsvpStatus ?? null,
           pemNote: event.description?.trim() || null,
-          status: isPast ? 'done' : 'inbox',
-          doneAt: isPast ? now : null,
+          status: isPast ? 'closed' : 'inbox',
+          closedAt: isPast ? now : null,
           updatedAt: now,
         })
         .where(eq(extractsTable.id, existing.id));
@@ -645,7 +645,7 @@ export class CalendarSyncService {
           source: 'calendar',
           extractText: event.summary ?? 'Calendar event',
           originalText: event.summary ?? '',
-          status: isPast ? 'done' : 'inbox',
+          status: isPast ? 'closed' : 'inbox',
           tone: 'confident',
           urgency: 'none',
           periodStart: event.start,
@@ -659,7 +659,7 @@ export class CalendarSyncService {
           eventEndAt: event.end,
           eventLocation: event.location,
           pemNote: event.description?.trim() || null,
-          doneAt: isPast ? now : null,
+          closedAt: isPast ? now : null,
           updatedAt: now,
         })
         .returning({ id: extractsTable.id });

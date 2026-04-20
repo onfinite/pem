@@ -2,6 +2,10 @@ import { fontFamily, fontSize, space } from "@/constants/typography";
 import { StyleSheet } from "react-native";
 
 export const taskDrawerViewStyles = StyleSheet.create({
+  /** Modal content is outside app-root `GestureHandlerRootView`; swipe rows need this. */
+  modalGestureRoot: {
+    flex: 1,
+  },
   drawer: {
     flex: 1,
   },

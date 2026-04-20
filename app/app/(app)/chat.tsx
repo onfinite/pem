@@ -3,9 +3,12 @@ import ChatDateHeader from "@/components/chat/ChatDateHeader";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatSearchBar from "@/components/chat/ChatSearchBar";
 import ChatStatusBubble from "@/components/chat/ChatStatusBubble";
+import { ChatScreenEmptyState } from "@/components/chat/ChatScreenEmptyState";
+import { ChatScreenHeader } from "@/components/chat/ChatScreenHeader";
+import { ChatScreenSkeletonBubbles } from "@/components/chat/ChatScreenSkeletonBubbles";
 import TaskDrawer, { type TaskDrawerHandle } from "@/components/chat/TaskDrawer";
-import { fontFamily, fontSize, space } from "@/constants/typography";
-import { neutral, pemAmber } from "@/constants/theme";
+import { space } from "@/constants/typography";
+import { pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useMessageSearch } from "@/hooks/useMessageSearch";
@@ -13,14 +16,22 @@ import { pemImpactLight } from "@/lib/pemHaptics";
 import {
   getBrief,
   getChatMessages,
-  getTaskCounts,
   requestBrief,
   sendChatMessage,
   sendVoiceMessage,
-  type ApiMessage,
   type BriefResponse,
-  type TaskCounts,
 } from "@/lib/pemApi";
+import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
+import { buildHeaderSummary } from "@/lib/chatScreenHeaderSummary";
+import {
+  mergeServerMessagesWithClientLocals,
+  readChatMessagesCache,
+  writeChatMessagesCache,
+} from "@/lib/chatScreenMessageCache";
+import {
+  buildChatDisplayItems,
+  type ChatDisplayItem,
+} from "@/lib/buildChatDisplayItems";
 import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
 import {
   uploadChatImagesAndSend,
@@ -30,11 +41,6 @@ import {
   pendingImagesFromPickerAssets,
   type PendingChatImage,
 } from "@/lib/pendingChatImagesFromPicker";
-import type { PersistedPhotoRecallRow } from "@/lib/chatCachePersistedImages";
-import {
-  hydrateCachedImagePaths,
-  persistImagesForCacheMessages,
-} from "@/lib/chatCachePersistedImages";
 import {
   loadPendingImagesDraft,
   savePendingImagesDraft,
@@ -42,134 +48,22 @@ import {
 import { setChatScreenFocused } from "@/lib/chatPushPresence";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect } from "@react-navigation/native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@clerk/expo";
-import { CalendarDays, Search, Settings } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Animated,
   FlatList,
-  Image,
   Keyboard,
   Linking,
   Platform,
-  Pressable,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-import { radii } from "@/constants/typography";
-
-const pemLogo = require("@/assets/images/pem-icon-1024-transparent.png");
-
-const EXAMPLE_PROMPTS = [
-  "I need to cancel my gym membership",
-  "Schedule a dentist appointment this week",
-  "What's on my calendar tomorrow?",
-];
-
-function buildHeaderSummary(brief: BriefResponse | null): {
-  text: string;
-  isOverdue: boolean;
-} {
-  if (!brief) return { text: "", isOverdue: false };
-
-  const overdueCount = brief.overdue.length;
-  const todayCount = brief.today.length;
-
-  if (overdueCount > 0) {
-    return { text: `${overdueCount} overdue`, isOverdue: true };
-  }
-  if (todayCount > 0) {
-    return { text: `${todayCount} open`, isOverdue: false };
-  }
-  return { text: "All clear today", isOverdue: false };
-}
-
-const CACHE_KEY = "@pem/chat_messages_v1";
-/** Offline slice + disk image budget; older rows stay in RAM via pagination and load from the API when scrolled up. */
-const CACHE_LIMIT = 50;
-
-async function readCache(): Promise<ClientMessage[]> {
-  try {
-    const raw = await AsyncStorage.getItem(CACHE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as ClientMessage[];
-    return hydrateCachedImagePaths(parsed);
-  } catch {
-    return [];
-  }
-}
-
-async function writeCache(messages: ClientMessage[]) {
-  try {
-    // Only cache confirmed, non-optimistic messages
-    const cacheable = messages
-      .filter(
-        (m) =>
-          m._clientStatus === "sent" &&
-          !m._localUri &&
-          !m._pendingLocalUris?.length,
-      )
-      .slice(-CACHE_LIMIT);
-    const withDiskImages = await persistImagesForCacheMessages(cacheable);
-    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(withDiskImages));
-  } catch {
-    // Non-critical — ignore cache write errors
-  }
-}
-
-/** Keep on-device photo URIs when the server list is re-fetched (API rows omit them). */
-function mergeServerMessagesWithClientLocals(
-  prev: ClientMessage[],
-  fromServer: ClientMessage[],
-): ClientMessage[] {
-  const prevById = new Map(prev.map((m) => [m.id, m]));
-  return fromServer.map((msg) => {
-    const old = prevById.get(msg.id);
-    if (!old) return msg;
-    return {
-      ...msg,
-      ...(old._localUri ? { _localUri: old._localUri } : {}),
-      ...(old._pendingLocalUris?.length
-        ? { _pendingLocalUris: old._pendingLocalUris }
-        : {}),
-      ...(old._pendingImageUris?.length
-        ? { _pendingImageUris: old._pendingImageUris }
-        : {}),
-      ...(old._persistedImageUris?.length
-        ? { _persistedImageUris: old._persistedImageUris }
-        : {}),
-      ...(old._persistedPhotoRecall?.length
-        ? { _persistedPhotoRecall: old._persistedPhotoRecall }
-        : {}),
-    };
-  });
-}
-
-export type ClientMessage = ApiMessage & {
-  _clientStatus?: "sending" | "sent" | "failed";
-  _localUri?: string;
-  /** Optimistic multi-photo local URIs (same order as upload batch). */
-  _pendingLocalUris?: string[];
-  /** Voice + photos optimistic: image URIs (audio uses `_localUri`). */
-  _pendingImageUris?: string[];
-  /** documentDirectory file URIs saved with chat cache for offline reload. */
-  _persistedImageUris?: string[];
-  /** Local files for Pem "from your photos" recall (same message id as Pem bubble). */
-  _persistedPhotoRecall?: PersistedPhotoRecallRow[];
-};
-
-type DisplayItem =
-  | { type: "message"; message: ClientMessage }
-  | { type: "date"; date: string }
-  | { type: "typing" };
 
 export default function ChatScreen() {
   const { colors } = useTheme();
@@ -184,7 +78,6 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [taskCounts, setTaskCounts] = useState<TaskCounts | null>(null);
   const [briefData, setBriefData] = useState<BriefResponse | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   /** After first auth-aware draft load — avoids overwriting disk before hydrate. */
@@ -253,11 +146,7 @@ export default function ChatScreen() {
     clearTimeout(countsTimerRef.current);
     countsTimerRef.current = setTimeout(async () => {
       try {
-        const [c, b] = await Promise.all([
-          getTaskCounts(getTokenRef.current),
-          getBrief(getTokenRef.current),
-        ]);
-        setTaskCounts(c);
+        const b = await getBrief(getTokenRef.current);
         setBriefData(b);
       } catch { /* non-critical */ }
     }, 800);
@@ -283,7 +172,7 @@ export default function ChatScreen() {
         } else {
           setMessages((prev) => {
             const merged = mergeServerMessagesWithClientLocals(prev, withStatus);
-            void writeCache(merged);
+            void writeChatMessagesCache(merged);
             return merged;
           });
         }
@@ -300,7 +189,7 @@ export default function ChatScreen() {
   // Load once on mount: show cache instantly, then fetch fresh
   useEffect(() => {
     let mounted = true;
-    readCache().then((cached) => {
+    readChatMessagesCache().then((cached) => {
       if (!mounted) return;
       if (cached.length > 0) {
         setMessages(cached);
@@ -407,6 +296,7 @@ export default function ChatScreen() {
         image_keys: null,
         image_urls: null,
         vision_summary: null,
+        vision_summary_detail: null,
         triage_category: null,
         processing_status: null,
         polished_text: null,
@@ -699,35 +589,12 @@ export default function ChatScreen() {
     ]).start();
   }, [copyChipOpacity]);
 
-  const displayItems: DisplayItem[] = [];
-  const seenIds = new Set<string>();
-  const deduped: ClientMessage[] = [];
-  for (const msg of messages) {
-    if (seenIds.has(msg.id)) continue;
-    seenIds.add(msg.id);
-    deduped.push(msg);
-  }
+  const displayItems = useMemo(
+    () => buildChatDisplayItems(messages, statusMap),
+    [messages, statusMap],
+  );
 
-  const pemIsTyping = Object.keys(statusMap).length > 0;
-  if (pemIsTyping) {
-    displayItems.push({ type: "typing" });
-  }
-
-  for (let i = deduped.length - 1; i >= 0; i--) {
-    const msg = deduped[i];
-    displayItems.push({ type: "message", message: msg });
-
-    const msgDate = new Date(msg.created_at).toDateString();
-    const prevMsg = deduped[i - 1];
-    const prevDate = prevMsg
-      ? new Date(prevMsg.created_at).toDateString()
-      : null;
-    if (msgDate !== prevDate) {
-      displayItems.push({ type: "date", date: msg.created_at });
-    }
-  }
-
-  const renderItem = ({ item }: { item: DisplayItem }) => {
+  const renderItem = ({ item }: { item: ChatDisplayItem }) => {
     if (item.type === "date") return <ChatDateHeader date={item.date} />;
     if (item.type === "typing") return <ChatStatusBubble />;
     return (
@@ -741,7 +608,7 @@ export default function ChatScreen() {
     );
   };
 
-  const keyExtractor = (item: DisplayItem, index: number) => {
+  const keyExtractor = (item: ChatDisplayItem, index: number) => {
     if (item.type === "message") return item.message.id;
     if (item.type === "date") return `date-${item.date}`;
     return "typing-indicator";
@@ -893,66 +760,15 @@ export default function ChatScreen() {
   return (
     <>
       <View style={[styles.root, { backgroundColor: colors.pageBackground }]}>
-        <View
-          style={[
-            styles.header,
-            {
-              paddingTop: insets.top + space[5],
-              backgroundColor: colors.pageBackground,
-              borderBottomColor: colors.borderMuted,
-            },
-          ]}
-        >
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.copiedHeaderToast,
-              {
-                opacity: copyChipOpacity,
-                top: insets.top + space[2],
-              },
-            ]}
-          >
-            <View style={styles.copiedHeaderPill}>
-              <Text style={styles.copiedHeaderText}>Copied</Text>
-            </View>
-          </Animated.View>
-          <Pressable
-            onPress={handleOpenDrawer}
-            style={styles.headerLeft}
-            hitSlop={12}
-          >
-            <CalendarDays size={22} color={colors.textSecondary} />
-            {briefData && (briefData.overdue.length > 0 || briefData.today.length > 0) && (
-              <View style={[styles.headerDot, {
-                backgroundColor: briefData.overdue.length > 0 ? colors.error : pemAmber,
-              }]} />
-            )}
-          </Pressable>
-          <Pressable onPress={handleOpenDrawer} style={styles.headerCenter} hitSlop={8}>
-            {headerSummary.text && (
-              <Text
-                style={[styles.headerBadge, {
-                  color: headerSummary.isOverdue ? colors.error : colors.textSecondary,
-                }]}
-                numberOfLines={1}
-              >
-                {headerSummary.text}
-              </Text>
-            )}
-          </Pressable>
-          <View style={styles.headerRight}>
-            <Pressable onPress={search.handleOpen} hitSlop={12}>
-              <Search size={20} color={colors.textSecondary} />
-            </Pressable>
-            <Pressable
-              onPress={() => router.push("/settings")}
-              hitSlop={12}
-            >
-              <Settings size={22} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-        </View>
+        <ChatScreenHeader
+          briefData={briefData}
+          headerSummary={headerSummary}
+          copyChipOpacity={copyChipOpacity}
+          topInset={insets.top}
+          onOpenDrawer={handleOpenDrawer}
+          onSearchPress={search.handleOpen}
+          onSettingsPress={() => router.push("/settings")}
+        />
 
         {search.isOpen && (
           <ChatSearchBar
@@ -969,31 +785,10 @@ export default function ChatScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <SkeletonBubbles />
+            <ChatScreenSkeletonBubbles />
           </View>
         ) : messages.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Image source={pemLogo} style={styles.emptyLogo} />
-            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-              What's on your mind?
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              Try one of these to get started
-            </Text>
-            <View style={styles.emptyChips}>
-              {EXAMPLE_PROMPTS.map((prompt) => (
-                <Pressable
-                  key={prompt}
-                  onPress={() => handleSendText(prompt)}
-                  style={[styles.emptyChip, { borderColor: colors.borderMuted, backgroundColor: colors.cardBackground }]}
-                >
-                  <Text style={[styles.emptyChipText, { color: colors.textPrimary }]}>
-                    {prompt}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
+          <ChatScreenEmptyState onExamplePromptPress={handleSendText} />
         ) : (
           <FlatList
             ref={flatListRef}
@@ -1048,159 +843,13 @@ export default function ChatScreen() {
   );
 }
 
-function SkeletonBubbles() {
-  const { colors } = useTheme();
-  const opacity = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.7, duration: 800, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-      ]),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [opacity]);
-
-  const bg = colors.cardBackground;
-  return (
-    <View style={skeletonStyles.wrap}>
-      {[0.6, 0.45, 0.7, 0.5].map((w, i) => (
-        <Animated.View
-          key={i}
-          style={[
-            skeletonStyles.bubble,
-            {
-              backgroundColor: bg,
-              width: `${w * 100}%` as any,
-              alignSelf: i % 2 === 0 ? "flex-start" : "flex-end",
-              opacity,
-            },
-          ]}
-        />
-      ))}
-    </View>
-  );
-}
-
-const skeletonStyles = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    justifyContent: "flex-end",
-    paddingHorizontal: space[3],
-    paddingBottom: space[4],
-    gap: space[2],
-  },
-  bubble: {
-    height: 44,
-    borderRadius: 16,
-  },
-});
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
     position: "relative",
   },
-  header: {
-    position: "relative",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingBottom: space[2],
-    paddingHorizontal: space[4],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  copiedHeaderToast: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 20,
-  },
-  copiedHeaderPill: {
-    paddingHorizontal: space[4],
-    paddingVertical: space[2],
-    borderRadius: radii.full,
-    backgroundColor: pemAmber,
-  },
-  copiedHeaderText: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
-    color: neutral.white,
-  },
-  headerLeft: {
-    position: "absolute",
-    left: space[4],
-    bottom: space[2],
-  },
-  headerDot: {
-    position: "absolute",
-    top: -2,
-    right: -2,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: space[4],
-  },
-  headerBadge: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
-    textAlign: "center",
-  },
-  headerRight: {
-    position: "absolute",
-    right: space[4],
-    bottom: space[2],
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space[3],
-  },
   loadingContainer: {
     flex: 1,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: space[6],
-  },
-  emptyLogo: {
-    width: 56,
-    height: 56,
-    marginBottom: space[4],
-  },
-  emptyTitle: {
-    fontFamily: fontFamily.display.semibold,
-    fontSize: fontSize.xl,
-    marginBottom: space[2],
-    textAlign: "center",
-  },
-  emptySubtitle: {
-    fontFamily: fontFamily.sans.regular,
-    fontSize: fontSize.sm,
-    textAlign: "center",
-    marginBottom: space[5],
-  },
-  emptyChips: {
-    width: "100%",
-    maxWidth: 320,
-    gap: space[2],
-  },
-  emptyChip: {
-    paddingHorizontal: space[4],
-    paddingVertical: space[3],
-    borderRadius: radii.md,
-    borderWidth: 1,
-  },
-  emptyChipText: {
-    fontFamily: fontFamily.sans.medium,
-    fontSize: fontSize.sm,
-    textAlign: "center",
   },
   listContent: {
     paddingVertical: space[2],

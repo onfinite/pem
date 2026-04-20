@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { and, eq, isNotNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
 import { DRIZZLE } from '../../../database/database.constants';
@@ -17,16 +17,17 @@ export class RecurrenceCronService {
 
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
-  /** Daily at 2 AM: generate recurrence instances for the next 7 days. */
+  /** Daily at 2 AM: close missed open instances, then generate the next 7 days. */
   @Cron('0 2 * * *')
   async generateRecurrenceInstances(): Promise<void> {
+    await this.closeStaleRecurrenceChildren();
     const parents = await this.db
       .select()
       .from(extractsTable)
       .where(
         and(
           isNotNull(extractsTable.recurrenceRule),
-          ne(extractsTable.status, 'dismissed'),
+          ne(extractsTable.status, 'closed'),
         ),
       );
 
@@ -116,6 +117,66 @@ export class RecurrenceCronService {
     if (created > 0) {
       this.log.log(`Created ${created} recurrence instances`);
     }
+  }
+
+  /** Inbox child instances whose window ended before today (user tz) — no guilt stack. */
+  private async closeStaleRecurrenceChildren(): Promise<void> {
+    const candidates = await this.db
+      .select({
+        id: extractsTable.id,
+        userId: extractsTable.userId,
+        periodEnd: extractsTable.periodEnd,
+      })
+      .from(extractsTable)
+      .where(
+        and(
+          isNotNull(extractsTable.recurrenceParentId),
+          eq(extractsTable.status, 'inbox'),
+          isNotNull(extractsTable.periodEnd),
+        ),
+      );
+
+    if (candidates.length === 0) return;
+
+    const userIds = [...new Set(candidates.map((c) => c.userId))];
+    const tzRows = await this.db
+      .select({
+        id: usersTable.id,
+        timezone: usersTable.timezone,
+      })
+      .from(usersTable)
+      .where(inArray(usersTable.id, userIds));
+
+    const tzMap = new Map(
+      tzRows.map((r) => [
+        r.id,
+        r.timezone && r.timezone.length > 0 ? r.timezone : 'UTC',
+      ]),
+    );
+
+    const closedIds: string[] = [];
+    for (const c of candidates) {
+      const tz = tzMap.get(c.userId) ?? 'UTC';
+      const todayStart = DateTime.now().setZone(tz).startOf('day');
+      const end = DateTime.fromJSDate(c.periodEnd!, { zone: 'utc' }).setZone(
+        tz,
+      );
+      if (end < todayStart) closedIds.push(c.id);
+    }
+
+    if (closedIds.length === 0) return;
+
+    const now = new Date();
+    await this.db
+      .update(extractsTable)
+      .set({
+        status: 'closed',
+        closedAt: now,
+        updatedAt: now,
+      })
+      .where(inArray(extractsTable.id, closedIds));
+
+    this.log.log(`Closed ${closedIds.length} stale recurrence instances`);
   }
 
   private computeNextOccurrences(

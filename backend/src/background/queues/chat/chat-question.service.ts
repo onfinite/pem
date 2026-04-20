@@ -14,23 +14,26 @@ import {
 } from '../../../database/schemas';
 import { formatChatRecallStamp } from '../../../chat/utils/format-chat-recall-stamp';
 import {
+  asksAboutCompletedTasks,
   buildRecallEmbeddingAugmentation,
   detectQuestionTemporalRange,
+  wantsAllTimeCompletedTasks,
 } from './chat-question-temporal';
 import { EmbeddingsService } from '../../../embeddings/embeddings.service';
 import {
   ExtractsService,
   type BriefBuckets,
 } from '../../../extracts/extracts.service';
+import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
 import { ProfileService } from '../../../profile/profile.service';
 import { StorageService } from '../../../storage/storage.service';
 import { buildPhotoRecallMetadata } from './build-photo-recall-metadata';
 import { ChatPhotoRecallIntentService } from './chat-photo-recall-intent.service';
 import {
+  ASK_DONE_EXTRACTS_CAP,
   RAG_MIN_SIMILARITY,
   RAG_TOP_K,
   DONE_EXTRACTS_LOOKBACK_DAYS,
-  DISMISSED_EXTRACTS_LOOKBACK_DAYS,
 } from '../../../chat/chat.constants';
 
 const QUESTION_RECENT_MESSAGES_LIMIT = 15;
@@ -70,7 +73,7 @@ function lineForQuestionRecent(m: {
   if (m.role === 'pem') return m.content ?? '';
   if (m.kind === 'image') {
     const cap = (m.content ?? '').trim();
-    const vis = (m.visionSummary ?? '').trim();
+    const vis = visionLineForHumans(m.visionSummary ?? '');
     const visOut =
       vis.length > QUESTION_IMAGE_VISION_CHAR_LIMIT
         ? `${vis.slice(0, QUESTION_IMAGE_VISION_CHAR_LIMIT)}…`
@@ -90,7 +93,7 @@ function formatAllOpen(rows: ExtractRow[]): string {
     .map((r) => {
       const parts = [r.extractText];
       if (r.batchKey) parts.push(`[${r.batchKey}]`);
-      if (r.urgency === 'someday') parts.push('someday');
+      if (r.urgency === 'holding') parts.push('holding');
       if (r.tone) parts.push(`tone: ${r.tone}`);
       if (r.dueAt) parts.push(`due: ${r.dueAt.toISOString()}`);
       if (r.eventStartAt) parts.push(`event: ${r.eventStartAt.toISOString()}`);
@@ -131,13 +134,9 @@ export class ChatQuestionService {
 
     try {
       const now = new Date();
-      const doneSince = new Date(now);
-      doneSince.setUTCDate(
-        doneSince.getUTCDate() - DONE_EXTRACTS_LOOKBACK_DAYS,
-      );
-      const dismissedSince = new Date(now);
-      dismissedSince.setUTCDate(
-        dismissedSince.getUTCDate() - DISMISSED_EXTRACTS_LOOKBACK_DAYS,
+      const closedSince = new Date(now);
+      closedSince.setUTCDate(
+        closedSince.getUTCDate() - DONE_EXTRACTS_LOOKBACK_DAYS,
       );
 
       const [userTzRow] = await this.db
@@ -151,6 +150,25 @@ export class ChatQuestionService {
         now,
         userTimeZone,
       );
+      const asksDoneHints = asksAboutCompletedTasks(question);
+      const allTimeDone = wantsAllTimeCompletedTasks(question);
+      const scopeDoneToTemporal = Boolean(temporalRange && asksDoneHints);
+
+      const closedWhereParts = [
+        eq(extractsTable.userId, userId),
+        eq(extractsTable.status, 'closed'),
+        isNotNull(extractsTable.closedAt),
+      ];
+      if (temporalRange && asksDoneHints) {
+        closedWhereParts.push(
+          gte(extractsTable.closedAt, temporalRange.start),
+        );
+        closedWhereParts.push(
+          lte(extractsTable.closedAt, temporalRange.end),
+        );
+      } else if (!allTimeDone) {
+        closedWhereParts.push(gte(extractsTable.closedAt, closedSince));
+      }
       const ragVectorQuery = temporalRange
         ? `${question}\n\n${buildRecallEmbeddingAugmentation(temporalRange)}`
         : question;
@@ -169,8 +187,7 @@ export class ChatQuestionService {
         ragHits,
         memorySection,
         recentMsgs,
-        doneRows,
-        dismissedRows,
+        closedRows,
       ] = await Promise.all([
         this.db
           .select()
@@ -209,29 +226,9 @@ export class ChatQuestionService {
         this.db
           .select()
           .from(extractsTable)
-          .where(
-            and(
-              eq(extractsTable.userId, userId),
-              eq(extractsTable.status, 'done'),
-              isNotNull(extractsTable.doneAt),
-              gte(extractsTable.doneAt, doneSince),
-            ),
-          )
-          .orderBy(desc(extractsTable.doneAt))
-          .limit(80),
-        this.db
-          .select()
-          .from(extractsTable)
-          .where(
-            and(
-              eq(extractsTable.userId, userId),
-              eq(extractsTable.status, 'dismissed'),
-              isNotNull(extractsTable.dismissedAt),
-              gte(extractsTable.dismissedAt, dismissedSince),
-            ),
-          )
-          .orderBy(desc(extractsTable.dismissedAt))
-          .limit(40),
+          .where(and(...closedWhereParts))
+          .orderBy(desc(extractsTable.closedAt))
+          .limit(ASK_DONE_EXTRACTS_CAP),
       ]);
 
       const allOpenBlock = formatAllOpen(allOpen);
@@ -280,22 +277,29 @@ export class ChatQuestionService {
               .join('\n')}`
           : '';
 
-      const doneBlock =
-        doneRows.length > 0
-          ? `Recently completed:\n${doneRows
-              .map((r) => {
-                const when = r.doneAt
-                  ? formatChatRecallStamp(r.doneAt, now, userTimeZone)
-                  : '';
-                return `- ${r.extractText}${when ? ` (done ${when})` : ''}`;
-              })
-              .join('\n')}`
-          : '';
+      const closedTruncated =
+        closedRows.length >= ASK_DONE_EXTRACTS_CAP &&
+        (allTimeDone || scopeDoneToTemporal);
+      const closedCapNote = closedTruncated
+        ? `Note: At most ${ASK_DONE_EXTRACTS_CAP} closed tasks are listed${temporalRange && asksDoneHints ? ` for ${temporalRange.label}` : ''}; there may be more. Summarize what you see and offer to narrow the timeframe if useful.\n\n`
+        : '';
 
-      const dismissedBlock =
-        dismissedRows.length > 0
-          ? `Recently dismissed:\n${dismissedRows
-              .map((r) => `- ${r.extractText}`)
+      let closedHeading = 'Recently closed';
+      if (temporalRange && asksDoneHints) {
+        closedHeading = `Closed (${temporalRange.label})`;
+      } else if (allTimeDone) {
+        closedHeading = 'Most recently closed (sample)';
+      }
+
+      const closedBlock =
+        closedRows.length > 0
+          ? `${closedCapNote}${closedHeading}:\n${closedRows
+              .map((r) => {
+                const when = r.closedAt
+                  ? formatChatRecallStamp(r.closedAt, now, userTimeZone)
+                  : '';
+                return `- ${r.extractText}${when ? ` (closed ${when})` : ''}`;
+              })
               .join('\n')}`
           : '';
 
@@ -361,7 +365,7 @@ export class ChatQuestionService {
         system: `You are Pem — a friend who remembers everything.${nameNote} Answer using the context below (tasks, completed items, memory, past messages, conversation history). If the context doesn't contain the answer, be honest: "I don't have anything about that yet. Tell me and I'll remember." Never invent facts.
 
 Recall questions ("do you remember X?", "what were we talking about last month?", "when did we discuss Y?", "what did we talk about today?", "remind me about Z", "who is X?", "what did we discuss with Farin?", "trying to remember our meeting about X"):
-- Piece together everything from memory, user summary, past messages, and completed tasks.
+- Piece together everything from memory, user summary, past messages, and closed tasks.
 - Always anchor memory in time and substance: say when it was (using the bracket stamps in context) and what the conversation or moment was like — themes, tone, what they cared about — not only a flat fact. If a stamp is only "today" or "yesterday", say just that — do not add a calendar date (no "April 17, 2026" or "4/17/2026" for those).
 - For "when did we discuss X?", use message timestamps and RAG hits; give the clearest date phrasing you can. If the stamp includes a calendar date or "last Monday" with a date, you may echo that; never invent a numeric date when the stamp is only "today" or "yesterday".
 - For time-based recall ("last month", "yesterday", "this month", "recently", or a specific calendar day like "April 12 last year" / "4/5/2007"), look at message dates and task creation dates in the context. When a "Messages from {period}" section is present, use it as the primary source for that time range.
@@ -378,19 +382,19 @@ Briefs and overviews (today, tomorrow, next week, etc.): Give a short narrative 
 
 Prioritization ("what should I focus on", "top tasks", "most important"): Rank by (1) overdue, (2) aligned with goals/aspirations from memory, (3) due today, (4) quick wins.
 
-Completion checks ("did I already do X?"): Check the recently completed section first, then open tasks.
+Completion checks ("did I already do X?"): Check the recently closed section first, then open tasks.
 
 Ideas ("what ideas did I have?", "list my ideas", "any ideas about X?"): Look for memory facts with key "ideas" in the Memory section. List them clearly — these are speculative thoughts the user dumped previously. Present them as seeds, not tasks. If none found, say "You haven't shared any ideas with me yet."
 
 Chat photos and image context:
-- If the Question or context includes "[Photo: ...]", "Image description:", or "User photo caption:", that text IS Pem's read of what they sent. Answer from it like a friend who was shown the album.
+- If the Question or context includes "[Photo: ...]", "Image description:", "User photo caption:", or Pem's dual image blocks ("Image — for your reply" / "Image — full detail"), that text IS Pem's read of what they sent. Prefer the short focus line for conversational recall; use full detail when they ask for specifics. Answer like a friend who was shown the album.
 - The client may attach a small row of thumbnails when they asked for past photos OR when they are recalling a person, meeting, trip, or topic and stored images plausibly match — ranked to their wording, not random picks.
 - If thumbnails are present, describe those same scenes; do not contradict them.
 - FORBIDDEN (never write, even partially): "can't show photos", "can't pull up", "can't display images", "don't have access to your photos", "can't view attachments", "only see text", "I'm not able to show images".
 - If nothing in the context matches what they asked (e.g. no LA trip in the descriptions), say you don't find photos in chat about that topic yet — that is a data gap, not a capability gap.
 
 Tone: Be warm and natural. Talk like a friend who knows them well. No markdown, no bullet points. Use natural prose.`,
-        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${doneBlock ? `${doneBlock}\n\n` : ''}${dismissedBlock ? `${dismissedBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${temporalBlock ? `${temporalBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
+        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${closedBlock ? `${closedBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${temporalBlock ? `${temporalBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
       });
 
       const trimmed =

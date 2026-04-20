@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
-import { and, eq, gte, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, ne, sql } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
 import { DRIZZLE } from '../../../database/database.constants';
@@ -65,32 +65,47 @@ export class BriefCronService {
 
   @Cron('0 * * * *')
   async checkAndGenerateBriefs(): Promise<void> {
-    const users = await this.db.select().from(usersTable);
-    this.log.log(`Brief cron tick — ${users.length} users`);
+    const USERS_PAGE = 500;
+    let userCount = 0;
+    let lastUserId: string | null = null;
+    for (;;) {
+      const users = await this.db
+        .select()
+        .from(usersTable)
+        .where(lastUserId ? gt(usersTable.id, lastUserId) : sql`true`)
+        .orderBy(asc(usersTable.id))
+        .limit(USERS_PAGE);
+      if (!users.length) break;
+      userCount += users.length;
+      lastUserId = users[users.length - 1].id;
 
-    for (const user of users) {
-      if (!user.timezone) {
-        this.log.debug(`Skipping ${user.id} — no timezone`);
-        continue;
-      }
-      try {
-        const userNow = DateTime.now().setZone(user.timezone);
-        const notifTime = user.notificationTime ?? '07:00';
-        const [nh] = notifTime.split(':').map(Number);
-
-        this.log.debug(
-          `User ${user.id}: tz=${user.timezone}, notifTime=${notifTime}, userHour=${userNow.hour}`,
-        );
-
-        if (userNow.hour === nh) {
-          await this.ensureBriefForToday(user);
+      for (const user of users) {
+        if (!user.timezone) {
+          this.log.debug(`Skipping ${user.id} — no timezone`);
+          continue;
         }
-      } catch (e) {
-        this.log.error(
-          `Brief check failed for user ${user.id}: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        try {
+          const userNow = DateTime.now().setZone(user.timezone);
+          const notifTime = user.notificationTime ?? '07:00';
+          const [nh] = notifTime.split(':').map(Number);
+
+          this.log.debug(
+            `User ${user.id}: tz=${user.timezone}, notifTime=${notifTime}, userHour=${userNow.hour}`,
+          );
+
+          if (userNow.hour === nh) {
+            await this.ensureBriefForToday(user);
+          }
+        } catch (e) {
+          this.log.error(
+            `Brief check failed for user ${user.id}: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
       }
+
+      if (users.length < USERS_PAGE) break;
     }
+    this.log.log(`Brief cron tick — ${userCount} users scanned`);
   }
 
   async ensureBriefForToday(
@@ -160,8 +175,7 @@ export class BriefCronService {
       .where(
         and(
           eq(extractsTable.userId, userId),
-          ne(extractsTable.status, 'done'),
-          ne(extractsTable.status, 'dismissed'),
+          ne(extractsTable.status, 'closed'),
         ),
       );
 
@@ -259,14 +273,14 @@ export class BriefCronService {
       /* birthday fetch is best-effort */
     }
 
-    const doneYesterday = await this.db
+    const closedYesterday = await this.db
       .select()
       .from(extractsTable)
       .where(
         and(
           eq(extractsTable.userId, userId),
-          eq(extractsTable.status, 'done'),
-          gte(extractsTable.doneAt, sql`now() - interval '24 hours'`),
+          eq(extractsTable.status, 'closed'),
+          gte(extractsTable.closedAt, sql`now() - interval '24 hours'`),
         ),
       );
 
@@ -333,7 +347,7 @@ export class BriefCronService {
 
     const context = `Today's date: ${dateDisplay}
 
-Completed yesterday: ${doneYesterday.length > 0 ? doneYesterday.map((e) => e.extractText).join(', ') : 'nothing'}
+Closed yesterday: ${closedYesterday.length > 0 ? closedYesterday.map((e) => e.extractText).join(', ') : 'nothing'}
 
 Overdue: ${overdue.length > 0 ? overdue.map((e) => `${e.extractText} (due ${e.dueAt?.toLocaleDateString()})`).join(', ') : 'none'}
 

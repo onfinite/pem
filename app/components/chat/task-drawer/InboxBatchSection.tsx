@@ -4,6 +4,7 @@ import type { ApiExtract } from "@/lib/pemApi";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 import { BATCH_META } from "./constants";
+import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
 import { inboxStyles } from "./inboxTab.styles";
 import { InboxSectionItemsGroup } from "./InboxSectionItemsGroup";
 import { TaskItem } from "./TaskItem";
@@ -13,14 +14,14 @@ export function InboxBatchSection({
   items,
   isOpen,
   onToggle,
-  onDone,
+  onCloseTask,
   onEditTask,
 }: {
   batchKey: string;
   items: ApiExtract[];
   isOpen: boolean;
   onToggle: (key: string) => void;
-  onDone: (id: string) => void;
+  onCloseTask: (id: string) => void;
   onEditTask: (item: ApiExtract) => void;
 }) {
   const { colors } = useTheme();
@@ -31,7 +32,10 @@ export function InboxBatchSection({
   return (
     <View>
       <Pressable
-        onPress={() => onToggle(batchKey)}
+        onPress={() => {
+          dismissOpenTaskSwipe();
+          onToggle(batchKey);
+        }}
         style={[
           inboxStyles.sectionHeader,
           { borderBottomColor: colors.borderMuted },
@@ -57,7 +61,7 @@ export function InboxBatchSection({
             <TaskItem
               key={item.id}
               item={item}
-              onDone={onDone}
+              onCloseTask={onCloseTask}
               compact
               onEditPress={onEditTask}
             />

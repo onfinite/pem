@@ -10,16 +10,16 @@ import {
   MinLength,
 } from 'class-validator';
 
-const BATCH = ['shopping', 'follow_ups', 'errands'] as const;
-const STATUS = ['open', 'inbox', 'snoozed', 'dismissed', 'done'] as const;
-const TONE = ['confident', 'tentative', 'someday'] as const;
-const URGENCY = ['someday', 'none'] as const;
+const BATCH = ['shopping', 'follow_ups'] as const;
+const STATUS = ['open', 'inbox', 'snoozed', 'closed'] as const;
+const TONE = ['confident', 'tentative', 'holding'] as const;
+const URGENCY = ['holding', 'none'] as const;
 
 /** Query params for `GET /extracts/query` — composable filters. */
 export class ExtractsQueryDto {
   @IsOptional()
   @IsIn(STATUS)
-  /** `open` = all rows where status is not `done` (default). */
+  /** `open` = all rows where status is not `closed` (default). */
   status?: (typeof STATUS)[number];
 
   @IsOptional()

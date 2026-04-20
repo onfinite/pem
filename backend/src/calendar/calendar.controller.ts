@@ -111,7 +111,19 @@ export class CalendarController {
     @Query('state') state: string,
     @Res() res: Response,
   ) {
-    const { userId, appRedirect } = this.googleCal.decodeState(state);
+    let userId: string;
+    let appRedirect: string;
+    try {
+      ({ userId, appRedirect } = this.googleCal.decodeState(state));
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : 'Invalid or expired OAuth state';
+      return res
+        .status(400)
+        .send(
+          `<html><body style="background:#141410;color:#FAFAF8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;"><div><h2 style="color:#ff453a;">Link failed</h2><p>${msg}</p></div></body></html>`,
+        );
+    }
 
     try {
       const tokens = await this.googleCal.exchangeCode(code);

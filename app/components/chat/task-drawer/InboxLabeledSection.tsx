@@ -18,7 +18,7 @@ export function InboxLabeledSection({
   items,
   isOpen,
   onToggle,
-  onDone,
+  onCloseTask,
   onEditTask,
   compact = true,
 }: {
@@ -31,7 +31,7 @@ export function InboxLabeledSection({
   items: ApiExtract[];
   isOpen: boolean;
   onToggle: (key: string) => void;
-  onDone: (id: string) => void;
+  onCloseTask: (id: string) => void;
   onEditTask: (item: ApiExtract) => void;
   compact?: boolean;
 }) {
@@ -68,7 +68,7 @@ export function InboxLabeledSection({
             <TaskItem
               key={item.id}
               item={item}
-              onDone={onDone}
+              onCloseTask={onCloseTask}
               compact={compact}
               onEditPress={onEditTask}
             />

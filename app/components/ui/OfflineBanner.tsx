@@ -13,7 +13,7 @@ export function OfflineBanner() {
   return (
     <View style={[styles.banner, { paddingTop: insets.top + 4 }]}>
       <WifiOff size={14} color="#fff" />
-      <Text style={styles.text}>You're offline</Text>
+      <Text style={styles.text}>{`You're offline`}</Text>
     </View>
   );
 }

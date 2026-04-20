@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -23,6 +24,15 @@ class ImageKeyDto {
   @IsString()
   @MaxLength(64)
   mime?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'SHA-256 hex of raw bytes; enables exact duplicate dedup server-side.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  content_sha256?: string;
 }
 
 export class SendMessageDto {

@@ -78,15 +78,15 @@ export class ExtractsController {
     return this.extracts.getCalendarView(user.id, month);
   }
 
-  @Get('done')
-  @ApiOperation({ summary: 'Done list — newest first' })
-  async listDone(
+  @Get('closed')
+  @ApiOperation({ summary: 'Closed list — newest first' })
+  async listClosed(
     @CurrentUser() user: UserRow,
     @Query('limit') limitRaw?: string,
     @Query('cursor') cursor?: string,
   ) {
     const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 30;
-    const { rows, next_cursor } = await this.extracts.listDone(
+    const { rows, next_cursor } = await this.extracts.listClosed(
       user.id,
       Number.isNaN(limit) ? 30 : limit,
       cursor ?? null,
@@ -180,10 +180,10 @@ export class ExtractsController {
     return { item: this.extracts.serialize(row) };
   }
 
-  @Patch(':id/done')
+  @Patch(':id/close')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Mark extract done' })
-  async done(
+  @ApiOperation({ summary: 'Close extract — off your active list' })
+  async close(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Headers('x-pem-surface') pemSurface?: string,
@@ -195,14 +195,14 @@ export class ExtractsController {
       pemRequestId,
       requestId,
     );
-    const row = await this.extracts.markDone(user.id, id, audit);
+    const row = await this.extracts.markClosed(user.id, id, audit);
     return { item: this.extracts.serialize(row) };
   }
 
-  @Patch(':id/dismiss')
+  @Patch(':id/unclose')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Dismiss extract' })
-  async dismiss(
+  @ApiOperation({ summary: 'Undo close — bring back to inbox' })
+  async unclose(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Headers('x-pem-surface') pemSurface?: string,
@@ -214,45 +214,7 @@ export class ExtractsController {
       pemRequestId,
       requestId,
     );
-    const row = await this.extracts.dismiss(user.id, id, audit);
-    return { item: this.extracts.serialize(row) };
-  }
-
-  @Patch(':id/undone')
-  @HttpCode(200)
-  @ApiOperation({ summary: 'Undo done — back to inbox' })
-  async undone(
-    @CurrentUser() user: UserRow,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Headers('x-pem-surface') pemSurface?: string,
-    @Headers('x-pem-request-id') pemRequestId?: string,
-    @Headers('x-request-id') requestId?: string,
-  ) {
-    const audit = extractMutationAuditFromHeaders(
-      pemSurface,
-      pemRequestId,
-      requestId,
-    );
-    const row = await this.extracts.undone(user.id, id, audit);
-    return { item: this.extracts.serialize(row) };
-  }
-
-  @Patch(':id/undismiss')
-  @HttpCode(200)
-  @ApiOperation({ summary: 'Undo dismiss' })
-  async undismiss(
-    @CurrentUser() user: UserRow,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Headers('x-pem-surface') pemSurface?: string,
-    @Headers('x-pem-request-id') pemRequestId?: string,
-    @Headers('x-request-id') requestId?: string,
-  ) {
-    const audit = extractMutationAuditFromHeaders(
-      pemSurface,
-      pemRequestId,
-      requestId,
-    );
-    const row = await this.extracts.undismiss(user.id, id, audit);
+    const row = await this.extracts.unclose(user.id, id, audit);
     return { item: this.extracts.serialize(row) };
   }
 

@@ -229,8 +229,7 @@ matchers.push((q, nowZ) => {
   };
 });
 
-matchers.push((q, nowZ) => {
-  if (!/\blast\s+week\b/i.test(q)) return null;
+function lastWeekCalendarRange(nowZ: DateTime): QuestionTemporalRange {
   const thisMon = startOfIsoWeekMonday(nowZ);
   const start = thisMon.minus({ weeks: 1 });
   const end = thisMon.minus({ days: 1 }).endOf('day');
@@ -239,6 +238,24 @@ matchers.push((q, nowZ) => {
     end: end.toUTC().toJSDate(),
     label: `last week (${start.toFormat('M/d')}\u2013${end.toFormat('M/d/yyyy')})`,
   };
+}
+
+/** "What I accomplished last week" without recall phrasing like "show me". */
+matchers.unshift((q, nowZ) => {
+  if (!/\blast\s+week\b/i.test(q)) return null;
+  if (
+    !/\b(accomplish|accomplished|completed|finished|got\s+done|checked\s+off|things\s+i\s+did|tasks?\s+i\s+did|what\s+i\s+did|my\s+wins?\b)\b/i.test(
+      q,
+    )
+  ) {
+    return null;
+  }
+  return lastWeekCalendarRange(nowZ);
+});
+
+matchers.push((q, nowZ) => {
+  if (!/\blast\s+week\b/i.test(q)) return null;
+  return lastWeekCalendarRange(nowZ);
 });
 
 matchers.push((q, nowZ) => {
@@ -420,14 +437,7 @@ function recallVerbWithRelativeMatcher(
     };
   }
   if (/\blast\s+week\b/i.test(q)) {
-    const thisMon = startOfIsoWeekMonday(nowZ);
-    const start = thisMon.minus({ weeks: 1 });
-    const end = thisMon.minus({ days: 1 }).endOf('day');
-    return {
-      start: start.startOf('day').toUTC().toJSDate(),
-      end: end.toUTC().toJSDate(),
-      label: `last week (${start.toFormat('M/d')}\u2013${end.toFormat('M/d/yyyy')})`,
-    };
+    return lastWeekCalendarRange(nowZ);
   }
   return null;
 }
@@ -466,4 +476,19 @@ export function detectQuestionTemporalRange(
     if (hit) return hit;
   }
   return null;
+}
+
+/** User is asking about tasks they finished (not only chat recall). */
+export function asksAboutCompletedTasks(question: string): boolean {
+  return /\b(accomplish|accomplished|completed|finished|got\s+done|checked\s+off|marked\s+done|tasks?\s+i\s+(did|finished|completed)|things\s+i\s+(did|finished)|to-?dos?\s+i\s+did|crossed\s+off|what\s+i\s+got\s+done|what\s+did\s+i\s+(get\s+done|accomplish|complete|finish))\b/i.test(
+    question,
+  );
+}
+
+/** Broad "everything I've ever completed" style ask — still capped in the prompt. */
+export function wantsAllTimeCompletedTasks(question: string): boolean {
+  if (!asksAboutCompletedTasks(question)) return false;
+  return /\b(all|everything|ever|full|entire|whole\s+history|complete\s+list|lifetime)\b/i.test(
+    question,
+  );
 }

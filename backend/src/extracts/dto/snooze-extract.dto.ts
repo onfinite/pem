@@ -6,7 +6,7 @@ const UNTIL_VALUES = [
   'tomorrow',
   'weekend',
   'next_week',
-  'someday',
+  'holding',
 ] as const;
 
 export class SnoozeExtractDto {

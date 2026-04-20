@@ -1,7 +1,5 @@
-import { space } from "@/constants/typography";
 import { Dimensions } from "react-native";
 import {
-  Footprints,
   ShoppingCart,
   UserCheck,
   type LucideIcon,
@@ -28,6 +26,5 @@ export const CALENDAR_EVENT_DOT_COLOR = "#5b8def";
 
 export const BATCH_META: Record<string, { label: string; icon: LucideIcon }> = {
   shopping: { label: "Shopping", icon: ShoppingCart },
-  errands: { label: "Errands", icon: Footprints },
   follow_ups: { label: "Follow-ups", icon: UserCheck },
 };

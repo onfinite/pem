@@ -14,7 +14,7 @@ const DATE_PRESETS = [
   { key: "tomorrow", label: "Tomorrow" },
   { key: "weekend", label: "This Weekend" },
   { key: "next_week", label: "Next Week" },
-  { key: "someday", label: "Someday" },
+  { key: "holding", label: "Holding" },
   { key: "no_date", label: "No Date" },
 ];
 
@@ -48,7 +48,7 @@ function buildDatePatch(key: string, pickedDate?: Date): Record<string, unknown>
     return { ...clear, period_start: mon.toISOString(), period_end: fri.toISOString(), period_label: "next week" };
   }
   if (key === "pick" && pickedDate) return { ...clear, due_at: eod(pickedDate).toISOString() };
-  if (key === "someday") return { ...clear, urgency: "someday" };
+  if (key === "holding") return { ...clear, urgency: "holding" };
   return clear;
 }
 

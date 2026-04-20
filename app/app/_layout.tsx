@@ -13,6 +13,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
@@ -106,7 +107,9 @@ export default function RootLayout() {
       <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
         <ThemeProvider>
           <SafeAreaProvider initialMetrics={initialWindowMetrics ?? undefined}>
-            <RootLayoutInner />
+            <GestureHandlerRootView style={styles.gestureRoot}>
+              <RootLayoutInner />
+            </GestureHandlerRootView>
           </SafeAreaProvider>
         </ThemeProvider>
       </ClerkProvider>
@@ -115,6 +118,9 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   root: {
     flex: 1,
   },

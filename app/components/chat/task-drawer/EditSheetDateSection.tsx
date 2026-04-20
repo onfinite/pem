@@ -12,12 +12,12 @@ const DATE_CHIPS: ChipOption[] = [
   { key: "weekend", label: "This Weekend" },
   { key: "next_week", label: "Next Week" },
   { key: "pick", label: "Pick Date" },
-  { key: "someday", label: "Someday" },
+  { key: "holding", label: "Holding" },
   { key: "no_date", label: "No Date" },
 ];
 
 function activeDateKey(extract: ApiExtract): string {
-  if (extract.urgency === "someday") return "someday";
+  if (extract.urgency === "holding") return "holding";
   const dueAt = extract.due_at ? new Date(extract.due_at) : null;
   if (dueAt) {
     const now = new Date();
@@ -82,7 +82,7 @@ function buildPatch(
     return { ...clear, due_at: eod(pickedDate).toISOString() };
   }
 
-  if (key === "someday") return { ...clear, urgency: "someday" };
+  if (key === "holding") return { ...clear, urgency: "holding" };
 
   return clear;
 }

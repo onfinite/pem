@@ -6,8 +6,9 @@ import { space } from "@/constants/typography";
 import { useAuth } from "@clerk/expo";
 import { Redirect } from "expo-router";
 import { Shield } from "lucide-react-native";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useEffect, useRef } from "react";
-import { Animated, Image, Linking, StyleSheet, View } from "react-native";
+import { Animated, Image, StyleSheet, View } from "react-native";
 
 const pemLogo = require("@/assets/images/pem-icon-1024-transparent.png");
 
@@ -72,7 +73,7 @@ export default function WelcomeScreen() {
             <PemText
               variant="caption"
               style={styles.legalLink}
-              onPress={() => Linking.openURL(TERMS_URL)}
+              onPress={() => void openExternalUrl(TERMS_URL)}
             >
               Terms of Service
             </PemText>
@@ -80,7 +81,7 @@ export default function WelcomeScreen() {
             <PemText
               variant="caption"
               style={styles.legalLink}
-              onPress={() => Linking.openURL(PRIVACY_URL)}
+              onPress={() => void openExternalUrl(PRIVACY_URL)}
             >
               Privacy Policy
             </PemText>

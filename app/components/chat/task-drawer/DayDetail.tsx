@@ -11,13 +11,13 @@ export function DayDetail({
   dateKey,
   items,
   overdueItems,
-  onDone,
+  onCloseTask,
   onEditTask,
 }: {
   dateKey: string;
   items: ApiExtract[];
   overdueItems: ApiExtract[];
-  onDone: (id: string) => void;
+  onCloseTask: (id: string) => void;
   onEditTask: (item: ApiExtract) => void;
 }) {
   const { colors } = useTheme();
@@ -79,7 +79,7 @@ export function DayDetail({
             <TaskItem
               key={item.id}
               item={item}
-              onDone={onDone}
+              onCloseTask={onCloseTask}
               onEditPress={onEditTask}
             />
           ))}
@@ -101,7 +101,7 @@ export function DayDetail({
         <TaskItem
           key={item.id}
           item={item}
-          onDone={onDone}
+          onCloseTask={onCloseTask}
           onEditPress={onEditTask}
         />
       ))}

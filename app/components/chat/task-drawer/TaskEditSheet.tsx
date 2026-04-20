@@ -2,6 +2,7 @@ import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, radii, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
+import { isRecurringExtract } from "@/utils/isRecurringExtract";
 import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
@@ -9,13 +10,15 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Circle,
+  CircleX,
   Clock,
   List as ListIcon,
+  Repeat,
   X,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Dimensions,
   Modal,
   Platform,
@@ -38,7 +41,7 @@ const DATE_PRESETS = [
   { key: "tomorrow", label: "Tomorrow" },
   { key: "weekend", label: "Weekend" },
   { key: "next_week", label: "Next Week" },
-  { key: "someday", label: "Someday" },
+  { key: "holding", label: "Holding" },
   { key: "no_date", label: "No Date" },
 ];
 
@@ -66,7 +69,7 @@ function buildDatePatch(key: string, pickedDate?: Date): Record<string, unknown>
     return { ...clear, period_start: mon.toISOString(), period_end: fri.toISOString(), period_label: "next week" };
   }
   if (key === "pick" && pickedDate) return { ...clear, due_at: eod(pickedDate).toISOString() };
-  if (key === "someday") return { ...clear, urgency: "someday" };
+  if (key === "holding") return { ...clear, urgency: "holding" };
   return clear;
 }
 
@@ -86,7 +89,7 @@ function formatDateSummary(extract: ApiExtract, datePatch: Record<string, unknow
   const eventStart = extract.event_start_at;
   const scheduledAt = extract.scheduled_at;
 
-  if (urgency === "someday") return "Someday";
+  if (urgency === "holding") return "Holding";
   if (dueAt) return new Date(dueAt as string).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   if (eventStart) return new Date(eventStart).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   if (scheduledAt) return new Date(scheduledAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -96,7 +99,7 @@ function formatDateSummary(extract: ApiExtract, datePatch: Record<string, unknow
 }
 
 export function TaskEditSheet({
-  visible, extract, lists, onClose, onSave, onDone, onDismiss,
+  visible, extract, lists, onClose, onSave, onCloseTask,
 }: TaskEditSheetProps) {
   const { colors, resolved } = useTheme();
   const insets = useSafeAreaInsets();
@@ -137,17 +140,9 @@ export function TaskEditSheet({
     onClose();
   }, [extract, patch, text, note, onSave, onClose]);
 
-  const handleDone = useCallback(() => {
-    if (extract) onDone(extract.id);
-  }, [extract, onDone]);
-
-  const handleDismiss = useCallback(() => {
-    if (!extract) return;
-    Alert.alert("Dismiss", "Are you sure you want to dismiss this?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Dismiss", style: "destructive", onPress: () => onDismiss(extract.id) },
-    ]);
-  }, [extract, onDismiss]);
+  const handleCloseTask = useCallback(() => {
+    if (extract) onCloseTask(extract.id);
+  }, [extract, onCloseTask]);
 
   const handlePreset = useCallback((key: string) => {
     mergePatch(buildDatePatch(key));
@@ -201,8 +196,6 @@ export function TaskEditSheet({
   const isSyncedFromCalendar = extract.source === "calendar" && !!extract.external_event_id;
   const isInvite = isSyncedFromCalendar && !extract.is_organizer;
   const isCalendarEvent = extract.source === "calendar" || !!extract.external_event_id;
-  const canComplete = !isCalendarEvent;
-  const isDone = extract.status === "done";
   const dateSummary = formatDateSummary(extract, patch);
   const ListChevron = listOpen ? ChevronUp : ChevronDown;
   const DateChevron = dateOpen ? ChevronUp : ChevronDown;
@@ -238,14 +231,15 @@ export function TaskEditSheet({
                 <View style={local.calendarIcon}>
                   <CalendarDays size={20} color={CALENDAR_EVENT_DOT_COLOR} />
                 </View>
-              ) : canComplete ? (
-                <Pressable
-                  onPress={handleDone}
-                  style={[local.circle, { borderColor: isDone ? pemAmber : colors.textTertiary, backgroundColor: isDone ? pemAmber : "transparent" }]}
-                >
-                  {isDone && <Text style={local.checkmark}>✓</Text>}
-                </Pressable>
-              ) : null}
+              ) : (
+                <View style={local.calendarIcon}>
+                  {isRecurringExtract(extract) ? (
+                    <Repeat size={20} color={pemAmber} strokeWidth={2.25} />
+                  ) : (
+                    <Circle size={20} color={pemAmber} strokeWidth={2.25} />
+                  )}
+                </View>
+              )}
               <TextInput
                 style={[local.titleInput, { color: colors.textPrimary }]}
                 value={text}
@@ -383,8 +377,17 @@ export function TaskEditSheet({
             <Pressable onPress={handleSave} style={[local.saveBtn, { backgroundColor: pemAmber }]}>
               <Text style={local.saveBtnText}>Save</Text>
             </Pressable>
-            <Pressable onPress={handleDismiss} hitSlop={8}>
-              <Text style={[local.dismissText, { color: colors.textTertiary }]}>Dismiss</Text>
+            <Pressable
+              onPress={handleCloseTask}
+              hitSlop={8}
+              style={local.dismissBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Close task"
+            >
+              <CircleX size={20} color={colors.textTertiary} strokeWidth={2} />
+              <Text style={[local.dismissText, { color: colors.textTertiary }]}>
+                Close
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -414,15 +417,6 @@ const local = StyleSheet.create({
     gap: space[3],
     paddingTop: space[2],
   },
-  circle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 4,
-  },
   calendarIcon: {
     width: 24,
     height: 24,
@@ -430,7 +424,6 @@ const local = StyleSheet.create({
     alignItems: "center",
     marginTop: 4,
   },
-  checkmark: { color: "#fff", fontSize: 14, fontWeight: "700" },
   titleInput: {
     flex: 1,
     fontFamily: fontFamily.sans.semibold,
@@ -528,6 +521,13 @@ const local = StyleSheet.create({
     fontFamily: fontFamily.sans.semibold,
     fontSize: fontSize.base,
     color: "#fff",
+  },
+  dismissBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+    paddingVertical: space[2],
+    paddingLeft: space[2],
   },
   dismissText: {
     fontFamily: fontFamily.sans.medium,

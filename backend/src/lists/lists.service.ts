@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, max, ne, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
@@ -12,7 +12,6 @@ import { extractsTable, listsTable, type ListRow } from '../database/schemas';
 
 const DEFAULT_LISTS: { name: string; icon: string }[] = [
   { name: 'Shopping', icon: 'cart' },
-  { name: 'Errands', icon: 'run' },
 ];
 
 @Injectable()
@@ -24,7 +23,11 @@ export class ListsService {
       .select()
       .from(listsTable)
       .where(eq(listsTable.userId, userId))
-      .orderBy(listsTable.sortOrder);
+      .orderBy(
+        desc(listsTable.isDefault),
+        asc(listsTable.sortOrder),
+        asc(listsTable.createdAt),
+      );
   }
 
   async findByUserWithCounts(
@@ -40,13 +43,16 @@ export class ListsService {
         extractsTable,
         and(
           eq(extractsTable.listId, listsTable.id),
-          ne(extractsTable.status, 'done'),
-          ne(extractsTable.status, 'dismissed'),
+          ne(extractsTable.status, 'closed'),
         ),
       )
       .where(eq(listsTable.userId, userId))
       .groupBy(listsTable.id)
-      .orderBy(listsTable.sortOrder);
+      .orderBy(
+        desc(listsTable.isDefault),
+        asc(listsTable.sortOrder),
+        asc(listsTable.createdAt),
+      );
 
     return rows.map((r) => ({ ...r.list, openCount: r.openCount }));
   }
@@ -64,6 +70,12 @@ export class ListsService {
     userId: string,
     data: { name: string; color?: string; icon?: string },
   ): Promise<ListRow> {
+    const [agg] = await this.db
+      .select({ mx: max(listsTable.sortOrder) })
+      .from(listsTable)
+      .where(eq(listsTable.userId, userId));
+    const nextSort = (agg?.mx ?? -1) + 1;
+
     const [row] = await this.db
       .insert(listsTable)
       .values({
@@ -71,6 +83,7 @@ export class ListsService {
         name: data.name,
         color: data.color ?? null,
         icon: data.icon ?? null,
+        sortOrder: nextSort,
       })
       .returning();
     return row;
@@ -115,6 +128,16 @@ export class ListsService {
   }
 
   async seedDefaults(userId: string): Promise<void> {
+    await this.db
+      .update(listsTable)
+      .set({ isDefault: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(listsTable.userId, userId),
+          sql`lower(${listsTable.name}) = 'errands'`,
+        ),
+      );
+
     const existing = await this.db
       .select({ id: listsTable.id, name: listsTable.name })
       .from(listsTable)

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pem — Your mind, organized.</title>
-  <meta name="description" content="Chat with Pem like a trusted friend. Dump your thoughts — voice or text. Pem extracts tasks, manages your calendar, and keeps your life organized. iOS coming soon.">
+  <title>Pem — Your AI brain</title>
+  <meta name="description" content="Your AI brain for voice, photos, and text. Pem remembers what you share, pulls out what needs to happen, syncs your calendar, and surfaces what matters today. iOS coming soon.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;0,9..144,400;1,9..144,200;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -104,7 +104,6 @@
       font-size: 13px;
       color: var(--muted);
     }
-
     /* ─── Email form ─── */
     .ef { display: none; max-width: 400px; }
     .ef.open { display: block; }
@@ -398,73 +397,59 @@
       font-family: -apple-system, sans-serif;
     }
 
-    /* ─── Steps section ─── */
-    .steps-section {
-      padding: 100px 40px;
+    /* ─── Capabilities (Pem does all this) ─── */
+    .cap-section {
+      padding: 80px 40px 40px;
       text-align: center;
     }
-    .steps-section h2 {
+    .cap-section h2 {
       font-family: 'Fraunces', serif;
       font-weight: 200;
-      font-size: clamp(28px, 3.5vw, 42px);
-      margin-bottom: 12px;
+      font-size: clamp(26px, 3.2vw, 40px);
+      margin-bottom: 10px;
     }
-    .steps-section h2 em { font-style: italic; color: var(--amber); }
-    .steps-subtitle {
+    .cap-section h2 em { font-style: italic; color: var(--amber); }
+    .cap-intro {
       font-size: 16px;
       color: var(--text2);
-      margin-bottom: 64px;
-      max-width: 520px;
-      margin-left: auto;
-      margin-right: auto;
+      max-width: 560px;
+      margin: 0 auto 40px;
+      line-height: 1.6;
     }
-    .steps-grid {
+    .cap-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 32px;
-      max-width: 960px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px 28px;
+      max-width: 720px;
       margin: 0 auto;
+      text-align: left;
     }
-    .step-card {
+    .cap-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.1fr);
+      gap: 12px 10px;
+      align-items: baseline;
+      padding: 16px 18px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 36px 28px;
-      text-align: center;
-      transition: transform .2s, box-shadow .2s;
+      border-radius: 14px;
     }
-    .step-card:hover { transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,.08); }
-    .step-icon {
-      width: 56px;
-      height: 56px;
-      border-radius: 16px;
-      background: var(--amber-bg);
-      border: 1px solid var(--amber-b);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 20px;
-      color: var(--amber);
-    }
-    .step-icon svg { width: 26px; height: 26px; }
-    .step-num {
-      font-size: 11px;
+    .cap-item strong {
+      font-family: 'DM Sans', sans-serif;
       font-weight: 600;
-      color: var(--amber);
-      text-transform: uppercase;
-      letter-spacing: .15em;
-      margin-bottom: 10px;
-    }
-    .step-card h3 {
-      font-family: 'Fraunces', serif;
-      font-weight: 300;
-      font-size: 22px;
-      margin-bottom: 10px;
-    }
-    .step-card p {
       font-size: 14px;
+      color: var(--text);
+    }
+    .cap-item span.mid {
+      color: var(--amber);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .cap-item p {
+      font-size: 13px;
       color: var(--text2);
-      line-height: 1.65;
+      line-height: 1.45;
+      margin: 0;
     }
 
     /* ─── Features ─── */
@@ -540,7 +525,6 @@
 
     /* ─── Responsive ─── */
     @media (max-width: 900px) {
-      nav { padding: 14px 20px; }
       .hero {
         flex-direction: column-reverse;
         padding: 100px 24px 60px;
@@ -551,8 +535,8 @@
       .hero-content .lead { margin-left: auto; margin-right: auto; }
       .phone-wrap { animation: none; }
       .iphone { width: 240px; height: 520px; }
-      .steps-section { padding: 60px 24px; }
-      .steps-grid { grid-template-columns: 1fr; gap: 20px; max-width: 400px; }
+      .cap-section { padding: 56px 24px 32px; }
+      .cap-grid { grid-template-columns: 1fr; max-width: 400px; }
       .features { padding: 40px 24px 60px; }
       .features-grid { grid-template-columns: 1fr; max-width: 400px; }
       .bottom-cta { padding: 60px 24px; }
@@ -571,10 +555,9 @@
 <section class="hero">
   <div class="hero-content">
     <div class="kicker">iOS · Coming soon</div>
-    <h1>Chat with your<br>most reliable <em>friend.</em></h1>
+    <h1>Pem is your <em>AI brain.</em></h1>
     <p class="lead">
-      Dump whatever is on your mind — voice or text, messy, no structure needed.
-      Pem extracts tasks, manages your calendar, and sends you a morning brief. Like texting a friend who actually gets things done.
+      Pem is your AI brain. Talk to it, photo it, text it — voice memo at 2am, snap a receipt, type a thought mid-meeting. It remembers everything you give it, extracts what needs to happen, manages your calendar, and tells you what matters today. You never forget anything again. You never manage a task list again. You just live — and Pem keeps up.
     </p>
     <button class="hero-cta" id="hero-btn" onclick="openForm()">
       Get early access
@@ -664,35 +647,21 @@
   </div>
 </section>
 
-<!-- Steps -->
-<section class="steps-section">
-  <h2>How <em>Pem</em> works</h2>
-  <p class="steps-subtitle">Three steps. Zero effort. Your mind stays clear.</p>
-  <div class="steps-grid">
-    <div class="step-card">
-      <div class="step-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4z"/><path d="M19 10a7 7 0 01-14 0"/><path d="M12 19v4m-4 0h8"/></svg>
-      </div>
-      <div class="step-num">Step 1</div>
-      <h3>You dump</h3>
-      <p>Voice or text, anytime. No structure needed. Just say what's on your mind — errands, ideas, meetings, worries. Everything.</p>
-    </div>
-    <div class="step-card">
-      <div class="step-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-      </div>
-      <div class="step-num">Step 2</div>
-      <h3>Pem organizes</h3>
-      <p>Tasks extracted, calendar updated, shopping lists built, follow-ups drafted. Pem understands context and gets it right.</p>
-    </div>
-    <div class="step-card">
-      <div class="step-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-      </div>
-      <div class="step-num">Step 3</div>
-      <h3>Morning brief</h3>
-      <p>Every morning, Pem texts you a summary. Today's focus, overdue tasks, calendar. Like getting a brief from your EA at 7am.</p>
-    </div>
+<!-- Pem does all this -->
+<section class="cap-section">
+  <h2>Pem does <em>all this</em></h2>
+  <p class="cap-intro">Save and recall. Organize your life. Calendar and timeline stay in sync — so you live, and Pem keeps up.</p>
+  <div class="cap-grid">
+    <div class="cap-item"><strong>Talk to it</strong><span class="mid">→</span><p>Hearing and processing</p></div>
+    <div class="cap-item"><strong>Photo it</strong><span class="mid">→</span><p>Seeing and filing</p></div>
+    <div class="cap-item"><strong>Text it</strong><span class="mid">→</span><p>Reading and understanding</p></div>
+    <div class="cap-item"><strong>Remembers</strong><span class="mid">→</span><p>Memory</p></div>
+    <div class="cap-item"><strong>Extracts tasks</strong><span class="mid">→</span><p>Deciding what matters</p></div>
+    <div class="cap-item"><strong>Calendar</strong><span class="mid">→</span><p>Sense of time</p></div>
+    <div class="cap-item"><strong>Morning brief</strong><span class="mid">→</span><p>Waking you up informed</p></div>
+    <div class="cap-item"><strong>Timeline</strong><span class="mid">→</span><p>Knowing what's coming</p></div>
+    <div class="cap-item"><strong>Pattern detection</strong><span class="mid">→</span><p>Learning about you</p></div>
+    <div class="cap-item"><strong>Weekly reflection</strong><span class="mid">→</span><p>Self-awareness</p></div>
   </div>
 </section>
 
@@ -705,7 +674,7 @@
       </div>
       <div>
         <h4>Calendar sync</h4>
-        <p>Google and Apple. Pem reads your schedule and writes events — so you never double-book.</p>
+        <p>Connect your calendar. Pem reads your schedule, writes events, and keeps your sense of time aligned with what you actually said.</p>
       </div>
     </div>
     <div class="feat">
@@ -714,7 +683,7 @@
       </div>
       <div>
         <h4>Ask anything</h4>
-        <p>"What did I say about Denver?" — Pem remembers everything and answers instantly.</p>
+        <p>Recall what you saved, what you meant, or what's on your plate — answers grounded in your history, tasks, and calendar.</p>
       </div>
     </div>
     <div class="feat">
@@ -722,8 +691,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 1a4 4 0 014 4v6a4 4 0 01-8 0V5a4 4 0 014-4z"/><path d="M19 10a7 7 0 01-14 0"/></svg>
       </div>
       <div>
-        <h4>Voice first</h4>
-        <p>Tap and talk. Pem transcribes, understands, and acts. No typing required.</p>
+        <h4>Voice, photo, text</h4>
+        <p>Tap and talk, snap a receipt, or type a thought. Pem hears, sees, reads — and files it in the right place.</p>
       </div>
     </div>
     <div class="feat">
@@ -731,8 +700,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
       </div>
       <div>
-        <h4>Smart tasks</h4>
-        <p>Shopping lists, errands, follow-ups — batched and prioritized. Swipe to done when handled.</p>
+        <h4>Timeline &amp; inbox</h4>
+        <p>What matters today, what is overdue, what is next — surfaced for you. Swipe to close when you are done; Pem does not make you maintain a chore list.</p>
       </div>
     </div>
   </div>
@@ -740,8 +709,8 @@
 
 <!-- Bottom CTA -->
 <section class="bottom-cta">
-  <h2>Your mind, <em>organized.</em></h2>
-  <p class="lead">Join the waitlist. One email when Pem is ready.</p>
+  <h2>Your AI brain, <em>on call.</em></h2>
+  <p class="lead">Join the waitlist. One email when Pem is ready — then talk, photo, and text your way through life.</p>
   <div style="max-width:400px;margin:0 auto;">
     <div class="ef open" id="ef2">
       <div class="ef-row">

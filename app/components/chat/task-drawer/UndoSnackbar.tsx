@@ -4,14 +4,13 @@ import { Check } from "lucide-react-native";
 import { useCallback, useEffect, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
-const SNACKBAR_DURATION_MS = 5000;
+const SNACKBAR_DURATION_MS = 4500;
 const SLIDE_IN_MS = 200;
 const SLIDE_OUT_MS = 150;
 
 export type UndoItem = {
   id: string;
   text: string;
-  action: "done" | "dismissed";
 };
 
 export function UndoSnackbar({
@@ -98,7 +97,7 @@ export function UndoSnackbar({
 
   if (!item) return null;
 
-  const label = item.action === "done" ? "Marked done" : "Dismissed";
+  const label = "Closed";
 
   return (
     <Animated.View

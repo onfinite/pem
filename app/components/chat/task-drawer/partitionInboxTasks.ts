@@ -1,4 +1,5 @@
 import type { ApiExtract } from "@/lib/pemApi";
+import { isRecurringExtract } from "@/utils/isRecurringExtract";
 import { isCalendarBackedExtract } from "./calendarExtract";
 
 function capitalize(s: string): string {
@@ -53,6 +54,7 @@ function sortByDate(items: ApiExtract[]): ApiExtract[] {
 }
 
 function isOverdue(t: ApiExtract, nowMs: number, todayStartMs: number): boolean {
+  if (isRecurringExtract(t)) return false;
   // Guard: if the task's main anchor is in the future, never mark overdue
   const anchor = t.event_start_at ?? t.scheduled_at ?? t.due_at ?? t.period_start;
   if (anchor) {
@@ -79,7 +81,7 @@ export type DynamicSection = {
 
 export type InboxPartition = {
   sections: DynamicSection[];
-  someday: ApiExtract[];
+  holding: ApiExtract[];
 };
 
 export function partitionInboxTasks(tasks: ApiExtract[]): InboxPartition {
@@ -101,21 +103,32 @@ export function partitionInboxTasks(tasks: ApiExtract[]): InboxPartition {
   ).getTime();
 
   const buckets: Record<string, { label: string; items: ApiExtract[] }> = {};
-  const someday: ApiExtract[] = [];
+  const holding: ApiExtract[] = [];
 
   const ensureBucket = (key: string, label: string) => {
     if (!buckets[key]) buckets[key] = { label, items: [] };
   };
 
   for (const t of tasks) {
-    if (t.urgency === "someday") { someday.push(t); continue; }
-
     const calBacked = isCalendarBackedExtract(t);
     const eventEnd = t.event_end_at ? Date.parse(t.event_end_at) : null;
     if (calBacked && eventEnd && eventEnd < nowMs) continue;
 
     const ms = anchorMs(t);
-    if (ms === null) { someday.push(t); continue; }
+
+    if (t.batch_key === "shopping" && ms === null) {
+      // Undated shopping lives under Lists — not duplicated in Inbox
+      continue;
+    }
+    if (t.urgency === "holding") {
+      holding.push(t);
+      continue;
+    }
+
+    if (ms === null) {
+      holding.push(t);
+      continue;
+    }
 
     const pStart = t.period_start ? Date.parse(t.period_start) : null;
     const pEnd = t.period_end ? Date.parse(t.period_end) : null;
@@ -175,7 +188,7 @@ export function partitionInboxTasks(tasks: ApiExtract[]): InboxPartition {
 
   return {
     sections,
-    someday: sortByDate(someday),
+    holding: sortByDate(holding),
   };
 }
 

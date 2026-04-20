@@ -12,6 +12,5 @@ export type TaskEditSheetProps = {
   lists: ApiList[];
   onClose: () => void;
   onSave: (id: string, patch: Record<string, unknown>) => void;
-  onDone: (id: string) => void;
-  onDismiss: (id: string) => void;
+  onCloseTask: (id: string) => void;
 };

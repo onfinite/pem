@@ -1,4 +1,5 @@
 import type { ApiExtract } from "@/lib/pemApi";
+import { isRecurringExtract } from "@/utils/isRecurringExtract";
 import { useMemo } from "react";
 import { isCalendarBackedExtract } from "./calendarExtract";
 
@@ -12,11 +13,17 @@ export function useTaskItemDisplay(item: ApiExtract) {
   const isCalendarBacked = isCalendarBackedExtract(item);
 
   const isOverdue = useMemo(() => {
-    if (isCalendarBacked) return false;
+    if (isCalendarBacked || isRecurringExtract(item)) return false;
     if (item.period_end) return new Date(item.period_end) < new Date();
     if (displayAnchor) return new Date(displayAnchor) < new Date();
     return false;
-  }, [isCalendarBacked, displayAnchor, item.period_end]);
+  }, [
+    isCalendarBacked,
+    displayAnchor,
+    item.period_end,
+    item.recurrence_parent_id,
+    item.recurrence_rule,
+  ]);
   const noManualComplete = isCalendarBacked;
 
   const timeStr = useMemo(() => {
@@ -52,9 +59,12 @@ export function useTaskItemDisplay(item: ApiExtract) {
   }, [displayAnchor]);
 
   const urgencyLabel = useMemo(() => {
-    if (item.urgency === "someday" && !displayAnchor) return "Someday";
+    if (item.urgency === "holding" && !displayAnchor) {
+      if (item.batch_key === "shopping") return null;
+      return "Holding";
+    }
     return null;
-  }, [item.urgency, displayAnchor]);
+  }, [item.urgency, item.batch_key, displayAnchor]);
 
   return {
     displayAnchor,

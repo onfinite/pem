@@ -102,9 +102,15 @@ export type ApiMessage = {
   content: string | null;
   voice_url: string | null;
   transcript: string | null;
-  image_keys?: { key: string; mime?: string | null }[] | null;
+  image_keys?: {
+    key: string;
+    mime?: string | null;
+    content_sha256?: string | null;
+  }[] | null;
   image_urls?: { key: string; url: string }[] | null;
   vision_summary?: string | null;
+  /** Full vision blob when server stores focus+detail; omit on older rows. */
+  vision_summary_detail?: string | null;
   triage_category: string | null;
   processing_status: string | null;
   polished_text: string | null;
@@ -138,7 +144,11 @@ export type SendChatMessageParams =
   | {
       kind: "image";
       image_key?: string;
-      image_keys?: { key: string; mime?: string | null }[];
+      image_keys?: {
+        key: string;
+        mime?: string | null;
+        content_sha256?: string;
+      }[];
       content?: string;
       idempotency_key?: string;
     };
@@ -160,11 +170,17 @@ export async function sendChatMessage(
 
 export async function requestPhotoUploadUrl(
   getToken: () => Promise<string | null>,
-  body: { content_type: "image/jpeg" | "image/png" | "image/webp"; byte_size?: number },
+  body: {
+    content_type: "image/jpeg" | "image/png" | "image/webp";
+    byte_size?: number;
+    content_sha256?: string;
+  },
 ): Promise<{
-  upload_url: string;
+  is_duplicate?: boolean;
+  upload_url: string | null;
   image_key: string;
   expires_in_seconds: number;
+  first_shared_at?: string | null;
 }> {
   return apiFetch("/chat/photos/upload-url", {
     method: "POST",
@@ -179,16 +195,21 @@ export async function sendVoiceMessage(
   mimeType = "audio/m4a",
   opts?: {
     idempotency_key?: string;
-    image_keys?: { key: string; mime?: string | null }[];
+    image_keys?: {
+      key: string;
+      mime?: string | null;
+      content_sha256?: string;
+    }[];
   },
 ): Promise<{ message: ApiMessage; status: string; deduplicated?: boolean }> {
   const token = await getToken();
   const formData = new FormData();
-  formData.append("audio", {
+  const audioPart: { uri: string; name: string; type: string } = {
     uri: audioUri,
     name: "recording.m4a",
     type: mimeType,
-  } as any);
+  };
+  formData.append("audio", audioPart as unknown as Blob);
   if (opts?.image_keys?.length) {
     formData.append("image_keys", JSON.stringify(opts.image_keys));
   }
@@ -279,7 +300,7 @@ export type TaskCounts = {
   overdue: number;
   total_open: number;
   this_week: number;
-  someday: number;
+  holding: number;
 };
 
 export async function getTaskCounts(
@@ -332,7 +353,7 @@ export type ApiExtract = {
   original_text: string;
   status: string;
   tone: string;
-  urgency: "someday" | "none";
+  urgency: "holding" | "none";
   batch_key: string | null;
   due_at: string | null;
   period_start: string | null;
@@ -340,8 +361,7 @@ export type ApiExtract = {
   period_label: string | null;
   timezone_pending: boolean;
   snoozed_until: string | null;
-  done_at: string | null;
-  dismissed_at: string | null;
+  closed_at: string | null;
   pem_note: string | null;
   recommended_at: string | null;
   draft_text: string | null;
@@ -381,9 +401,9 @@ export type ApiExtract = {
 export type UpdateExtractPayload = {
   text?: string;
   original_text?: string;
-  tone?: "confident" | "tentative" | "someday";
-  urgency?: "someday" | "none";
-  batch_key?: "shopping" | "errands" | "follow_ups" | null;
+  tone?: "confident" | "tentative" | "holding";
+  urgency?: "holding" | "none";
+  batch_key?: "shopping" | "follow_ups" | null;
   due_at?: string | null;
   period_start?: string | null;
   period_end?: string | null;
@@ -424,19 +444,19 @@ export type BatchSlot = {
 export async function getInboxAll(getToken: () => Promise<string | null>) {
   return apiFetch<{
     dated: ApiExtract[];
-    someday: ApiExtract[];
-    dismissed: ApiExtract[];
+    holding: ApiExtract[];
+    closed: ApiExtract[];
     batch_groups: { batch_key: string; items: ApiExtract[] }[];
     batch_slots: BatchSlot[];
   }>("/inbox/all", { method: "GET", getToken });
 }
 
 export type ExtractsQueryParams = {
-  status?: "open" | "inbox" | "snoozed" | "dismissed" | "done";
-  batch_key?: "shopping" | "errands" | "follow_ups";
-  tone?: "confident" | "tentative" | "someday";
-  exclude_tone?: "confident" | "tentative" | "someday";
-  urgency?: "someday" | "none";
+  status?: "open" | "inbox" | "snoozed" | "closed";
+  batch_key?: "shopping" | "follow_ups";
+  tone?: "confident" | "tentative" | "holding";
+  exclude_tone?: "confident" | "tentative" | "holding";
+  urgency?: "holding" | "none";
   limit?: number;
   cursor?: string | null;
 };
@@ -540,25 +560,12 @@ export async function retryDumpExtraction(
   });
 }
 
-export async function patchExtractDone(
+export async function patchExtractClose(
   getToken: () => Promise<string | null>,
   id: string,
   audit?: PemExtractMutationAudit,
 ) {
-  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/done`, {
-    method: "PATCH",
-    getToken,
-    body: "{}",
-    headers: headersForExtractMutationAudit(audit),
-  });
-}
-
-export async function patchExtractDismiss(
-  getToken: () => Promise<string | null>,
-  id: string,
-  audit?: PemExtractMutationAudit,
-) {
-  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/dismiss`, {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/close`, {
     method: "PATCH",
     getToken,
     body: "{}",
@@ -639,25 +646,12 @@ export async function getExtractHistory(
 
 // ── Undo / Snooze ────────────────────────────────────────
 
-export async function patchExtractUndone(
+export async function patchExtractUnclose(
   getToken: () => Promise<string | null>,
   id: string,
   audit?: PemExtractMutationAudit,
 ) {
-  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/undone`, {
-    method: "PATCH",
-    getToken,
-    body: "{}",
-    headers: headersForExtractMutationAudit(audit),
-  });
-}
-
-export async function patchExtractUndismiss(
-  getToken: () => Promise<string | null>,
-  id: string,
-  audit?: PemExtractMutationAudit,
-) {
-  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/undismiss`, {
+  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/unclose`, {
     method: "PATCH",
     getToken,
     body: "{}",
@@ -685,7 +679,7 @@ export type RescheduleTarget =
   | "tomorrow"
   | "this_week"
   | "next_week"
-  | "someday";
+  | "holding";
 
 export async function patchExtractReschedule(
   getToken: () => Promise<string | null>,
@@ -805,7 +799,7 @@ export async function completeOnboarding(
   });
 }
 
-export async function getExtractsDone(
+export async function getExtractsClosed(
   getToken: () => Promise<string | null>,
   opts?: { limit?: number; cursor?: string | null },
 ) {
@@ -814,7 +808,7 @@ export async function getExtractsDone(
   if (opts?.cursor) q.set("cursor", opts.cursor);
   const qs = q.toString();
   return apiFetch<{ items: ApiExtract[]; next_cursor: string | null }>(
-    `/extracts/done${qs ? `?${qs}` : ""}`,
+    `/extracts/closed${qs ? `?${qs}` : ""}`,
     { method: "GET", getToken },
   );
 }

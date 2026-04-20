@@ -65,7 +65,7 @@ export class UsersController {
   @UseGuards(ClerkAuthGuard)
   @ApiBearerAuth('clerk')
   @ApiOperation({ summary: 'Get user profile summary' })
-  async getSummary(@CurrentUser() user: UserRow) {
+  getSummary(@CurrentUser() user: UserRow) {
     return { summary: user.summary ?? null };
   }
 

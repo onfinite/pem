@@ -36,21 +36,16 @@ export type ExtractMeta = {
 export const EXTRACT_SOURCES = ['dump', 'calendar'] as const;
 export type ExtractSource = (typeof EXTRACT_SOURCES)[number];
 
-export const EXTRACT_STATUSES = [
-  'inbox',
-  'done',
-  'snoozed',
-  'dismissed',
-] as const;
+export const EXTRACT_STATUSES = ['inbox', 'snoozed', 'closed'] as const;
 export type ExtractStatus = (typeof EXTRACT_STATUSES)[number];
 
-export const EXTRACT_TONES = ['confident', 'tentative', 'someday'] as const;
+export const EXTRACT_TONES = ['confident', 'tentative', 'holding'] as const;
 export type ExtractTone = (typeof EXTRACT_TONES)[number];
 
-export const EXTRACT_URGENCIES = ['someday', 'none'] as const;
+export const EXTRACT_URGENCIES = ['holding', 'none'] as const;
 export type ExtractUrgency = (typeof EXTRACT_URGENCIES)[number];
 
-export const BATCH_KEYS = ['shopping', 'errands', 'follow_ups'] as const;
+export const BATCH_KEYS = ['shopping', 'follow_ups'] as const;
 export type BatchKey = (typeof BATCH_KEYS)[number];
 
 export const extractsTable = pgTable(
@@ -89,11 +84,7 @@ export const extractsTable = pgTable(
       withTimezone: true,
       mode: 'date',
     }),
-    doneAt: timestamp('done_at', { withTimezone: true, mode: 'date' }),
-    dismissedAt: timestamp('dismissed_at', {
-      withTimezone: true,
-      mode: 'date',
-    }),
+    closedAt: timestamp('closed_at', { withTimezone: true, mode: 'date' }),
     pemNote: text('pem_note'),
     recommendedAt: timestamp('recommended_at', {
       withTimezone: true,

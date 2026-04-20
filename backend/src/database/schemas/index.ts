@@ -1,3 +1,4 @@
+export * from './chat-image-hashes.schema';
 export * from './calendar-connections.schema';
 export * from './contacts.schema';
 export * from './extracts.schema';

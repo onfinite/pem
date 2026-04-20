@@ -8,6 +8,7 @@ import { Calendar, type DateData } from "react-native-calendars";
 import type { MarkedDatesMap } from "./buildMarkedDates";
 import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
 import { DayDetail } from "./DayDetail";
+import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
 import { toDateKey } from "./dateKeys";
 import { taskDrawerViewStyles as styles } from "./taskDrawerView.styles";
 
@@ -23,7 +24,7 @@ export function TaskDrawerCalendarPanel({
   calendarTheme,
   onDayPress,
   onMonthChange,
-  onDone,
+  onCloseTask,
   onEditTask,
   onRetry,
   onRefresh,
@@ -38,7 +39,7 @@ export function TaskDrawerCalendarPanel({
   calendarTheme: CalendarTheme;
   onDayPress: (d: DateData) => void;
   onMonthChange: (m: DateData) => void;
-  onDone: (id: string) => void;
+  onCloseTask: (id: string) => void;
   onEditTask: (item: ApiExtract) => void;
   onRetry: () => void;
   onRefresh: () => void;
@@ -50,7 +51,7 @@ export function TaskDrawerCalendarPanel({
     return (
       <View style={styles.center}>
         <Text style={[local.errorText, { color: colors.textTertiary }]}>
-          Couldn't load calendar
+          {`Couldn't load calendar`}
         </Text>
         <Pressable
           style={[local.retryBtn, { backgroundColor: colors.secondarySurface }]}
@@ -70,6 +71,7 @@ export function TaskDrawerCalendarPanel({
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: space[4] }}
       showsVerticalScrollIndicator={false}
+      onScrollBeginDrag={dismissOpenTaskSwipe}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -118,7 +120,7 @@ export function TaskDrawerCalendarPanel({
               ? (calData?.overdue ?? [])
               : []
           }
-          onDone={onDone}
+          onCloseTask={onCloseTask}
           onEditTask={onEditTask}
         />
       )}

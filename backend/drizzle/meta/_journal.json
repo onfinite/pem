@@ -71,6 +71,20 @@
       "when": 1776400091126,
       "tag": "0009_blue_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776541339492,
+      "tag": "0010_rainy_carlie_cooper",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776600000000,
+      "tag": "0011_extract_close_holding",
+      "breakpoints": true
     }
   ]
 }

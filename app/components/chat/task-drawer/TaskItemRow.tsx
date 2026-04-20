@@ -1,20 +1,20 @@
 import { space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
-import { CalendarDays } from "lucide-react-native";
+import { isRecurringExtract } from "@/utils/isRecurringExtract";
+import { CalendarDays, ListTodo, Repeat } from "lucide-react-native";
 import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
 import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
 import { TaskItemMeta } from "./TaskItemMeta";
 import { itemStyles } from "./taskItem.styles";
+import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
 
 export const TaskItemRow = memo(function TaskItemRow({
   item,
   compact,
-  onDone,
   onEditPress,
   borderColor,
-  noManualComplete,
   isOverdue,
   timeStr,
   dateStr,
@@ -23,10 +23,8 @@ export const TaskItemRow = memo(function TaskItemRow({
 }: {
   item: ApiExtract;
   compact?: boolean;
-  onDone: (id: string) => void;
   onEditPress: (item: ApiExtract) => void;
   borderColor: string;
-  noManualComplete: boolean;
   isOverdue: boolean;
   timeStr: string | null;
   dateStr: string | null;
@@ -34,6 +32,7 @@ export const TaskItemRow = memo(function TaskItemRow({
   isCalendarBacked: boolean;
 }) {
   const { colors } = useTheme();
+  const isRecurring = isRecurringExtract(item);
 
   return (
     <View
@@ -43,34 +42,19 @@ export const TaskItemRow = memo(function TaskItemRow({
         compact && { paddingVertical: space[2] },
       ]}
     >
-      {isCalendarBacked ? (
-        <View style={itemStyles.checkboxHit}>
+      <View
+        style={itemStyles.checkboxHit}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        {isCalendarBacked ? (
           <CalendarDays size={18} color={CALENDAR_EVENT_DOT_COLOR} />
-        </View>
-      ) : (
-        <Pressable
-          onPress={() => onDone(item.id)}
-          disabled={noManualComplete}
-          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-          style={({ pressed }) => [
-            itemStyles.checkboxHit,
-            pressed && !noManualComplete && { opacity: 0.65 },
-          ]}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: false, disabled: noManualComplete }}
-          accessibilityLabel={noManualComplete ? "Not completable" : "Mark done"}
-        >
-          <View
-            style={[
-              itemStyles.checkboxOuter,
-              {
-                borderColor,
-                opacity: noManualComplete ? 0.45 : 1,
-              },
-            ]}
-          />
-        </Pressable>
-      )}
+        ) : isRecurring ? (
+          <Repeat size={18} color={borderColor} strokeWidth={2.25} />
+        ) : (
+          <ListTodo size={18} color={borderColor} strokeWidth={2.25} />
+        )}
+      </View>
 
       <View style={itemStyles.rowMain}>
         <Pressable
@@ -78,7 +62,10 @@ export const TaskItemRow = memo(function TaskItemRow({
             itemStyles.content,
             pressed && { opacity: 0.72 },
           ]}
-          onPress={() => onEditPress(item)}
+          onPress={() => {
+            dismissOpenTaskSwipe();
+            onEditPress(item);
+          }}
           accessibilityRole="button"
           accessibilityLabel="Edit task"
         >

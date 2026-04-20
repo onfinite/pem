@@ -20,8 +20,14 @@ export function configureApp(app: NestExpressApplication): void {
   );
 
   const config = app.get(ConfigService);
+  const origins = config.get<string[]>('cors.origins');
+  if (!Array.isArray(origins) || origins.length === 0) {
+    throw new Error(
+      'CORS origins must be configured: set ALLOWED_ORIGINS to a comma-separated list (see .env.example).',
+    );
+  }
   app.enableCors({
-    origin: config.get<string[]>('cors.origins') ?? true,
+    origin: origins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: '*',
     credentials: true,

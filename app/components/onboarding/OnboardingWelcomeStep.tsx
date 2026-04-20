@@ -10,7 +10,7 @@ export function OnboardingWelcomeStep() {
     <View style={s.centered}>
       <Image source={pemLogo} style={local.logo} />
       <PemText variant="display" style={s.heading}>
-        Let's set things up
+        {`Let's set things up`}
       </PemText>
       <PemText variant="bodyMuted" style={s.body}>
         A few quick questions so Pem can{"\n"}work the way you do.

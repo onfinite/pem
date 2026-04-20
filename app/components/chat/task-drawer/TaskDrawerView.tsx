@@ -5,6 +5,7 @@ import { useAuth } from "@clerk/expo";
 import { X } from "lucide-react-native";
 import { forwardRef, type ForwardedRef, useCallback, useEffect } from "react";
 import { Animated, Modal, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { InboxTab } from "./InboxTab";
 import { ListsTab } from "./ListsTab";
@@ -14,6 +15,7 @@ import { TaskEditSheet } from "./TaskEditSheet";
 import { UndoSnackbar } from "./UndoSnackbar";
 import type { TaskDrawerHandle } from "./types";
 import { taskDrawerViewStyles as styles } from "./taskDrawerView.styles";
+import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
 import { useTaskDrawerController } from "./useTaskDrawerController";
 
 const TaskDrawerView = forwardRef<
@@ -37,13 +39,13 @@ const TaskDrawerView = forwardRef<
 
   const closeDrawer = () => {
     pemImpactLight();
+    dismissOpenTaskSwipe();
     c.animateOut(() => c.setVisible(false));
   };
 
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       c.scrollOffset.current = e.nativeEvent.contentOffset.y;
-      c.onInboxScroll(e);
     },
     [c],
   );
@@ -57,6 +59,7 @@ const TaskDrawerView = forwardRef<
       animationType="none"
       onRequestClose={closeDrawer}
     >
+      <GestureHandlerRootView style={styles.modalGestureRoot}>
       <Animated.View
         style={[
           styles.drawer,
@@ -102,7 +105,7 @@ const TaskDrawerView = forwardRef<
               calendarTheme={c.calendarTheme}
               onDayPress={c.onDayPress}
               onMonthChange={c.onMonthChange}
-              onDone={c.handleDone}
+              onCloseTask={c.handleClose}
               onEditTask={c.openTaskEdit}
               onRetry={() => c.handleTabSwitch("calendar")}
               onRefresh={c.handleRefresh}
@@ -115,14 +118,9 @@ const TaskDrawerView = forwardRef<
               tasks={c.tasks}
               loading={c.tasksLoading}
               hasError={c.tasksError}
-              onDone={c.handleDone}
-              doneItems={c.doneItems}
-              doneLoading={c.doneLoading}
-              doneHasMore={c.doneHasMore}
-              doneLoadingMore={c.doneLoadingMore}
+              onCloseTask={c.handleClose}
               onInboxScroll={handleScroll}
               onEditTask={c.openTaskEdit}
-              onUndone={c.handleUndone}
               onRetry={() => c.handleTabSwitch("inbox")}
               onRefresh={c.handleRefresh}
               refreshing={c.refreshing}
@@ -134,9 +132,14 @@ const TaskDrawerView = forwardRef<
               lists={lists}
               tasks={c.tasks}
               loading={c.tasksLoading}
-              onDone={c.handleDone}
+              onCloseTask={c.handleClose}
               onEditTask={c.openTaskEdit}
-              onRefresh={c.handleRefresh}
+              onRefresh={async () => {
+                await Promise.all([
+                  c.handleRefresh(),
+                  loadLists(),
+                ]);
+              }}
               refreshing={c.refreshing}
               onAddList={addList}
               onDeleteList={async (id) => {
@@ -159,9 +162,9 @@ const TaskDrawerView = forwardRef<
         lists={lists}
         onClose={c.closeTaskEdit}
         onSave={c.handleEditSave}
-        onDone={c.handleEditDone}
-        onDismiss={c.handleEditDismiss}
+        onCloseTask={c.handleEditClose}
       />
+      </GestureHandlerRootView>
     </Modal>
   );
 });

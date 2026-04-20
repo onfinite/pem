@@ -3,7 +3,7 @@ import { fontFamily, fontSize, space, radii } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { pemSelection } from "@/lib/pemHaptics";
-import { AlertTriangle, CalendarDays, Cloud, RefreshCw } from "lucide-react-native";
+import { AlertTriangle, CalendarDays, Pause, RefreshCw } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,23 +16,18 @@ import {
   Text,
   View,
 } from "react-native";
-import { InboxDoneSection } from "./InboxDoneSection";
 import { InboxLabeledSection } from "./InboxLabeledSection";
 import { inboxStyles } from "./inboxTab.styles";
 import { partitionInboxTasks } from "./partitionInboxTasks";
+import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
 
 export function InboxTab({
   tasks,
   loading,
   hasError,
-  onDone,
-  doneItems,
-  doneLoading: _doneLoading,
-  doneHasMore,
-  doneLoadingMore,
+  onCloseTask,
   onInboxScroll,
   onEditTask,
-  onUndone,
   onRetry,
   onRefresh,
   refreshing,
@@ -40,32 +35,27 @@ export function InboxTab({
   tasks: ApiExtract[];
   loading: boolean;
   hasError: boolean;
-  onDone: (id: string) => void;
-  doneItems: ApiExtract[];
-  doneLoading: boolean;
-  doneHasMore: boolean;
-  doneLoadingMore: boolean;
+  onCloseTask: (id: string) => void;
   onInboxScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEditTask: (item: ApiExtract) => void;
-  onUndone: (id: string) => void;
   onRetry: () => void;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
   const { colors } = useTheme();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
-    someday: true,
-    done: true,
+    holding: true,
   });
 
   const parts = useMemo(() => partitionInboxTasks(tasks), [tasks]);
 
   const toggleSection = useCallback((key: string) => {
+    dismissOpenTaskSwipe();
     pemSelection();
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  const hasAny = parts.sections.length + parts.someday.length > 0;
+  const hasAny = parts.sections.length + parts.holding.length > 0;
 
   if (loading && tasks.length === 0) {
     return (
@@ -79,7 +69,7 @@ export function InboxTab({
     return (
       <View style={inboxStyles.center}>
         <Text style={[local.errorText, { color: colors.textTertiary }]}>
-          Couldn't load tasks
+          {`Couldn't load tasks`}
         </Text>
         <Pressable
           style={[local.retryBtn, { backgroundColor: colors.secondarySurface }]}
@@ -94,7 +84,7 @@ export function InboxTab({
     );
   }
 
-  if (!hasAny && doneItems.length === 0) {
+  if (!hasAny) {
     return (
       <View style={inboxStyles.center}>
         <Text style={[inboxStyles.emptyText, { color: colors.textTertiary }]}>
@@ -109,6 +99,7 @@ export function InboxTab({
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: space[4] }}
       showsVerticalScrollIndicator={false}
+      onScrollBeginDrag={dismissOpenTaskSwipe}
       onScroll={onInboxScroll}
       scrollEventThrottle={400}
       refreshControl={
@@ -133,30 +124,21 @@ export function InboxTab({
             items={s.items}
             isOpen={collapsed[s.key] !== true}
             onToggle={toggleSection}
-            onDone={onDone}
+            onCloseTask={onCloseTask}
             onEditTask={onEditTask}
           />
         );
       })}
 
       <InboxLabeledSection
-        sectionKey="someday"
-        title="Someday"
-        Icon={Cloud}
-        items={parts.someday}
-        isOpen={!collapsed.someday}
+        sectionKey="holding"
+        title="Holding"
+        Icon={Pause}
+        items={parts.holding}
+        isOpen={!collapsed.holding}
         onToggle={toggleSection}
-        onDone={onDone}
+        onCloseTask={onCloseTask}
         onEditTask={onEditTask}
-      />
-
-      <InboxDoneSection
-        doneItems={doneItems}
-        collapsed={collapsed.done}
-        onToggleDone={() => toggleSection("done")}
-        onUndone={onUndone}
-        hasMore={doneHasMore}
-        loadingMore={doneLoadingMore}
       />
     </ScrollView>
   );

@@ -151,7 +151,7 @@ original_text   text        -- raw fragment from dump that produced this
 status          enum        -- 'inbox' | 'done' | 'snoozed' | 'dismissed'
 tone            enum        -- 'confident' | 'tentative' | 'someday'
 urgency         enum        -- 'someday' | 'none' (all timing lives in period dates, not urgency)
-batch_key       text        -- nullable. 'shopping' | 'errands' | 'follow_ups' | null
+batch_key       text        -- nullable. 'shopping' | 'follow_ups' | null
 due_at          timestamptz -- nullable. exact datetime if detected
 period_start    timestamptz -- nullable. for period-based timing (e.g. start of weekend)
 period_end      timestamptz -- nullable. for period-based timing (e.g. end of weekend)
@@ -267,7 +267,7 @@ Local intent → detail can offer `[ Open Google Maps ]` only.
 
 ## Batching
 
-Batch keys: `shopping` | `errands` | `follow_ups` | null.
+Batch keys: `shopping` | `follow_ups` | null.
 `follow_ups` covers calls, emails, texts — any task that involves contacting someone.
 When in doubt, do not batch. Batches require 2+ items with same `batch_key`.
 
