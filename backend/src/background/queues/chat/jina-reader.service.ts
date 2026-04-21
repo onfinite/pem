@@ -2,11 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { LINK_JINA_FETCH_TIMEOUT_MS } from '../../../chat/link-reading.constants';
+import type { JinaSnapshotStored } from '../../../chat/types/jina-snapshot-stored.types';
+import { parseJinaReaderJsonBody } from '../../../chat/utils/parse-jina-reader-json';
+import { markdownFromJinaSnapshot } from '../../../chat/utils/jina-snapshot-markdown';
 
 export type JinaReaderResult = {
+  /** Normalized snapshot (null when fetch failed / empty / parse error). */
+  snapshot: JinaSnapshotStored | null;
+  /** `data.content` — used for classifiers + markdown image extraction. */
   markdown: string;
   canonicalUrl: string | null;
-  titleFromLine: string | null;
+  /** Prefer `data.title` from JSON when present. */
+  titleFromApi: string | null;
   timedOut: boolean;
   httpStatus: number;
 };
@@ -27,38 +34,21 @@ function readHeader(headers: Headers, names: string[]): string | null {
   return null;
 }
 
-/** First markdown H1 or Title: line as weak title hint. */
-function titleFromMarkdown(md: string): string | null {
-  const lines = md.split('\n').slice(0, 40);
-  for (const line of lines) {
-    const t = line.trim();
-    if (t.startsWith('# ')) return t.slice(2).trim().slice(0, 500) || null;
-    if (/^title\s*:/i.test(t)) {
-      return (
-        t
-          .replace(/^title\s*:/i, '')
-          .trim()
-          .slice(0, 500) || null
-      );
-    }
-  }
-  return null;
-}
-
 @Injectable()
 export class JinaReaderService {
   private readonly log = new Logger(JinaReaderService.name);
 
   constructor(private readonly config: ConfigService) {}
 
-  async fetchMarkdown(targetHref: string): Promise<JinaReaderResult> {
+  async fetchPage(targetHref: string): Promise<JinaReaderResult> {
     const apiKey = this.config.get<string>('jina.apiKey');
     if (!apiKey) {
       this.log.warn('JINA_API_KEY not set — link reading disabled');
       return {
+        snapshot: null,
         markdown: '',
         canonicalUrl: null,
-        titleFromLine: null,
+        titleFromApi: null,
         timedOut: false,
         httpStatus: 0,
       };
@@ -73,7 +63,8 @@ export class JinaReaderService {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${apiKey}`,
-          Accept: 'text/markdown',
+          Accept: 'application/json',
+          'X-Robots-Txt': 'JinaReader',
         },
         signal: ac.signal,
       });
@@ -87,16 +78,38 @@ export class JinaReaderService {
         ]) ?? null;
 
       const text = await res.text();
-      const markdown = res.ok ? text : '';
       if (!res.ok) {
         this.log.warn(`Jina non-OK status=${res.status} messageIdHint=fetch`);
+        return {
+          snapshot: null,
+          markdown: '',
+          canonicalUrl,
+          titleFromApi: null,
+          timedOut: false,
+          httpStatus: res.status,
+        };
       }
 
-      const md = markdown.trim();
+      const parsed = parseJinaReaderJsonBody(text);
+      if (!parsed) {
+        this.log.warn('Jina JSON parse failed messageIdHint=fetch');
+        return {
+          snapshot: null,
+          markdown: '',
+          canonicalUrl,
+          titleFromApi: null,
+          timedOut: false,
+          httpStatus: res.status,
+        };
+      }
+
+      const md = markdownFromJinaSnapshot(parsed).trim();
+      const titleRaw = parsed.data?.title?.trim();
       return {
+        snapshot: parsed,
         markdown: md,
         canonicalUrl,
-        titleFromLine: md ? titleFromMarkdown(md) : null,
+        titleFromApi: titleRaw ? titleRaw.slice(0, 500) : null,
         timedOut: false,
         httpStatus: res.status,
       };
@@ -106,9 +119,10 @@ export class JinaReaderService {
         `Jina fetch ${isAbort ? 'timeout' : 'error'} messageIdHint=fetch`,
       );
       return {
+        snapshot: null,
         markdown: '',
         canonicalUrl: null,
-        titleFromLine: null,
+        titleFromApi: null,
         timedOut: isAbort,
         httpStatus: 0,
       };

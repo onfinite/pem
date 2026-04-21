@@ -19,7 +19,7 @@ export function linkPreviewsSerializedFromRows(
     content_type: r.contentType,
     fetch_status: r.fetchStatus,
     summary: summaryForClient(r.structuredSummary),
-    image_url: resolveLinkPreviewImageUrl(r.extractedMetadata, r.jinaContent),
+    image_url: resolveLinkPreviewImageUrl(r.extractedMetadata, r.jinaSnapshot),
   }));
 }
 

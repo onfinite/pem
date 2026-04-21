@@ -15,6 +15,12 @@ export function scoreLinkPreviewHeroImageUrl(url: string): number {
   if (h.includes('favicon') || h.includes('1x1') || h.includes('pixel.gif')) {
     return -1000;
   }
+  if (/_32x32|32x32|16x16|24x24/i.test(h)) {
+    s -= 120;
+  }
+  if (/apple-touch|180x180|192x192|512x512/i.test(h)) {
+    s += 90;
+  }
   if (h.includes('/g/01/') && h.includes('amazon')) {
     s -= 450;
   }
@@ -61,7 +67,8 @@ export function pickBestLinkPreviewImageUrl(urls: string[]): string | null {
   }));
   scored.sort((a, b) => b.s - a.s);
   const best = scored[0];
-  if (best.s < 8) {
+  /** Reject only obvious junk (favicons, nav sprites). A score of 0 is normal for generic article/forum OG URLs — the old `< 8` gate hid most non-Amazon previews. */
+  if (best.s <= -900) {
     return null;
   }
   return best.u;

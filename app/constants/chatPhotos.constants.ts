@@ -1,2 +1,4 @@
-/** Must match backend `MAX_CHAT_MESSAGE_IMAGES`. */
-export const MAX_CHAT_MESSAGE_IMAGES = 10;
+/** User bubble: section label when message has text/voice and attached photos. */
+export const USER_PHOTOS_SHARED_LABEL = "Photos you shared";
+
+export const CHAT_PHOTO_THUMB_SIZE = 72;

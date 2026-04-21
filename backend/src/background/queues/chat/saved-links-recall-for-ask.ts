@@ -21,6 +21,8 @@ const STOP = new Set([
   'links',
   'article',
   'articles',
+  'recipe',
+  'recipes',
   'saved',
   'save',
   'find',
@@ -42,7 +44,12 @@ export function wantsSavedLinksRecall(question: string): boolean {
     /what\s+was\s+that\s+(link|article)/,
     /url(s)?\s+from\s+chat/,
     /articles?\s+i\s+(saved|sent)/,
+    /recipes?\s+i\s+(saved|sent)/,
+    /what\s+was\s+that\s+(recipe|article)/,
     /do\s+you\s+remember.*\b(link|url|article)\b/,
+    /\brecall\b.*\b(link|url|article)\b/,
+    /\b(can\s+u|can\s+you)\s+recall\b/,
+    /\b(remind|remember)\s+me\b.*\b(link|url|article)\b/,
   ];
   return hints.some((re) => re.test(t));
 }
@@ -59,7 +66,8 @@ function searchPatternFromQuestion(question: string): string | null {
     .map((w) => w.replace(/[^\w]/g, ''))
     .filter((w) => w.length > 3 && !STOP.has(w));
   if (!words.length) return null;
-  const w = words[words.length - 1];
+  /** Prefer the longest token (e.g. "forbes") — last word was often "read"/"want". */
+  const w = words.reduce((a, b) => (a.length >= b.length ? a : b));
   return `%${w.slice(0, 72)}%`;
 }
 

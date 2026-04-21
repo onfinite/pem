@@ -5,17 +5,24 @@ import { MessageLinkPreviewCards } from "./MessageLinkPreviewCards";
 
 type Props = {
   message: ClientMessage;
+  /** Hide link-card hero image when the message already has user photos (avoid stacked thumbnails). */
+  omitLinkPreviewHero?: boolean;
 };
 
-export function UserMessageLinkAttachmentsRow({ message }: Props) {
-  if (message.role !== "user") return null;
-
-  const previews = message.link_previews;
+export function UserMessageLinkAttachmentsRow({
+  message,
+  omitLinkPreviewHero = false,
+}: Props) {
+  const previews =
+    message.link_previews ?? message.metadata?.link_previews ?? undefined;
   if (!previews?.length) return null;
 
   return (
     <View style={styles.embedded}>
-      <MessageLinkPreviewCards items={previews} />
+      <MessageLinkPreviewCards
+        items={previews}
+        omitLinkPreviewHero={omitLinkPreviewHero}
+      />
     </View>
   );
 }

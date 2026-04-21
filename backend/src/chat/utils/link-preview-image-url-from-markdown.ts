@@ -36,8 +36,21 @@ export function collectLinkPreviewImageUrlsFromMarkdown(
   while ((m = imgTag.exec(slice)) !== null) push(m[1]);
 
   const bareImg =
-    /https?:\/\/[^\s\)"'<>]+\.(?:jpg|jpeg|png|webp|gif|avif)(?:\?[^\s\)"'<>]*)?/gi;
+    /https?:\/\/[^\s"'<>)]+\.(?:jpg|jpeg|png|webp|gif|avif)(?:\?[^\s"'<>)]*)?/gi;
   while ((m = bareImg.exec(slice)) !== null) push(m[0]);
+
+  /** Discourse / forum pages often expose the hero only as og:image, not as markdown images. */
+  const ogPropFirst =
+    /<meta[^>]+property=["']og:image["'][^>]+content=["'](https?:\/\/[^"']+)["']/gi;
+  while ((m = ogPropFirst.exec(slice)) !== null) push(m[1]);
+
+  const ogContentFirst =
+    /<meta[^>]+content=["'](https?:\/\/[^"']+)["'][^>]+property=["']og:image["']/gi;
+  while ((m = ogContentFirst.exec(slice)) !== null) push(m[1]);
+
+  const ogNameFirst =
+    /<meta[^>]+name=["']twitter:image["'][^>]+content=["'](https?:\/\/[^"']+)["']/gi;
+  while ((m = ogNameFirst.exec(slice)) !== null) push(m[1]);
 
   return candidates;
 }

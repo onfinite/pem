@@ -12,3 +12,6 @@ export const LINK_JINA_FETCH_TIMEOUT_MS = 45_000;
 
 /** Classifier input cap (characters of markdown). */
 export const LINK_CLASSIFIER_MARKDOWN_MAX_CHARS = 24_000;
+
+/** Body excerpt injected into Pem / Ask link context (characters of reader markdown). */
+export const LINK_PROMPT_BODY_MAX_CHARS = 8000;

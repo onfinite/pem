@@ -25,6 +25,7 @@ export const MESSAGE_LINK_CONTENT_TYPES = [
   'product',
   'article',
   'job',
+  'recipe',
   'restaurant',
   'video',
   'social',
@@ -51,7 +52,8 @@ export const messageLinksTable = pgTable(
     canonicalUrl: text('canonical_url'),
     pageTitle: text('page_title'),
     contentType: text('content_type').$type<MessageLinkContentType | null>(),
-    jinaContent: text('jina_content'),
+    /** Jina Reader JSON (`Accept: application/json`), trimmed for size. */
+    jinaSnapshot: jsonb('jina_snapshot'),
     structuredSummary: text('structured_summary'),
     extractedMetadata: jsonb('extracted_metadata').$type<Record<
       string,

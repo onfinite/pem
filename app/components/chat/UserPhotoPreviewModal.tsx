@@ -14,14 +14,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
   uris: string[];
-  visible: boolean;
+  startIndex: number | null;
   onClose: () => void;
 };
 
-export function UserPhotoPreviewModal({ uris, visible, onClose }: Props) {
+export function UserPhotoPreviewModal({ uris, startIndex, onClose }: Props) {
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [slotHeight, setSlotHeight] = useState(0);
+  const visible = startIndex !== null;
   const showPager = uris.length > 1;
 
   const handleClose = useCallback(() => {
@@ -53,7 +54,7 @@ export function UserPhotoPreviewModal({ uris, visible, onClose }: Props) {
               width={winW}
               pageHeight={slot}
               pageCount={uris.length}
-              initialPageIndex={0}
+              initialPageIndex={startIndex ?? 0}
               onPageIndexChange={noopPageChange}
               renderPage={(index) => (
                 <Image

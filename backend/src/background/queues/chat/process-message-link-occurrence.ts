@@ -8,20 +8,15 @@ import {
   type MessageLinkRow,
 } from '../../../database/schemas';
 import type { ExtractedUrlOccurrence } from '../../../chat/utils/extract-urls-from-text';
-import {
-  LINK_CACHE_TTL_MS,
-  LINK_JINA_CONTENT_MAX_CHARS,
-} from '../../../chat/link-reading.constants';
+import { LINK_CACHE_TTL_MS } from '../../../chat/link-reading.constants';
+import type { JinaSnapshotStored } from '../../../chat/types/jina-snapshot-stored.types';
+import { linkTitleHintFromMarkdown } from '../../../chat/utils/link-title-from-markdown';
+import { normalizeJinaSnapshotForStorage } from '../../../chat/utils/normalize-jina-snapshot-for-storage';
 import type { JinaReaderService } from './jina-reader.service';
 import type { LinkContentClassifierService } from './link-content-classifier.service';
 import { isLikelySocialRestrictedHost } from './restricted-link-hosts';
 import { looksLikeLoginWallMarkdown } from './link-login-wall-heuristic';
 import { linkCacheKeyFromNormalizedUrl } from '../../../chat/utils/link-cache-key';
-
-function capJinaContent(md: string): string {
-  if (md.length <= LINK_JINA_CONTENT_MAX_CHARS) return md;
-  return `${md.slice(0, LINK_JINA_CONTENT_MAX_CHARS)}\n\n…`;
-}
 
 async function findFreshCache(
   db: DrizzleDb,
@@ -92,7 +87,7 @@ export async function processMessageLinkOccurrence(
         canonicalUrl: cached.canonicalUrl,
         pageTitle: cached.pageTitle,
         contentType: cached.contentType,
-        jinaContent: cached.jinaContent,
+        jinaSnapshot: cached.jinaSnapshot,
         structuredSummary: cached.structuredSummary,
         extractedMetadata: cached.extractedMetadata,
         fetchStatus: 'cached',
@@ -102,16 +97,19 @@ export async function processMessageLinkOccurrence(
     return row;
   }
 
-  const jinaResult = await jina.fetchMarkdown(normalized);
+  const jinaResult = await jina.fetchPage(normalized);
   const canonical = (jinaResult.canonicalUrl ?? normalized).slice(0, 2000);
   const md = jinaResult.markdown;
-  const titleHint = jinaResult.titleFromLine;
+  const titleHint =
+    jinaResult.titleFromApi?.trim() ||
+    (md ? linkTitleHintFromMarkdown(md) : null) ||
+    null;
 
   let fetchStatus: MessageLinkFetchStatus;
   let structuredSummary: string | null = null;
   let contentType: MessageLinkContentType | null = null;
   let extractedMetadata: Record<string, unknown> | null = null;
-  let jinaStored: string | null = null;
+  let snapshotStored: JinaSnapshotStored | null = null;
 
   if (jinaResult.timedOut) {
     fetchStatus = 'timeout';
@@ -127,14 +125,20 @@ export async function processMessageLinkOccurrence(
     structuredSummary =
       'That page did not return readable content. It may be private, broken, or blocked. Ask them to paste text or try another link.';
   } else {
-    jinaStored = capJinaContent(md);
+    if (jinaResult.snapshot) {
+      snapshotStored = normalizeJinaSnapshotForStorage(jinaResult.snapshot);
+    }
     const thinSocial = hintSocial && md.length < 500;
     const loginWall = looksLikeLoginWallMarkdown(md) && md.length < 900;
+
+    const descriptionHint =
+      jinaResult.snapshot?.data?.description?.trim()?.slice(0, 2000) ?? null;
 
     const classified = await classifier.classify({
       normalizedUrl: normalized,
       host,
       markdown: md,
+      descriptionHint,
       hintRestrictedSocial: hintSocial,
     });
 
@@ -160,7 +164,7 @@ export async function processMessageLinkOccurrence(
       canonicalUrl: canonical,
       pageTitle: titleHint?.slice(0, 500) ?? null,
       contentType,
-      jinaContent: jinaStored,
+      jinaSnapshot: snapshotStored,
       structuredSummary,
       extractedMetadata,
       fetchStatus,

@@ -1,11 +1,13 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { pemAmber } from "@/constants/theme";
+import { USER_PHOTOS_SHARED_LABEL } from "@/constants/chatPhotos.constants";
 import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 import { AlertCircle, Check, CheckCheck, ListTodo } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useMemo, useRef } from "react";
+import { UserPhotoPreviewModal } from "@/components/chat/UserPhotoPreviewModal";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import InviteRsvpActions from "./InviteRsvpActions";
 import { MarkdownText } from "./MarkdownText";
@@ -52,6 +54,10 @@ export default function ChatBubble({
     }).start();
   }, [isHighlighted, flashOpacity]);
 
+  const [voicePhotoLightboxStart, setVoicePhotoLightboxStart] = useState<
+    number | null
+  >(null);
+
   const meta = message.metadata;
   const photoRecallForDisplay = useMemo(
     () =>
@@ -63,6 +69,11 @@ export default function ChatBubble({
   );
 
   const rawTextContent = message.content ?? message.transcript ?? "";
+  const effectiveLinkPreviews = useMemo(
+    () => message.link_previews ?? message.metadata?.link_previews ?? null,
+    [message.link_previews, message.metadata?.link_previews],
+  );
+
   const userHasInlineLinkUrls = useMemo(
     () =>
       message.role === "user" &&
@@ -70,10 +81,17 @@ export default function ChatBubble({
     [message.role, rawTextContent],
   );
 
+  const pemHasInlineLinkUrls = useMemo(
+    () =>
+      message.role === "pem" &&
+      extractHttpUrlsFromUserText(rawTextContent).length > 0,
+    [message.role, rawTextContent],
+  );
+
   const userHasLinkAttachments =
     message.role === "user" &&
     (extractHttpUrlsFromUserText(rawTextContent).length > 0 ||
-      (message.link_previews?.length ?? 0) > 0);
+      (effectiveLinkPreviews?.length ?? 0) > 0);
 
   if (message.kind === "image") {
     return (
@@ -93,54 +111,93 @@ export default function ChatBubble({
     if (voicePhotoUris.length > 0) {
       if (userHasLinkAttachments) {
         return (
-          <View style={voiceWithPhotosStyles.column}>
-            <View
-              style={[
-                voiceWithPhotosStyles.unifiedUserLinkShell,
-                { backgroundColor: colors.userBubble },
-              ]}
-            >
-              <UserPhotoBubbleThumbnails
-                uris={voicePhotoUris}
-                userBubbleText={colors.userBubbleText}
-                secondarySurface={colors.secondarySurface}
-                isSending={isSending}
-              />
-              <VoiceBubble
-                key={message.id}
-                message={message}
-                isUser={isUser}
-                isSending={isSending}
-                isFailed={isFailed}
-                onRetry={onRetry ? () => onRetry(message) : undefined}
-                omitOuterGutters
-                transparentUserSurface
-              />
-              <View style={voiceWithPhotosStyles.unifiedUserLinkFooter}>
-                <UserMessageLinkAttachmentsRow message={message} />
+          <>
+            <View style={voiceWithPhotosStyles.column}>
+              <View
+                style={[
+                  voiceWithPhotosStyles.unifiedUserLinkShell,
+                  { backgroundColor: colors.userBubble },
+                ]}
+              >
+                <VoiceBubble
+                  key={message.id}
+                  message={message}
+                  isUser={isUser}
+                  isSending={isSending}
+                  isFailed={isFailed}
+                  onRetry={onRetry ? () => onRetry(message) : undefined}
+                  omitOuterGutters
+                  transparentUserSurface
+                />
+                <View style={voiceWithPhotosStyles.unifiedUserPhotosBlock}>
+                  <Text
+                    style={[
+                      voiceWithPhotosStyles.photosLabel,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {USER_PHOTOS_SHARED_LABEL}
+                  </Text>
+                  <UserPhotoBubbleThumbnails
+                    uris={voicePhotoUris}
+                    userBubbleText={colors.userBubbleText}
+                    secondarySurface={colors.secondarySurface}
+                    borderColor={colors.borderMuted}
+                    isSending={isSending}
+                    onOpenAt={(i) => setVoicePhotoLightboxStart(i)}
+                  />
+                </View>
+                <View style={voiceWithPhotosStyles.unifiedUserLinkFooter}>
+                  <UserMessageLinkAttachmentsRow
+                    message={message}
+                    omitLinkPreviewHero
+                  />
+                </View>
               </View>
             </View>
-          </View>
+            <UserPhotoPreviewModal
+              uris={voicePhotoUris}
+              startIndex={voicePhotoLightboxStart}
+              onClose={() => setVoicePhotoLightboxStart(null)}
+            />
+          </>
         );
       }
       return (
-        <View style={voiceWithPhotosStyles.column}>
-          <UserPhotoBubbleThumbnails
+        <>
+          <View style={voiceWithPhotosStyles.column}>
+            <VoiceBubble
+              key={message.id}
+              message={message}
+              isUser={isUser}
+              isSending={isSending}
+              isFailed={isFailed}
+              onRetry={onRetry ? () => onRetry(message) : undefined}
+              omitOuterGutters
+            />
+            <Text
+              style={[
+                voiceWithPhotosStyles.photosLabel,
+                { color: colors.textSecondary },
+              ]}
+            >
+              {USER_PHOTOS_SHARED_LABEL}
+            </Text>
+            <UserPhotoBubbleThumbnails
+              uris={voicePhotoUris}
+              userBubbleText={colors.userBubbleText}
+              secondarySurface={colors.secondarySurface}
+              borderColor={colors.borderMuted}
+              isSending={isSending}
+              onOpenAt={(i) => setVoicePhotoLightboxStart(i)}
+            />
+          </View>
+          <UserPhotoPreviewModal
             uris={voicePhotoUris}
-            userBubbleText={colors.userBubbleText}
-            secondarySurface={colors.secondarySurface}
-            isSending={isSending}
+            startIndex={voicePhotoLightboxStart}
+            onClose={() => setVoicePhotoLightboxStart(null)}
           />
-          <VoiceBubble
-            key={message.id}
-            message={message}
-            isUser={isUser}
-            isSending={isSending}
-            isFailed={isFailed}
-            onRetry={onRetry ? () => onRetry(message) : undefined}
-            omitOuterGutters
-          />
-        </View>
+        </>
       );
     }
     if (userHasLinkAttachments && isUser) {
@@ -163,7 +220,10 @@ export default function ChatBubble({
               transparentUserSurface
             />
             <View style={voiceWithPhotosStyles.unifiedUserLinkFooter}>
-              <UserMessageLinkAttachmentsRow message={message} />
+              <UserMessageLinkAttachmentsRow
+                message={message}
+                omitLinkPreviewHero
+              />
             </View>
           </View>
         </View>
@@ -251,7 +311,9 @@ export default function ChatBubble({
           {showUserMarkdown ? (
             <MarkdownText
               style={[styles.text, { color: textColor }]}
-              userBubbleInlineLinks={userHasInlineLinkUrls}
+              userBubbleInlineLinks={
+                userHasInlineLinkUrls || pemHasInlineLinkUrls
+              }
             >
               {rawTextContent}
             </MarkdownText>
@@ -298,7 +360,7 @@ export default function ChatBubble({
               />
             )}
 
-          {isUser ? (
+          {(effectiveLinkPreviews?.length ?? 0) > 0 ? (
             <UserMessageLinkAttachmentsRow message={message} />
           ) : null}
 
@@ -344,6 +406,15 @@ const voiceWithPhotosStyles = StyleSheet.create({
     borderRadius: radii.lg,
     borderBottomRightRadius: radii.sm,
     overflow: "hidden",
+    gap: space[2],
+  },
+  unifiedUserPhotosBlock: {
+    paddingHorizontal: space[3],
+    gap: space[1],
+  },
+  photosLabel: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.xs,
   },
   unifiedUserLinkFooter: {
     paddingHorizontal: space[3],

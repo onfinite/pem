@@ -16,6 +16,7 @@ import {
 } from './build-link-context-prompt-section';
 import { processMessageLinkOccurrence } from './process-message-link-occurrence';
 import { linkCacheKeyFromNormalizedUrl } from '../../../chat/utils/link-cache-key';
+import { linkRecallExcerptForPrompt } from '../../../chat/utils/link-recall-excerpt-for-prompt';
 
 export type LinkPipelineResult = {
   promptSection: string;
@@ -24,6 +25,10 @@ export type LinkPipelineResult = {
 };
 
 function rowToPromptItem(r: MessageLinkRow): LinkPromptItem {
+  const recallExcerpt =
+    r.fetchStatus === 'success' || r.fetchStatus === 'cached'
+      ? linkRecallExcerptForPrompt(r.jinaSnapshot)
+      : null;
   return {
     originalUrl: r.originalUrl,
     canonicalUrl: r.canonicalUrl,
@@ -32,6 +37,7 @@ function rowToPromptItem(r: MessageLinkRow): LinkPromptItem {
     pageTitle: r.pageTitle,
     structuredSummary: r.structuredSummary,
     extractedMetadata: r.extractedMetadata,
+    recallExcerpt,
   };
 }
 
@@ -80,7 +86,7 @@ export class ChatLinkPipelineService {
             canonicalUrl: null,
             pageTitle: null,
             contentType: 'general',
-            jinaContent: null,
+            jinaSnapshot: null,
             structuredSummary:
               'This link could not be processed. Ask the user to try again or paste what they need saved.',
             extractedMetadata: {},

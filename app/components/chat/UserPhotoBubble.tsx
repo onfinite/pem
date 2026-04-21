@@ -1,4 +1,5 @@
 import { useTheme } from "@/contexts/ThemeContext";
+import { USER_PHOTOS_SHARED_LABEL } from "@/constants/chatPhotos.constants";
 import { fontFamily, fontSize, lh, space, radii } from "@/constants/typography";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
@@ -29,9 +30,10 @@ export function UserPhotoBubble({
   onCopyFeedback,
 }: Props) {
   const { colors } = useTheme();
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [lightboxStart, setLightboxStart] = useState<number | null>(null);
   const uris = collectUserPhotoDisplayUris(message);
   const rawCaption = (message.content ?? "").trim();
+  const hasCaption = Boolean(rawCaption);
   const userHasInlineLinkUrls = useMemo(
     () => extractHttpUrlsFromUserText(rawCaption).length > 0,
     [rawCaption],
@@ -42,7 +44,7 @@ export function UserPhotoBubble({
   });
   const tickColor = colors.userBubbleMeta;
 
-  const handleLongPress = useCallback(() => {
+  const handleLongPressCaption = useCallback(() => {
     if (!rawCaption) return;
     pemImpactLight();
     void Clipboard.setStringAsync(rawCaption);
@@ -51,9 +53,7 @@ export function UserPhotoBubble({
 
   return (
     <View style={[styles.row, styles.rowRight]}>
-      <Pressable
-        onPress={() => uris.length > 0 && setIsPreviewOpen(true)}
-        onLongPress={rawCaption ? handleLongPress : undefined}
+      <View
         style={[
           styles.bubble,
           { backgroundColor: colors.userBubble },
@@ -61,21 +61,38 @@ export function UserPhotoBubble({
           isFailed && styles.dim,
         ]}
       >
+        {hasCaption ? (
+          <Pressable onLongPress={handleLongPressCaption}>
+            <MarkdownText
+              style={[styles.caption, { color: colors.userBubbleText }]}
+              userBubbleInlineLinks={userHasInlineLinkUrls}
+            >
+              {rawCaption}
+            </MarkdownText>
+          </Pressable>
+        ) : null}
+
+        {hasCaption ? (
+          <Text
+            style={[styles.photosLabel, { color: colors.textSecondary }]}
+          >
+            {USER_PHOTOS_SHARED_LABEL}
+          </Text>
+        ) : null}
+
         <UserPhotoBubbleThumbnails
           uris={uris}
           userBubbleText={colors.userBubbleText}
           secondarySurface={colors.secondarySurface}
+          borderColor={colors.borderMuted}
           isSending={isSending}
+          onOpenAt={(i) => setLightboxStart(i)}
         />
-        {rawCaption ? (
-          <MarkdownText
-            style={[styles.caption, { color: colors.userBubbleText }]}
-            userBubbleInlineLinks={userHasInlineLinkUrls}
-          >
-            {rawCaption}
-          </MarkdownText>
-        ) : null}
-        <UserMessageLinkAttachmentsRow message={message} />
+
+        <UserMessageLinkAttachmentsRow
+          message={message}
+          omitLinkPreviewHero
+        />
         {isFailed && (
           <Pressable onPress={onRetry} style={styles.retryRow} hitSlop={8}>
             <AlertCircle size={14} color="#ff3b30" />
@@ -92,15 +109,12 @@ export function UserPhotoBubble({
             <CheckCheck size={14} color={tickColor} strokeWidth={2} />
           )}
         </View>
-      </Pressable>
+      </View>
 
       <UserPhotoPreviewModal
         uris={uris}
-        visible={isPreviewOpen}
-        onClose={() => {
-          pemImpactLight();
-          setIsPreviewOpen(false);
-        }}
+        startIndex={lightboxStart}
+        onClose={() => setLightboxStart(null)}
       />
     </View>
   );
@@ -118,20 +132,23 @@ const styles = StyleSheet.create({
     padding: space[2],
     borderRadius: radii.lg,
     borderBottomRightRadius: radii.sm,
+    gap: space[2],
   },
   dim: { opacity: 0.75 },
   caption: {
     fontFamily: fontFamily.sans.regular,
     fontSize: fontSize.base,
     lineHeight: lh(fontSize.base, 1.4),
-    marginTop: space[2],
+  },
+  photosLabel: {
+    fontFamily: fontFamily.sans.medium,
+    fontSize: fontSize.xs,
   },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
     gap: 4,
-    marginTop: space[1],
   },
   time: {
     fontFamily: fontFamily.sans.regular,

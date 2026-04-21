@@ -18,9 +18,11 @@ const HERO_ASPECT = 16 / 9;
 
 type Props = {
   preview: ChatLinkPreview;
+  /** When true (e.g. user sent photos + link), show title only — no OG/product hero strip. */
+  omitHero?: boolean;
 };
 
-export function MessageLinkPreviewCard({ preview: p }: Props) {
+export function MessageLinkPreviewCard({ preview: p, omitHero = false }: Props) {
   const { colors } = useTheme();
   const url = p.canonical_url ?? p.original_url;
 
@@ -39,10 +41,10 @@ export function MessageLinkPreviewCard({ preview: p }: Props) {
     p.fetch_status === "timeout" ||
     p.fetch_status === "malformed";
 
-  const heroUri = useMemo(
-    () => (p.image_url ? upgradeAmazonProductImageUrl(p.image_url) : null),
-    [p.image_url],
-  );
+  const heroUri = useMemo(() => {
+    if (omitHero) return null;
+    return p.image_url ? upgradeAmazonProductImageUrl(p.image_url) : null;
+  }, [omitHero, p.image_url]);
 
   const displayTitle = linkPreviewDisplayTitle(p);
   const showPreviewBody = Boolean(heroUri || displayTitle.length > 0);

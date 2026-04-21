@@ -5,15 +5,23 @@ import { MessageLinkPreviewCard } from "./MessageLinkPreviewCard";
 
 type Props = {
   items: ChatLinkPreview[];
+  omitLinkPreviewHero?: boolean;
 };
 
-export function MessageLinkPreviewCards({ items }: Props) {
+export function MessageLinkPreviewCards({
+  items,
+  omitLinkPreviewHero = false,
+}: Props) {
   if (!items.length) return null;
 
   return (
     <View style={styles.wrap}>
       {items.map((p, i) => (
-        <MessageLinkPreviewCard key={`${p.original_url}-${String(i)}`} preview={p} />
+        <MessageLinkPreviewCard
+          key={`${p.original_url}-${String(i)}`}
+          preview={p}
+          omitHero={omitLinkPreviewHero}
+        />
       ))}
     </View>
   );

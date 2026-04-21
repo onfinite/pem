@@ -99,6 +99,13 @@
       "when": 1776719145896,
       "tag": "0013_motionless_moondragon",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1776800000000,
+      "tag": "0014_calm_jina_reader_json",
+      "breakpoints": true
     }
   ]
 }

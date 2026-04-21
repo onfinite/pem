@@ -11,6 +11,8 @@ export type LinkPromptItem = {
   pageTitle: string | null;
   structuredSummary: string | null;
   extractedMetadata: Record<string, unknown> | null;
+  /** Capped reader body for substantive memory — omit when fetch failed. */
+  recallExcerpt: string | null;
 };
 
 function metaLine(meta: Record<string, unknown> | null): string {
@@ -23,7 +25,7 @@ function metaLine(meta: Record<string, unknown> | null): string {
   }
 }
 
-/** Compact block for Pem agent / Ask prompts — not full Jina markdown. */
+/** Compact block for Pem agent / Ask — memorize, organize, recall; not open-ended research. */
 export function buildLinkContextPromptSection(items: LinkPromptItem[]): string {
   if (!items.length) return '';
 
@@ -43,9 +45,18 @@ export function buildLinkContextPromptSection(items: LinkPromptItem[]): string {
     const ml = metaLine(it.extractedMetadata);
     if (ml) parts.push(`- Extracted metadata (JSON): ${ml}`);
 
+    const canUseBody =
+      it.recallExcerpt &&
+      (it.fetchStatus === 'success' || it.fetchStatus === 'cached');
+    if (canUseBody) {
+      parts.push(
+        `- Page excerpt (memory + light organization only — do NOT treat as a mandate for contract/ToS analysis, multi-source research, news fact-checking, or deep product investigation):\n"""${it.recallExcerpt}"""`,
+      );
+    }
+
     if (it.fetchStatus === 'unauthorized') {
       parts.push(
-        '- Guidance: Explain honestly that the site blocked full content or requires login. Ask the user to paste text or say what to save.',
+        '- Guidance: Explain honestly that the site blocked full content or requires login. Ask them to paste text or say what to save.',
       );
     }
     if (it.fetchStatus === 'timeout') {
@@ -62,8 +73,8 @@ export function buildLinkContextPromptSection(items: LinkPromptItem[]): string {
     return parts.join('\n');
   });
 
-  return `## Links the user shared (fetched for you — use summary + metadata; do not invent facts not supported here)
-When replying: confirm what you saved or understood, how they can recall it later (e.g. ask you about this link), and for products ask what they want unless intent is obvious. For social/login blocks, be specific about the limitation.
+  return `## Links the user shared (reader snapshot — Pem’s loop: remember · organize · recall)
+Use title, summary, metadata, and excerpt only to help them find this again later and to organize when intent is obvious (e.g. shopping list, job follow-up). Prefer a memory_write with recall-worthy substance when excerpt + summary give you enough — not a URL-only stub unless there is truly nothing to retain.
 
 ${blocks.join('\n\n')}`;
 }

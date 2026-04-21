@@ -169,7 +169,7 @@ export class ChatService {
           : null,
         image_url: resolveLinkPreviewImageUrl(
           r.extractedMetadata,
-          r.jinaContent,
+          r.jinaSnapshot,
         ),
       });
       map.set(r.messageId, list);

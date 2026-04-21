@@ -17,6 +17,7 @@ const linkClassificationSchema = z.object({
       'product',
       'article',
       'job',
+      'recipe',
       'restaurant',
       'video',
       'social',
@@ -48,6 +49,7 @@ export class LinkContentClassifierService {
     normalizedUrl: string;
     host: string;
     markdown: string;
+    descriptionHint: string | null;
     hintRestrictedSocial: boolean;
   }): Promise<LinkClassification> {
     const apiKey = this.config.get<string>('openai.apiKey');
@@ -80,6 +82,7 @@ export class LinkContentClassifierService {
           normalizedUrl: params.normalizedUrl,
           host: params.host,
           markdownExcerpt: excerpt,
+          descriptionHint: params.descriptionHint,
           hintRestrictedSocial: params.hintRestrictedSocial,
         }),
       });

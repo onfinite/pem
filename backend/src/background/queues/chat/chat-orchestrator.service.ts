@@ -292,12 +292,38 @@ export class ChatOrchestratorService {
                   ),
                 }
               : answerMeta;
-        await this.savePemResponse(
+        const pemMsg = await this.savePemResponse(
           userId,
           messageId,
           answerText,
           mergedQuestionMeta,
         );
+
+        const userUrlNorm = new Set(urlOccurrences.map((o) => o.normalized));
+        const urlsOnlyInAnswer = extractUrlOccurrencesFromText(
+          answerText,
+        ).filter((o) => !userUrlNorm.has(o.normalized));
+        if (urlsOnlyInAnswer.length > 0) {
+          try {
+            const answerLinkRows = await this.linkPipeline.processForMessage(
+              userId,
+              pemMsg.id,
+              urlsOnlyInAnswer,
+            );
+            if (answerLinkRows.rows.length > 0) {
+              await this.chatEvents.publish(userId, 'message_updated', {
+                messageId: pemMsg.id,
+                field: 'link_previews',
+                value: linkPreviewsSerializedFromRows(answerLinkRows.rows),
+              });
+            }
+          } catch (e) {
+            this.log.warn(
+              `Ask reply link previews failed messageId=${pemMsg.id}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        }
+
         this.queueUserMessageEmbedding(msg, content);
         return;
       }
@@ -1422,7 +1448,7 @@ export class ChatOrchestratorService {
     parentMessageId: string,
     responseText: string,
     metadata?: Record<string, unknown>,
-  ) {
+  ): Promise<{ id: string }> {
     const [pemMsg] = await this.db
       .insert(messagesTable)
       .values({
@@ -1467,6 +1493,7 @@ export class ChatOrchestratorService {
     });
 
     await this.push.notifyChatReply(userId);
+    return { id: pemMsg.id };
   }
 
   private async publishStatus(userId: string, messageId: string, text: string) {

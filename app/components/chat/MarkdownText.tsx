@@ -16,6 +16,14 @@ const INLINE_LINK_MARK = "\u2197";
 
 const INLINE_LINK_MARK_FONT_SIZE = Math.round(fontSize.base * 0.68);
 
+/** Turns `[label](https://…)` into `label https://…` so URL parsing + inline chips work (Pem often uses markdown links). */
+function flattenMarkdownAutolinks(raw: string): string {
+  return raw.replace(
+    /\[([^\]]{1,220})\]\((https?:\/\/[^)\s]+)\)/gi,
+    "$1 $2",
+  );
+}
+
 type Props = {
   children: string;
   style?: StyleProp<TextStyle>;
@@ -57,7 +65,7 @@ function buildNodes(
   linkColor: string,
   opts: BuildOpts,
 ): ReactNode[] {
-  const segments = splitTextWithUrls(raw);
+  const segments = splitTextWithUrls(flattenMarkdownAutolinks(raw));
   const out: ReactNode[] = [];
 
   segments.forEach((seg, si) => {
@@ -69,6 +77,7 @@ function buildNodes(
       out.push(
         <Text
           key={`s${si}-url`}
+          style={userBubbleLinkOuter}
           accessibilityRole="link"
           accessibilityLabel={`Open link ${label}`}
           onPress={() => {
@@ -128,21 +137,31 @@ const boldStyle: TextStyle = {
   fontFamily: fontFamily.sans.semibold,
 };
 
+const USER_BUBBLE_LINK_LINE_HEIGHT = lh(fontSize.base, 1.4);
+
 /** Slightly smaller than body so the arrow reads as a hint, not a second headline. */
 const userBubbleLinkMark: TextStyle = {
   fontFamily: fontFamily.sans.regular,
   fontSize: INLINE_LINK_MARK_FONT_SIZE,
-  lineHeight: lh(INLINE_LINK_MARK_FONT_SIZE, 1.15),
+  // Match body line box — a smaller nested `lineHeight` clips the first line on iOS when mixed with body-sized text.
+  lineHeight: USER_BUBBLE_LINK_LINE_HEIGHT,
   textDecorationLine: "none",
 };
 
 /**
- * Hostname: inherits fontSize/lineHeight from parent `style`; same regular face + synthetic italic.
+ * Hostname: same line box as bubble body so nested runs (arrow + italic) are not clipped.
  */
 const userBubbleLinkHostText: TextStyle = {
   fontFamily: fontFamily.sans.regular,
+  fontSize: fontSize.base,
   fontStyle: "italic",
+  lineHeight: USER_BUBBLE_LINK_LINE_HEIGHT,
   textDecorationLine: "underline",
+};
+
+const userBubbleLinkOuter: TextStyle = {
+  fontSize: fontSize.base,
+  lineHeight: USER_BUBBLE_LINK_LINE_HEIGHT,
 };
 
 const linkTextBase: TextStyle = {
