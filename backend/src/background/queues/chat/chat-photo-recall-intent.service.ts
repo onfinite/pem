@@ -16,10 +16,17 @@ import {
   photoRecallIntentSystemPrompt,
   photoRecallIntentUserPrompt,
 } from '../../../chat/prompts/chat-photo-recall-intent.prompt';
+import {
+  PHOTO_RECALL_STRIP_SCORE_GAP,
+  RAG_IMAGE_RECALL_MIN_SIMILARITY,
+  RAG_IMAGE_RECALL_TOP_K,
+} from '../../../chat/chat.constants';
 import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
 import {
   PHOTO_RECALL_MAX_MESSAGE_IDS,
-  resolvePhotoRecallMessageIdsForQuery,
+  dedupeImageRecallHitsByMessage,
+  pruneImageRecallHitsByTopScoreGap,
+  resolvePhotoRecallMessageIdsFromRagOnly,
 } from './resolve-photo-recall-message-ids';
 import { shouldSkipPhotoRecallStrip } from './photo-recall-strip-guard';
 
@@ -66,7 +73,13 @@ export class ChatPhotoRecallIntentService {
    */
   async resolveStripAndMessageIds(params: {
     userId: string;
+    /** Full message text for RAG / default embedding query (may include vision blocks). */
     userText: string;
+    /**
+     * What the user actually typed (caption, transcript). Used for the fast strip guard
+     * and the recall classifier so link+photo shares are not judged on megabytes of vision text.
+     */
+    classifierUserText?: string;
     /** Augmented text for vector search only (e.g. ISO time window). Defaults to userText. */
     vectorQueryText?: string;
     ragMessageIds: string[];
@@ -78,7 +91,11 @@ export class ChatPhotoRecallIntentService {
       return { attachStrip: false, messageIds: [] };
     }
 
-    if (shouldSkipPhotoRecallStrip(params.userText)) {
+    const stripGuardAndClassifierText = (
+      params.classifierUserText?.trim() || params.userText
+    ).trim();
+
+    if (shouldSkipPhotoRecallStrip(stripGuardAndClassifierText)) {
       return { attachStrip: false, messageIds: [] };
     }
 
@@ -93,7 +110,10 @@ export class ChatPhotoRecallIntentService {
     const allowed = new Set(candidates.map((c) => c.id));
     let intent: PhotoRecallIntent | null = null;
     try {
-      intent = await this.runClassifier(params.userText, candidates);
+      intent = await this.runClassifier(
+        stripGuardAndClassifierText,
+        candidates,
+      );
     } catch (e) {
       this.log.warn(
         `Photo recall intent failed: ${e instanceof Error ? e.message : 'unknown'}`,
@@ -108,27 +128,47 @@ export class ChatPhotoRecallIntentService {
     const ordered = (intent.orderedMessageIds ?? []).filter((id) =>
       allowed.has(id),
     );
-    if (ordered.length > 0) {
-      return {
-        attachStrip: true,
-        messageIds: ordered.slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS),
-      };
-    }
 
     const searchText =
       intent.embeddingSearchHint?.trim() ||
       (params.vectorQueryText ?? params.userText).trim();
-    const resolved = await resolvePhotoRecallMessageIdsForQuery(
-      this.db,
-      this.embeddings,
+
+    const rawImageHits = await this.embeddings.similaritySearchImageMessages(
       params.userId,
       searchText,
-      params.ragMessageIds,
+      RAG_IMAGE_RECALL_TOP_K,
+      RAG_IMAGE_RECALL_MIN_SIMILARITY,
       params.vectorSearchOpts,
     );
+    const vectorPrunedIds = pruneImageRecallHitsByTopScoreGap(
+      dedupeImageRecallHitsByMessage(rawImageHits),
+      PHOTO_RECALL_STRIP_SCORE_GAP,
+    );
+
+    if (ordered.length > 0) {
+      const prunedSet = new Set(vectorPrunedIds);
+      const refined = ordered.filter((id, i) => i === 0 || prunedSet.has(id));
+      return {
+        attachStrip: true,
+        messageIds: refined.slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS),
+      };
+    }
+
+    if (vectorPrunedIds.length > 0) {
+      return {
+        attachStrip: true,
+        messageIds: vectorPrunedIds.slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS),
+      };
+    }
+
+    const ragOnly = await resolvePhotoRecallMessageIdsFromRagOnly(
+      this.db,
+      params.userId,
+      params.ragMessageIds,
+    );
     return {
-      attachStrip: resolved.length > 0,
-      messageIds: resolved,
+      attachStrip: ragOnly.length > 0,
+      messageIds: ragOnly,
     };
   }
 

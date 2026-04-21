@@ -28,7 +28,10 @@ import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
 import { ProfileService } from '../../../profile/profile.service';
 import { StorageService } from '../../../storage/storage.service';
 import { buildPhotoRecallMetadata } from './build-photo-recall-metadata';
+import { buildPhotoRecallPromptSection } from './build-photo-recall-prompt-section';
 import { ChatPhotoRecallIntentService } from './chat-photo-recall-intent.service';
+import { orderedMessageIdsFromRecallItems } from './resolve-photo-recall-message-ids';
+import { buildSavedLinksRecallPromptSection } from './saved-links-recall-for-ask';
 import {
   ASK_DONE_EXTRACTS_CAP,
   RAG_MIN_SIMILARITY,
@@ -124,6 +127,7 @@ export class ChatQuestionService {
     question: string,
     userName?: string | null,
     userSummary?: string | null,
+    linkContextSection?: string | null,
   ): Promise<{ text: string; metadata?: Record<string, unknown> }> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) {
@@ -160,12 +164,8 @@ export class ChatQuestionService {
         isNotNull(extractsTable.closedAt),
       ];
       if (temporalRange && asksDoneHints) {
-        closedWhereParts.push(
-          gte(extractsTable.closedAt, temporalRange.start),
-        );
-        closedWhereParts.push(
-          lte(extractsTable.closedAt, temporalRange.end),
-        );
+        closedWhereParts.push(gte(extractsTable.closedAt, temporalRange.start));
+        closedWhereParts.push(lte(extractsTable.closedAt, temporalRange.end));
       } else if (!allTimeDone) {
         closedWhereParts.push(gte(extractsTable.closedAt, closedSince));
       }
@@ -181,55 +181,49 @@ export class ChatQuestionService {
           }
         : undefined;
 
-      const [
-        allOpen,
-        buckets,
-        ragHits,
-        memorySection,
-        recentMsgs,
-        closedRows,
-      ] = await Promise.all([
-        this.db
-          .select()
-          .from(extractsTable)
-          .where(
-            and(
-              eq(extractsTable.userId, userId),
-              inArray(extractsTable.status, ['inbox', 'snoozed']),
-            ),
-          )
-          .orderBy(desc(extractsTable.createdAt))
-          .limit(100),
-        this.extracts.getAskOpenTimelineBuckets(userId),
-        this.embeddings.similaritySearch(
-          userId,
-          ragVectorQuery,
-          RAG_TOP_K,
-          RAG_MIN_SIMILARITY,
-          ragSimilarityOpts,
-        ),
-        this.profile.buildMemoryPromptSection(userId),
-        this.db
-          .select({
-            id: messagesTable.id,
-            role: messagesTable.role,
-            kind: messagesTable.kind,
-            content: messagesTable.content,
-            transcript: messagesTable.transcript,
-            visionSummary: messagesTable.visionSummary,
-            createdAt: messagesTable.createdAt,
-          })
-          .from(messagesTable)
-          .where(eq(messagesTable.userId, userId))
-          .orderBy(sql`${messagesTable.createdAt} DESC`)
-          .limit(QUESTION_RECENT_MESSAGES_LIMIT),
-        this.db
-          .select()
-          .from(extractsTable)
-          .where(and(...closedWhereParts))
-          .orderBy(desc(extractsTable.closedAt))
-          .limit(ASK_DONE_EXTRACTS_CAP),
-      ]);
+      const [allOpen, buckets, ragHits, memorySection, recentMsgs, closedRows] =
+        await Promise.all([
+          this.db
+            .select()
+            .from(extractsTable)
+            .where(
+              and(
+                eq(extractsTable.userId, userId),
+                inArray(extractsTable.status, ['inbox', 'snoozed']),
+              ),
+            )
+            .orderBy(desc(extractsTable.createdAt))
+            .limit(100),
+          this.extracts.getAskOpenTimelineBuckets(userId),
+          this.embeddings.similaritySearch(
+            userId,
+            ragVectorQuery,
+            RAG_TOP_K,
+            RAG_MIN_SIMILARITY,
+            ragSimilarityOpts,
+          ),
+          this.profile.buildMemoryPromptSection(userId),
+          this.db
+            .select({
+              id: messagesTable.id,
+              role: messagesTable.role,
+              kind: messagesTable.kind,
+              content: messagesTable.content,
+              transcript: messagesTable.transcript,
+              visionSummary: messagesTable.visionSummary,
+              createdAt: messagesTable.createdAt,
+            })
+            .from(messagesTable)
+            .where(eq(messagesTable.userId, userId))
+            .orderBy(sql`${messagesTable.createdAt} DESC`)
+            .limit(QUESTION_RECENT_MESSAGES_LIMIT),
+          this.db
+            .select()
+            .from(extractsTable)
+            .where(and(...closedWhereParts))
+            .orderBy(desc(extractsTable.closedAt))
+            .limit(ASK_DONE_EXTRACTS_CAP),
+        ]);
 
       const allOpenBlock = formatAllOpen(allOpen);
       const timelineBlock = formatBuckets(buckets);
@@ -253,6 +247,21 @@ export class ChatQuestionService {
       } else {
         photoRecall = undefined;
       }
+
+      const idsForPhotoRecallPrompt = photoRecall?.photo_recall?.length
+        ? orderedMessageIdsFromRecallItems(photoRecall.photo_recall)
+        : photoRecallMessageIds;
+
+      const photoRecallPromptBlock =
+        idsForPhotoRecallPrompt.length > 0
+          ? await buildPhotoRecallPromptSection(
+              this.db,
+              userId,
+              idsForPhotoRecallPrompt,
+              now,
+              userTimeZone,
+            )
+          : undefined;
 
       const ragBlock =
         ragHits.length > 0
@@ -359,6 +368,14 @@ export class ChatQuestionService {
         ? `\nAbout the user:\n${userSummary}\n\n`
         : '';
 
+      const savedLinksRecallSection = await buildSavedLinksRecallPromptSection(
+        this.db,
+        userId,
+        question,
+        now,
+        userTimeZone,
+      );
+
       const { text } = await generateText({
         model: openai('gpt-4o'),
         maxRetries: 2,
@@ -369,7 +386,7 @@ Recall questions ("do you remember X?", "what were we talking about last month?"
 - Always anchor memory in time and substance: say when it was (using the bracket stamps in context) and what the conversation or moment was like — themes, tone, what they cared about — not only a flat fact. If a stamp is only "today" or "yesterday", say just that — do not add a calendar date (no "April 17, 2026" or "4/17/2026" for those).
 - For "when did we discuss X?", use message timestamps and RAG hits; give the clearest date phrasing you can. If the stamp includes a calendar date or "last Monday" with a date, you may echo that; never invent a numeric date when the stamp is only "today" or "yesterday".
 - For time-based recall ("last month", "yesterday", "this month", "recently", or a specific calendar day like "April 12 last year" / "4/5/2007"), look at message dates and task creation dates in the context. When a "Messages from {period}" section is present, use it as the primary source for that time range.
-- When the client shows a thumbnail row of past chat photos for this question, those images were chosen as relevant to what they asked — describe the same scenes in your answer; weave them into the story of what you remember.
+- When the client shows a thumbnail row of past chat photos for this question, those images were chosen as relevant to what they asked — describe the same scenes in your answer; weave them into the story of what you remember. If a "Recalled chat photos" section appears below, it has the exact user captions and image detail for those thumbnails — treat captions as what they said when they sent the photo (names, companies, plans).
 - If you have partial info, share what you have and note what you're unsure about.
 - If you truly have nothing: "I don't have anything about that yet. Tell me and I'll remember for next time."
 
@@ -393,8 +410,14 @@ Chat photos and image context:
 - FORBIDDEN (never write, even partially): "can't show photos", "can't pull up", "can't display images", "don't have access to your photos", "can't view attachments", "only see text", "I'm not able to show images".
 - If nothing in the context matches what they asked (e.g. no LA trip in the descriptions), say you don't find photos in chat about that topic yet — that is a data gap, not a capability gap.
 
+Shopping / Costco / "what's on my list" (groceries, errands): Answer from open tasks and the timeline first. If "Recalled chat photos" shows something they clearly wanted to buy (caption or product in the image) that does not appear in those open tasks, add one brief friendly aside that it is not on the list yet — no pressure to add it; never invent list items.
+
+Links: If "## Links the user shared" appears, those URLs were fetched for them. Use the summary and metadata only; do not invent product prices or article claims beyond what is there. If fetch_status is unauthorized, failed, or timeout, say so plainly and suggest pasting text or retrying.
+
+Saved links from chat: If "## Saved links from chat" appears, it lists URLs they previously sent in chat (with dates and summaries). Use it for questions like "what link did I save", "find that article I sent", or "that URL from last week".
+
 Tone: Be warm and natural. Talk like a friend who knows them well. No markdown, no bullet points. Use natural prose.`,
-        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${closedBlock ? `${closedBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${temporalBlock ? `${temporalBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
+        prompt: `${summaryBlock}${memorySection ? `Memory:\n${memorySection}\n\n` : ''}All open tasks:\n${allOpenBlock}\n\n${timelineBlock ? `Timeline view:\n${timelineBlock}\n\n` : ''}${closedBlock ? `${closedBlock}\n\n` : ''}${ragBlock ? `${ragBlock}\n\n` : ''}${photoRecallPromptBlock ? `${photoRecallPromptBlock}\n\n` : ''}${temporalBlock ? `${temporalBlock}\n\n` : ''}${recentChatBlock ? `${recentChatBlock}\n\n` : ''}${savedLinksRecallSection ? `${savedLinksRecallSection}\n\n` : ''}${linkContextSection ? `${linkContextSection}\n\n` : ''}Question:\n"""${question.slice(0, 4000)}"""`,
       });
 
       const trimmed =

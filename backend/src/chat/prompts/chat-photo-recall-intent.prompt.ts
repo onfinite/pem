@@ -7,14 +7,20 @@ Set attachRelevantPastPhotos to true when ANY of these apply AND at least one ca
 - They are doing memory or conversation recall where images would help: e.g. what did we discuss with [person], remind me about [meeting/topic/trip], what did we talk about when, trying to remember [event] — and a candidate's caption or vision excerpt ties to that person, place, meeting, or topic.
 
 Set attachRelevantPastPhotos to false when:
+- They pasted or shared a **web link** (Amazon, article, etc.) or the message is mostly a URL — even if it is a product. That is not a request to surface old chat photos. attachRelevantPastPhotos must be false unless they explicitly ask about a **photo they sent** or memory recall tied to images.
 - They are mainly describing or captioning what they are sending right now ("here is a photo from my meeting", "pic from lunch") without asking to remember past discussion or past photos.
 - They ask about tasks, calendar, or lists with no recall of a person/meeting/conversation and no ask for images.
+- They only want **current** shopping or grocery **inventory** ("what's on my shopping list", "what do I need from the store", "what's on my list for Costco", "near Target what's on my list") with no mention of photos, remembering, a specific past trip, or a specific product/person to jog memory — do not attach old list snapshots; open tasks in the app are the source of truth for that.
+- They say they **finished** shopping or **bought** everything ("got it all", "picked everything up", "done at Costco", "bought them all") — no strip for that turn.
 - Bare confirmations ("yes", "ok", "sure", "go ahead") or short commands like "add them to my shopping list" with no mention of past photos, pictures, or remembering — never attach a strip for those.
 - None of the candidates plausibly relate to their message (do not attach unrelated photos just because they exist).
+
+Set attachRelevantPastPhotos to true when (in addition to the rules above) for shopping or errands: they ask about a **specific** item, brand, person, or remembered context ("milk for Arshad", "that PediaSure", "what was on the list in the photo I sent", "remember the Costco list") and a candidate clearly matches — then photos help.
 
 When true, optional embeddingSearchHint: short English phrase for semantic image search (e.g. "Farin meeting discussion", "LA trip beach"). Use names/topics from their message.
 
 When true, optional orderedMessageIds: candidate message ids best-matching their request, best first. Prefer ids whose caption/vision clearly match. Omit if unsure — search will still run.
+- orderedMessageIds: list **only** images that clearly match the topic (e.g. the kid card / flyer). Do **not** include generic screenshots (todo lists, random UI, unrelated errands) even if they feel vaguely “life admin” — those will confuse the strip.
 `.trim();
 }
 

@@ -4,10 +4,13 @@ import { pemImpactLight } from "@/lib/pemHaptics";
 import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 import { collectUserPhotoDisplayUris } from "@/utils/collectUserPhotoDisplayUris";
 import { UserPhotoPreviewModal } from "@/components/chat/UserPhotoPreviewModal";
+import { UserMessageLinkAttachmentsRow } from "@/components/chat/UserMessageLinkAttachmentsRow";
+import { MarkdownText } from "@/components/chat/MarkdownText";
+import { extractHttpUrlsFromUserText } from "@/utils/extractHttpUrlsFromUserText";
 import { UserPhotoBubbleThumbnails } from "@/components/chat/UserPhotoBubbleThumbnails";
 import { AlertCircle, Check, CheckCheck } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -28,7 +31,11 @@ export function UserPhotoBubble({
   const { colors } = useTheme();
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const uris = collectUserPhotoDisplayUris(message);
-  const caption = (message.content ?? "").trim();
+  const rawCaption = (message.content ?? "").trim();
+  const userHasInlineLinkUrls = useMemo(
+    () => extractHttpUrlsFromUserText(rawCaption).length > 0,
+    [rawCaption],
+  );
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
@@ -36,17 +43,17 @@ export function UserPhotoBubble({
   const tickColor = colors.userBubbleMeta;
 
   const handleLongPress = useCallback(() => {
-    if (!caption) return;
+    if (!rawCaption) return;
     pemImpactLight();
-    void Clipboard.setStringAsync(caption);
+    void Clipboard.setStringAsync(rawCaption);
     onCopyFeedback?.();
-  }, [caption, onCopyFeedback]);
+  }, [rawCaption, onCopyFeedback]);
 
   return (
     <View style={[styles.row, styles.rowRight]}>
       <Pressable
         onPress={() => uris.length > 0 && setIsPreviewOpen(true)}
-        onLongPress={caption ? handleLongPress : undefined}
+        onLongPress={rawCaption ? handleLongPress : undefined}
         style={[
           styles.bubble,
           { backgroundColor: colors.userBubble },
@@ -60,11 +67,15 @@ export function UserPhotoBubble({
           secondarySurface={colors.secondarySurface}
           isSending={isSending}
         />
-        {caption ? (
-          <Text style={[styles.caption, { color: colors.userBubbleText }]}>
-            {caption}
-          </Text>
+        {rawCaption ? (
+          <MarkdownText
+            style={[styles.caption, { color: colors.userBubbleText }]}
+            userBubbleInlineLinks={userHasInlineLinkUrls}
+          >
+            {rawCaption}
+          </MarkdownText>
         ) : null}
+        <UserMessageLinkAttachmentsRow message={message} />
         {isFailed && (
           <Pressable onPress={onRetry} style={styles.retryRow} hitSlop={8}>
             <AlertCircle size={14} color="#ff3b30" />

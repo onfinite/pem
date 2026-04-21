@@ -95,6 +95,17 @@ export type PhotoRecallItem = {
   vision_summary: string | null;
 };
 
+export type ChatLinkPreview = {
+  original_url: string;
+  canonical_url: string | null;
+  title: string | null;
+  content_type: string | null;
+  fetch_status: string;
+  summary: string | null;
+  /** Product / OG image when server extracted metadata includes it. */
+  image_url?: string | null;
+};
+
 export type ApiMessage = {
   id: string;
   role: "user" | "pem";
@@ -118,6 +129,8 @@ export type ApiMessage = {
   parent_message_id: string | null;
   idempotency_key?: string | null;
   created_at: string;
+  /** Server-enriched: links fetched for this message (user messages). */
+  link_previews?: ChatLinkPreview[] | null;
   metadata?: {
     tasks_created?: number;
     tasks_updated?: number;
@@ -126,6 +139,7 @@ export type ApiMessage = {
     calendar_updated?: number;
     calendar_deleted?: number;
     photo_recall?: PhotoRecallItem[];
+    link_previews?: ChatLinkPreview[];
     type?: string;
     extract_id?: string;
     event_summary?: string;
@@ -243,6 +257,48 @@ export async function getChatMessages(
     method: "GET",
     getToken,
   });
+}
+
+/** One message with `link_previews` — use for polling after send (e.g. share extension). */
+export async function getChatMessage(
+  getToken: () => Promise<string | null>,
+  messageId: string,
+): Promise<{ message: ApiMessage }> {
+  return apiFetch(`/chat/messages/${messageId}`, {
+    method: "GET",
+    getToken,
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Polls until `link_previews` is non-empty or `maxWaitMs` elapses.
+ * Returns the latest message either way so the caller can still show confirmation.
+ */
+export async function pollChatMessageForLinkPreviews(
+  getToken: () => Promise<string | null>,
+  messageId: string,
+  opts?: { maxWaitMs?: number; intervalMs?: number },
+): Promise<ApiMessage> {
+  const maxWaitMs = opts?.maxWaitMs ?? 18_000;
+  const intervalMs = opts?.intervalMs ?? 450;
+  const deadline = Date.now() + maxWaitMs;
+  let last: ApiMessage | null = null;
+  while (Date.now() < deadline) {
+    const { message } = await getChatMessage(getToken, messageId);
+    last = message;
+    if (message.link_previews && message.link_previews.length > 0) {
+      return message;
+    }
+    await sleep(intervalMs);
+  }
+  if (!last) {
+    throw new Error("pollChatMessageForLinkPreviews: no response");
+  }
+  return last;
 }
 
 export async function searchMessages(

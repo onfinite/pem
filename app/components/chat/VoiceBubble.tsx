@@ -110,6 +110,8 @@ type Props = {
   onRetry?: () => void;
   /** When stacked under thumbnails, parent already applies screen gutters. */
   omitOuterGutters?: boolean;
+  /** Parent provides user bubble chrome (e.g. voice + link preview in one shell). */
+  transparentUserSurface?: boolean;
 };
 
 export default function VoiceBubble({
@@ -119,6 +121,7 @@ export default function VoiceBubble({
   isFailed,
   onRetry,
   omitOuterGutters = false,
+  transparentUserSurface = false,
 }: Props) {
   const { colors } = useTheme();
   const transcript = message.transcript ?? message.content;
@@ -209,7 +212,14 @@ export default function VoiceBubble({
     }
   }, [speedIdx, isLoaded, player]);
 
-  const bubbleBg = isUser ? colors.userBubble : colors.cardBackground;
+  let bubbleBg: string;
+  if (transparentUserSurface && isUser) {
+    bubbleBg = "transparent";
+  } else if (isUser) {
+    bubbleBg = colors.userBubble;
+  } else {
+    bubbleBg = colors.cardBackground;
+  }
   const activeBarColor = pemAmber;
   const inactiveBarColor = isUser ? colors.userBubbleMeta : colors.borderMuted;
   const dimText = isUser ? colors.userBubbleMeta : colors.textTertiary;
@@ -237,6 +247,7 @@ export default function VoiceBubble({
           styles.bubble,
           { backgroundColor: bubbleBg },
           isUser ? styles.bubbleUser : styles.bubblePem,
+          transparentUserSurface && isUser && styles.bubbleTransparentInset,
           isSending && { opacity: 0.7 },
           isFailed && { opacity: 0.6 },
         ]}
@@ -331,6 +342,12 @@ const styles = StyleSheet.create({
   },
   bubbleUser: { borderBottomRightRadius: radii.sm },
   bubblePem: { borderBottomLeftRadius: radii.sm },
+  bubbleTransparentInset: {
+    borderRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomLeftRadius: 0,
+    maxWidth: "100%",
+  },
   voiceRow: {
     flexDirection: "row",
     alignItems: "center",

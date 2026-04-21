@@ -22,11 +22,7 @@ export function dedupeExtractionLike<
 >(extraction: T, activeKeys: Set<string>, closedKeys: Set<string>): T {
   return {
     ...extraction,
-    creates: filterDedupedCreates(
-      extraction.creates,
-      activeKeys,
-      closedKeys,
-    ),
+    creates: filterDedupedCreates(extraction.creates, activeKeys, closedKeys),
   };
 }
 

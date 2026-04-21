@@ -1,10 +1,21 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, ilike, isNotNull, lt, or } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  lt,
+  or,
+} from 'drizzle-orm';
 
 import { DRIZZLE } from '../database/database.constants';
 import type { DrizzleDb } from '../database/database.module';
 import {
   extractsTable,
+  messageLinksTable,
   messagesTable,
   type MessageImageAsset,
   type MessageRow,
@@ -13,6 +24,8 @@ import {
   type TriageCategory,
   type ProcessingStatus,
 } from '../database/schemas';
+import type { ChatLinkPreviewSerialized } from './link-preview.types';
+import { resolveLinkPreviewImageUrl } from './utils/resolve-link-preview-image-url';
 import { decodePhotoVisionStored } from './utils/photo-vision-stored';
 
 @Injectable()
@@ -122,6 +135,48 @@ export class ChatService {
     return { messages: page.reverse(), has_more: hasMore };
   }
 
+  /** Link rows the user saved on chat messages (for client chips / recall). */
+  async getLinkPreviewsByMessageIds(
+    userId: string,
+    messageIds: string[],
+  ): Promise<Map<string, ChatLinkPreviewSerialized[]>> {
+    const map = new Map<string, ChatLinkPreviewSerialized[]>();
+    if (!messageIds.length) return map;
+
+    const rows = await this.db
+      .select()
+      .from(messageLinksTable)
+      .where(
+        and(
+          eq(messageLinksTable.userId, userId),
+          inArray(messageLinksTable.messageId, messageIds),
+        ),
+      )
+      .orderBy(asc(messageLinksTable.createdAt));
+
+    for (const r of rows) {
+      const list = map.get(r.messageId) ?? [];
+      list.push({
+        original_url: r.originalUrl,
+        canonical_url: r.canonicalUrl,
+        title: r.pageTitle,
+        content_type: r.contentType,
+        fetch_status: r.fetchStatus,
+        summary: r.structuredSummary?.trim()
+          ? r.structuredSummary.length > 400
+            ? `${r.structuredSummary.slice(0, 400)}…`
+            : r.structuredSummary
+          : null,
+        image_url: resolveLinkPreviewImageUrl(
+          r.extractedMetadata,
+          r.jinaContent,
+        ),
+      });
+      map.set(r.messageId, list);
+    }
+    return map;
+  }
+
   async getRecentMessages(userId: string, limit = 20): Promise<MessageRow[]> {
     const rows = await this.db
       .select()
@@ -203,6 +258,7 @@ export class ChatService {
       parent_message_id: m.parentMessageId,
       idempotency_key: m.idempotencyKey ?? null,
       created_at: m.createdAt.toISOString(),
+      link_previews: null as ChatLinkPreviewSerialized[] | null,
     };
   }
 

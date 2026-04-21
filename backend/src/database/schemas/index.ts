@@ -6,6 +6,7 @@ export * from './lists.schema';
 export * from './logs.schema';
 export * from './memory-facts.schema';
 export * from './message-embeddings.schema';
+export * from './message-links.schema';
 export * from './messages.schema';
 export * from './reported-issues.schema';
 export * from './users.schema';

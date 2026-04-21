@@ -13,6 +13,8 @@ import VoiceBubble from "./VoiceBubble";
 import { UserPhotoBubble } from "./UserPhotoBubble";
 import { UserPhotoBubbleThumbnails } from "./UserPhotoBubbleThumbnails";
 import { PemPhotoRecallStrip } from "./PemPhotoRecallStrip";
+import { UserMessageLinkAttachmentsRow } from "./UserMessageLinkAttachmentsRow";
+import { extractHttpUrlsFromUserText } from "@/utils/extractHttpUrlsFromUserText";
 import { collectUserPhotoDisplayUris } from "@/utils/collectUserPhotoDisplayUris";
 import { mergePhotoRecallWithPersisted } from "@/utils/mergePhotoRecallWithPersisted";
 
@@ -60,6 +62,19 @@ export default function ChatBubble({
     [meta?.photo_recall, message._persistedPhotoRecall],
   );
 
+  const rawTextContent = message.content ?? message.transcript ?? "";
+  const userHasInlineLinkUrls = useMemo(
+    () =>
+      message.role === "user" &&
+      extractHttpUrlsFromUserText(rawTextContent).length > 0,
+    [message.role, rawTextContent],
+  );
+
+  const userHasLinkAttachments =
+    message.role === "user" &&
+    (extractHttpUrlsFromUserText(rawTextContent).length > 0 ||
+      (message.link_previews?.length ?? 0) > 0);
+
   if (message.kind === "image") {
     return (
       <UserPhotoBubble
@@ -76,6 +91,38 @@ export default function ChatBubble({
     const voicePhotoUris =
       isUser ? collectUserPhotoDisplayUris(message) : [];
     if (voicePhotoUris.length > 0) {
+      if (userHasLinkAttachments) {
+        return (
+          <View style={voiceWithPhotosStyles.column}>
+            <View
+              style={[
+                voiceWithPhotosStyles.unifiedUserLinkShell,
+                { backgroundColor: colors.userBubble },
+              ]}
+            >
+              <UserPhotoBubbleThumbnails
+                uris={voicePhotoUris}
+                userBubbleText={colors.userBubbleText}
+                secondarySurface={colors.secondarySurface}
+                isSending={isSending}
+              />
+              <VoiceBubble
+                key={message.id}
+                message={message}
+                isUser={isUser}
+                isSending={isSending}
+                isFailed={isFailed}
+                onRetry={onRetry ? () => onRetry(message) : undefined}
+                omitOuterGutters
+                transparentUserSurface
+              />
+              <View style={voiceWithPhotosStyles.unifiedUserLinkFooter}>
+                <UserMessageLinkAttachmentsRow message={message} />
+              </View>
+            </View>
+          </View>
+        );
+      }
       return (
         <View style={voiceWithPhotosStyles.column}>
           <UserPhotoBubbleThumbnails
@@ -96,15 +143,47 @@ export default function ChatBubble({
         </View>
       );
     }
+    if (userHasLinkAttachments && isUser) {
+      return (
+        <View style={voiceWithPhotosStyles.voiceUserUnifiedRow}>
+          <View
+            style={[
+              voiceWithPhotosStyles.unifiedUserLinkShell,
+              { backgroundColor: colors.userBubble },
+            ]}
+          >
+            <VoiceBubble
+              key={message.id}
+              message={message}
+              isUser={isUser}
+              isSending={isSending}
+              isFailed={isFailed}
+              onRetry={onRetry ? () => onRetry(message) : undefined}
+              omitOuterGutters
+              transparentUserSurface
+            />
+            <View style={voiceWithPhotosStyles.unifiedUserLinkFooter}>
+              <UserMessageLinkAttachmentsRow message={message} />
+            </View>
+          </View>
+        </View>
+      );
+    }
     return (
-      <VoiceBubble
-        key={message.id}
-        message={message}
-        isUser={isUser}
-        isSending={isSending}
-        isFailed={isFailed}
-        onRetry={onRetry ? () => onRetry(message) : undefined}
-      />
+      <View
+        style={
+          isUser ? voiceWithPhotosStyles.voiceUserOnlyColumn : undefined
+        }
+      >
+        <VoiceBubble
+          key={message.id}
+          message={message}
+          isUser={isUser}
+          isSending={isSending}
+          isFailed={isFailed}
+          onRetry={onRetry ? () => onRetry(message) : undefined}
+        />
+      </View>
     );
   }
 
@@ -115,7 +194,7 @@ export default function ChatBubble({
       : colors.cardBackground;
   const textColor = isUser ? colors.userBubbleText : colors.textPrimary;
 
-  const content = message.content ?? message.transcript ?? "";
+  const showUserMarkdown = !isUser || rawTextContent.trim().length > 0;
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
@@ -130,7 +209,7 @@ export default function ChatBubble({
       (meta.calendar_written ?? 0) > 0);
 
   const handleLongPress = () => {
-    const text = content.trim();
+    const text = rawTextContent.trim();
     if (!text) return;
     pemImpactLight();
     void Clipboard.setStringAsync(text);
@@ -148,83 +227,94 @@ export default function ChatBubble({
           ]}
         />
       )}
-      <Pressable
-        onLongPress={handleLongPress}
-        style={({ pressed }) => {
-          const base = [
-            styles.bubble,
-            { backgroundColor: bubbleBg },
-            isUser ? styles.bubbleUser : styles.bubblePem,
-            isBrief && { borderWidth: 1, borderColor: colors.borderMuted },
-          ];
-          if (isFailed) return [...base, { opacity: 0.6 }];
-          if (isSending) return [...base, { opacity: 0.8 }];
-          if (pressed) return [...base, { opacity: 0.88 }];
-          return base;
-        }}
-      >
-        {isBrief && (
-          <Text style={[styles.briefLabel, { color: pemAmber }]}>
-            Daily Brief
-          </Text>
-        )}
-        <MarkdownText style={[styles.text, { color: textColor }]}>
-          {content}
-        </MarkdownText>
-
-        {!isUser && photoRecallForDisplay.length > 0 && (
-          <PemPhotoRecallStrip items={photoRecallForDisplay} />
-        )}
-
-        {isFailed && (
-          <Pressable
-            onPress={onRetry ? () => onRetry(message) : undefined}
-            style={styles.retryRow}
-            hitSlop={8}
-          >
-            <AlertCircle size={14} color="#ff3b30" />
-            <Text style={styles.retryText}>Failed — tap to retry</Text>
-          </Pressable>
-        )}
-
-        {!isUser && hasActions && onViewTasks && (
-          <Pressable
-            onPress={onViewTasks}
-            style={[styles.viewTasksChip, { backgroundColor: colors.secondarySurface }]}
-            hitSlop={6}
-          >
-            <ListTodo size={13} color={pemAmber} strokeWidth={2} />
-            <Text style={[styles.viewTasksText, { color: pemAmber }]}>
-              View tasks
+      <View style={isUser ? voiceWithPhotosStyles.userTextStack : undefined}>
+        <Pressable
+          onLongPress={handleLongPress}
+          style={({ pressed }) => {
+            const base = [
+              styles.bubble,
+              { backgroundColor: bubbleBg },
+              isUser ? styles.bubbleUser : styles.bubblePem,
+              isBrief && { borderWidth: 1, borderColor: colors.borderMuted },
+            ];
+            if (isFailed) return [...base, { opacity: 0.6 }];
+            if (isSending) return [...base, { opacity: 0.8 }];
+            if (pressed) return [...base, { opacity: 0.88 }];
+            return base;
+          }}
+        >
+          {isBrief && (
+            <Text style={[styles.briefLabel, { color: pemAmber }]}>
+              Daily Brief
             </Text>
-          </Pressable>
-        )}
+          )}
+          {showUserMarkdown ? (
+            <MarkdownText
+              style={[styles.text, { color: textColor }]}
+              userBubbleInlineLinks={userHasInlineLinkUrls}
+            >
+              {rawTextContent}
+            </MarkdownText>
+          ) : null}
 
-        {!isUser &&
-          meta?.type === "calendar_invite" &&
-          typeof meta.extract_id === "string" && (
-            <InviteRsvpActions
-              extractId={meta.extract_id}
-              currentStatus={
-                typeof meta.self_rsvp_status === "string"
-                  ? meta.self_rsvp_status
-                  : null
-              }
-            />
+          {!isUser && photoRecallForDisplay.length > 0 && (
+            <PemPhotoRecallStrip items={photoRecallForDisplay} />
           )}
 
-        <View style={styles.metaRow}>
-          <Text style={[styles.time, { color: tickColor }]}>{time}</Text>
-          {isUser &&
-            (isFailed ? (
+          {isFailed && (
+            <Pressable
+              onPress={onRetry ? () => onRetry(message) : undefined}
+              style={styles.retryRow}
+              hitSlop={8}
+            >
               <AlertCircle size={14} color="#ff3b30" />
-            ) : isSending ? (
-              <Check size={14} color={tickColor} strokeWidth={2} />
-            ) : (
-              <CheckCheck size={14} color={tickColor} strokeWidth={2} />
-            ))}
-        </View>
-      </Pressable>
+              <Text style={styles.retryText}>Failed — tap to retry</Text>
+            </Pressable>
+          )}
+
+          {!isUser && hasActions && onViewTasks && (
+            <Pressable
+              onPress={onViewTasks}
+              style={[styles.viewTasksChip, { backgroundColor: colors.secondarySurface }]}
+              hitSlop={6}
+            >
+              <ListTodo size={13} color={pemAmber} strokeWidth={2} />
+              <Text style={[styles.viewTasksText, { color: pemAmber }]}>
+                View tasks
+              </Text>
+            </Pressable>
+          )}
+
+          {!isUser &&
+            meta?.type === "calendar_invite" &&
+            typeof meta.extract_id === "string" && (
+              <InviteRsvpActions
+                extractId={meta.extract_id}
+                currentStatus={
+                  typeof meta.self_rsvp_status === "string"
+                    ? meta.self_rsvp_status
+                    : null
+                }
+              />
+            )}
+
+          {isUser ? (
+            <UserMessageLinkAttachmentsRow message={message} />
+          ) : null}
+
+          <View style={styles.metaRow}>
+            <Text style={[styles.time, { color: tickColor }]}>{time}</Text>
+            {isUser &&
+              (isFailed ? (
+                <AlertCircle size={14} color="#ff3b30" />
+              ) : isSending ? (
+                <Check size={14} color={tickColor} strokeWidth={2} />
+              ) : (
+                <CheckCheck size={14} color={tickColor} strokeWidth={2} />
+              ))}
+          </View>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -232,15 +322,46 @@ export default function ChatBubble({
 const voiceWithPhotosStyles = StyleSheet.create({
   column: {
     alignItems: "flex-end",
+    width: "100%",
     paddingHorizontal: space[3],
     gap: space[2],
     marginBottom: space[2],
+  },
+  /** Voice-only user row: chips under bubble; no extra horizontal padding (VoiceBubble has gutters). */
+  voiceUserOnlyColumn: {
+    alignItems: "flex-end",
+    gap: space[2],
+  },
+  /** Full row width so inner `maxWidth: "80%"` on the bubble resolves against the screen, not shrink-wrapped content (avoids ultra-narrow bubbles and mid-word URL breaks). */
+  userTextStack: {
+    width: "100%",
+    alignItems: "flex-end",
+    gap: space[2],
+  },
+  unifiedUserLinkShell: {
+    alignSelf: "flex-end",
+    maxWidth: "80%",
+    borderRadius: radii.lg,
+    borderBottomRightRadius: radii.sm,
+    overflow: "hidden",
+  },
+  unifiedUserLinkFooter: {
+    paddingHorizontal: space[3],
+    paddingBottom: space[2],
+  },
+  voiceUserUnifiedRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    width: "100%",
+    marginBottom: space[2],
+    paddingHorizontal: space[3],
   },
 });
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
+    width: "100%",
     marginBottom: space[2],
     paddingHorizontal: space[3],
   },

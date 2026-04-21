@@ -121,10 +121,13 @@ export const updateActionSchema = z.object({
   reason: z.string().default(''),
 });
 
-const completionCommandSchema = z.preprocess((v) => {
-  if (v === 'mark_done' || v === 'dismiss') return 'close';
-  return v;
-}, z.enum(['close', 'snooze', 'reopen']));
+const completionCommandSchema = z.preprocess(
+  (v) => {
+    if (v === 'mark_done' || v === 'dismiss') return 'close';
+    return v;
+  },
+  z.enum(['close', 'snooze', 'reopen']),
+);
 
 export const completeActionSchema = z.object({
   extract_id: z.string(),

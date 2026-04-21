@@ -164,6 +164,8 @@ export class PemAgentService {
     memorySection: string;
     recentMessages: { role: string; content: string; created_at: string }[];
     ragContext: string;
+    /** Captions + vision for the "From your photos" strip — same as Ask prompt injection. */
+    photoRecallContext?: string;
     userName: string | null;
     userSummary: string | null;
     schedulingContext?: string;
@@ -181,6 +183,8 @@ export class PemAgentService {
     /** Normalized task-text keys already on open or recently closed tasks — applied before orchestration so the reply matches persisted actions. */
     dedupeActiveTaskKeys?: string[];
     dedupeClosedTaskKeys?: string[];
+    /** Fetched link summaries + metadata (not raw page markdown). */
+    linkContext?: string;
   }): Promise<PemAgentOutput> {
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) throw new Error('OpenAI API key not configured');
@@ -239,9 +243,10 @@ export class PemAgentService {
       this.log.warn(
         'PemAgent: empty extraction for likely-actionable message; nudged retry',
       );
-      const photoNudge =
-        /Image description:|Image — full detail/i.test(params.messageContent)
-          ? ' If the image detail block lists errands, appointments, or checklist lines (especially with times), emit one create per distinct line unless it already exists in open tasks — Pem already routed this message as organize-from-photo.'
+      const photoNudge = /Image description:|Image — full detail/i.test(
+        params.messageContent,
+      )
+        ? ' If the image detail block lists errands, appointments, or checklist lines (especially with times), emit one create per distinct line unless it already exists in open tasks — Pem already routed this message as organize-from-photo.'
         : shortAffirmationToPlanRecentPhoto(params)
           ? ' The user is confirming they want inbox items from their latest photo: read the most recent user line in "## Recent conversation" that contains [Photo: ...] and emit one create per distinct actionable line from that vision text (times → due_at / periods). Do not leave creates empty if that block lists concrete to-dos or appointments.'
           : '';
@@ -320,6 +325,8 @@ export class PemAgentService {
     memorySection: string;
     recentMessages: { role: string; content: string; created_at: string }[];
     ragContext: string;
+    /** Captions + vision for the "From your photos" strip — same as Ask prompt injection. */
+    photoRecallContext?: string;
     userName: string | null;
     userSummary: string | null;
     schedulingContext?: string;
@@ -334,6 +341,7 @@ export class PemAgentService {
       meetingCount: number;
       lastMetAt: Date | null;
     }[];
+    linkContext?: string;
   }): string {
     const tz = params.userTimezone ?? 'UTC';
     const nowLocal = DateTime.now().setZone(tz);
@@ -423,7 +431,7 @@ ${params.memorySection || '(none yet)'}
 ## Recent conversation
 ${recentSection || '(start of conversation)'}
 
-${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentClosedSection ? `## Recently closed (off their list — do not recreate the same item unless they clearly want it back)\n${params.recentClosedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}${params.isLongVoiceMemo ? `## Note: This is a long voice memo (500+ words). Keep response to 3 sentences max. polished_text should be a 2-3 sentence summary, not a cleaned transcript.\n\n` : ''}## User message
+${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentClosedSection ? `## Recently closed (off their list — do not recreate the same item unless they clearly want it back)\n${params.recentClosedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.photoRecallContext ? `## Recalled chat photos (same thumbnails the app may show)\n${params.photoRecallContext}\n\n## Recalled photos vs open tasks\nWhen they ask what is on a shopping, grocery, Costco, or errand list, compare open tasks (especially batch_key shopping or errands) to the recalled photo captions and detail. If something they clearly intended to buy appears in those photos but is missing from open tasks, mention it once in plain language (not on your list yet). Never invent grocery items; only obvious gaps from the photo or caption.\n\n` : ''}${params.linkContext ? `${params.linkContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}${params.isLongVoiceMemo ? `## Note: This is a long voice memo (500+ words). Keep response to 3 sentences max. polished_text should be a 2-3 sentence summary, not a cleaned transcript.\n\n` : ''}## User message
 "${truncateForPrompt(params.messageContent)}"`;
   }
 

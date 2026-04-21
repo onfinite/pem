@@ -1,8 +1,14 @@
 /** Minimum cosine similarity (1 - distance) for RAG hits — below this is mostly noise. */
 export const RAG_MIN_SIMILARITY = 0.68;
 
-/** Slightly looser floor for image-only recall (user asks for a subset like "LA trip"). */
-export const RAG_IMAGE_RECALL_MIN_SIMILARITY = 0.58;
+/** Floor for image-only recall; weak matches often look “related” but are wrong (e.g. random screenshots). */
+export const RAG_IMAGE_RECALL_MIN_SIMILARITY = 0.6;
+
+/**
+ * After sorting image hits by similarity, drop hits farther than this below the **best** score.
+ * Stops a strong match (e.g. kid card) from being paired with a loose also-ran (e.g. todo list).
+ */
+export const PHOTO_RECALL_STRIP_SCORE_GAP = 0.09;
 
 /** Max image messages to consider for targeted photo recall strip. */
 export const RAG_IMAGE_RECALL_TOP_K = 12;
@@ -46,3 +52,9 @@ export const BATCH_WINDOW_MS = 8_000;
 
 /** Max images attached to a single chat message (user + API). */
 export const MAX_CHAT_MESSAGE_IMAGES = 10;
+
+/**
+ * Max thumbnails in Pem's "From your photos" strip (one row; each item is one image key).
+ * Vector search may still consider more messages; this caps what we return and show.
+ */
+export const PHOTO_RECALL_STRIP_MAX_ITEMS = 6;

@@ -6,6 +6,7 @@ import {
   Get,
   Header,
   HttpCode,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -349,10 +350,16 @@ export class ChatController {
       before,
       limit: Number.isNaN(limit) ? 50 : limit,
     });
+    const linkMap = await this.chat.getLinkPreviewsByMessageIds(
+      user.id,
+      messages.map((m) => m.id),
+    );
     const serialized = await Promise.all(
       messages.map(async (m) => {
         const s = this.chat.serializeMessage(m);
         await this.attachSignedMediaUrls(s, m);
+        const lp = linkMap.get(m.id);
+        if (lp?.length) s.link_previews = lp;
         return s;
       }),
     );
@@ -423,15 +430,43 @@ export class ChatController {
       query || '',
       Number.isNaN(limit) ? 20 : limit,
     );
+    const linkMap = await this.chat.getLinkPreviewsByMessageIds(
+      user.id,
+      messages.map((m) => m.id),
+    );
     return {
       messages: await Promise.all(
         messages.map(async (m) => {
           const s = this.chat.serializeMessage(m);
           await this.attachSignedMediaUrls(s, m);
+          const lp = linkMap.get(m.id);
+          if (lp?.length) s.link_previews = lp;
           return s;
         }),
       ),
     };
+  }
+
+  @Get('messages/:id')
+  @SkipThrottle()
+  @ApiOperation({
+    summary:
+      'Single chat message (for polling after send — link_previews, processing_status)',
+  })
+  async getMessage(
+    @CurrentUser() user: UserRow,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const row = await this.chat.findMessage(id, user.id);
+    if (!row) throw new NotFoundException();
+    const serialized = this.chat.serializeMessage(row);
+    await this.attachSignedMediaUrls(serialized, row);
+    const linkMap = await this.chat.getLinkPreviewsByMessageIds(user.id, [
+      row.id,
+    ]);
+    const lp = linkMap.get(row.id);
+    if (lp?.length) serialized.link_previews = lp;
+    return { message: serialized };
   }
 
   /** Voice GET URL + image preview URLs for client display. */

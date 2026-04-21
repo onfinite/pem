@@ -40,9 +40,17 @@ import { StorageService } from '../../../storage/storage.service';
 import { ChatQuestionService } from './chat-question.service';
 import { PhotoVisionService } from './photo-vision.service';
 import { buildPhotoRecallMetadata } from './build-photo-recall-metadata';
+import { buildPhotoRecallPromptSection } from './build-photo-recall-prompt-section';
+import { orderedMessageIdsFromRecallItems } from './resolve-photo-recall-message-ids';
 import { ChatPhotoRecallIntentService } from './chat-photo-recall-intent.service';
 import { ImageReferenceOnlyReplyService } from './image-reference-only-reply.service';
 import { PhotoAttachmentIntentService } from './photo-attachment-intent.service';
+import { ChatLinkPipelineService } from './chat-link-pipeline.service';
+import { linkPreviewsSerializedFromRows } from './link-previews-for-client';
+import {
+  extractUrlOccurrencesFromText,
+  extractUrlOccurrencesFromTexts,
+} from '../../../chat/utils/extract-urls-from-text';
 import {
   AGENT_RECENT_MESSAGES_LIMIT,
   DONE_EXTRACTS_LOOKBACK_DAYS,
@@ -57,6 +65,10 @@ import { shouldEscalateTrivialForPhotoFollowup } from './photo-offer-followup';
 import { normalizeDedupeTaskKey } from './filter-deduped-creates';
 import { clampAgentOutput } from './chat-orchestrator-clamp-output';
 import { buildRrule, parseIsoDate } from './chat-orchestrator-rrule';
+import {
+  displayUrlsFromMessageLinkRows,
+  mergeMessageLinksIntoExtractPemNote,
+} from '../../../chat/utils/merge-message-links-into-extract-pem-note';
 
 @Injectable()
 export class ChatOrchestratorService {
@@ -81,6 +93,7 @@ export class ChatOrchestratorService {
     private readonly photoRecallIntent: ChatPhotoRecallIntentService,
     private readonly imageReferenceOnlyReply: ImageReferenceOnlyReplyService,
     private readonly photoAttachmentIntent: PhotoAttachmentIntentService,
+    private readonly linkPipeline: ChatLinkPipelineService,
   ) {}
 
   async processMessage(
@@ -159,19 +172,50 @@ export class ChatOrchestratorService {
         return;
       }
 
+      const urlOccurrences =
+        msg.kind === 'image' || (msg.kind === 'voice' && hasUserImages)
+          ? extractUrlOccurrencesFromTexts(
+              content,
+              msg.content ?? '',
+              msg.transcript ?? '',
+            )
+          : extractUrlOccurrencesFromText(content);
+
       if (msg.kind === 'image' || (msg.kind === 'voice' && hasUserImages)) {
         const runInboxExtraction =
           await this.photoAttachmentIntent.isDirectiveOrganizeIntent(content);
         if (!runInboxExtraction) {
-          await this.publishStatus(userId, messageId, 'Saving your photo…');
-          const reply =
-            await this.imageReferenceOnlyReply.composeReply(content);
-          await this.savePemResponse(userId, messageId, reply, {
-            image_reference_only: true,
+          if (urlOccurrences.length === 0) {
+            await this.publishStatus(userId, messageId, 'Saving your photo…');
+            const reply =
+              await this.imageReferenceOnlyReply.composeReply(content);
+            await this.savePemResponse(userId, messageId, reply, {
+              image_reference_only: true,
+            });
+            this.queueUserMessageEmbedding(msg, content);
+            this.tryLightweightMemoryExtraction(userId, messageId, content);
+            return;
+          }
+        }
+      }
+
+      let linkPipelineResult: Awaited<
+        ReturnType<ChatLinkPipelineService['processForMessage']>
+      > | null = null;
+
+      if (urlOccurrences.length > 0) {
+        await this.publishStatus(userId, messageId, 'Reading link…');
+        linkPipelineResult = await this.linkPipeline.processForMessage(
+          userId,
+          messageId,
+          urlOccurrences,
+        );
+        if (linkPipelineResult.rows.length > 0) {
+          await this.chatEvents.publish(userId, 'message_updated', {
+            messageId,
+            field: 'link_previews',
+            value: linkPreviewsSerializedFromRows(linkPipelineResult.rows),
           });
-          this.queueUserMessageEmbedding(msg, content);
-          this.tryLightweightMemoryExtraction(userId, messageId, content);
-          return;
         }
       }
 
@@ -231,8 +275,29 @@ export class ChatOrchestratorService {
             content,
             userRow?.name ?? null,
             userRow?.summary ?? null,
+            linkPipelineResult?.promptSection ?? null,
           );
-        await this.savePemResponse(userId, messageId, answerText, answerMeta);
+        const mergedQuestionMeta =
+          linkPipelineResult?.rows.length && answerMeta
+            ? {
+                ...answerMeta,
+                link_previews: linkPreviewsSerializedFromRows(
+                  linkPipelineResult.rows,
+                ),
+              }
+            : linkPipelineResult?.rows.length
+              ? {
+                  link_previews: linkPreviewsSerializedFromRows(
+                    linkPipelineResult.rows,
+                  ),
+                }
+              : answerMeta;
+        await this.savePemResponse(
+          userId,
+          messageId,
+          answerText,
+          mergedQuestionMeta,
+        );
         this.queueUserMessageEmbedding(msg, content);
         return;
       }
@@ -279,10 +344,22 @@ export class ChatOrchestratorService {
       );
       const ragContext = ragResults.map((r) => r.content).join('\n');
 
+      const photoRecallClassifierText =
+        msg.kind === 'image' || (msg.kind === 'voice' && hasUserImages)
+          ? [msg.content, msg.transcript]
+              .map((s) => (s ?? '').trim())
+              .filter(Boolean)
+              .join('\n')
+              .trim()
+          : '';
+
       const { attachStrip, messageIds: photoRecallMessageIds } =
         await this.photoRecallIntent.resolveStripAndMessageIds({
           userId,
           userText: content,
+          ...(photoRecallClassifierText
+            ? { classifierUserText: photoRecallClassifierText }
+            : {}),
           vectorQueryText: ragVectorQuery,
           ragMessageIds: ragResults.map((r) => r.messageId),
           excludeMessageId: messageId,
@@ -299,6 +376,21 @@ export class ChatOrchestratorService {
       } else {
         photoRecallMeta = undefined;
       }
+
+      const idsForPhotoRecallPrompt = photoRecallMeta?.photo_recall?.length
+        ? orderedMessageIdsFromRecallItems(photoRecallMeta.photo_recall)
+        : photoRecallMessageIds;
+
+      const photoRecallPromptBlock =
+        idsForPhotoRecallPrompt.length > 0
+          ? await buildPhotoRecallPromptSection(
+              this.db,
+              userId,
+              idsForPhotoRecallPrompt,
+              new Date(),
+              ctx.tz,
+            )
+          : undefined;
 
       const recentMsgs = await this.getRecentMessages(userId);
 
@@ -348,6 +440,8 @@ export class ChatOrchestratorService {
         memorySection: ctx.memorySection,
         recentMessages: recentMsgs,
         ragContext,
+        photoRecallContext: photoRecallPromptBlock,
+        linkContext: linkPipelineResult?.promptSection,
         userName: ctx.userName,
         userSummary: ctx.userSummary,
         schedulingContext,
@@ -365,8 +459,33 @@ export class ChatOrchestratorService {
 
       const agentOutput = clampAgentOutput(agentOutputRaw);
 
+      const messageLinkDisplayUrls = linkPipelineResult?.rows.length
+        ? displayUrlsFromMessageLinkRows(linkPipelineResult.rows)
+        : [];
+      if (
+        messageLinkDisplayUrls.length === 0 &&
+        agentOutput.creates.length > 0 &&
+        urlOccurrences.length > 0
+      ) {
+        const seen = new Set<string>();
+        for (const o of urlOccurrences) {
+          const raw = o.raw.trim();
+          const u = /^https?:\/\//i.test(raw) ? raw : o.normalized.trim();
+          if (u && !seen.has(u)) {
+            seen.add(u);
+            messageLinkDisplayUrls.push(u);
+          }
+        }
+      }
+
       // Apply actions
-      await this.applyAgentActions(userId, messageId, agentOutput, ctx);
+      await this.applyAgentActions(
+        userId,
+        messageId,
+        agentOutput,
+        ctx,
+        messageLinkDisplayUrls,
+      );
 
       // Build metadata for the response message
       const meta: Record<string, unknown> = {};
@@ -384,6 +503,11 @@ export class ChatOrchestratorService {
         meta.calendar_deleted = agentOutput.calendar_deletes.length;
       if (photoRecallMeta?.photo_recall?.length) {
         meta.photo_recall = photoRecallMeta.photo_recall;
+      }
+      if (linkPipelineResult?.rows.length) {
+        meta.link_previews = linkPreviewsSerializedFromRows(
+          linkPipelineResult.rows,
+        );
       }
       const metadata = Object.keys(meta).length > 0 ? meta : undefined;
 
@@ -774,13 +898,17 @@ export class ChatOrchestratorService {
     messageId: string,
     output: PemAgentOutput,
     ctx: Awaited<ReturnType<typeof this.gatherContext>>,
+    messageLinkDisplayUrls: string[] = [],
   ) {
     const createdExtractMap = new Map<number, ExtractRow>();
     const chatExtractLog = { surface: 'chat' as const };
 
     // Creates
     for (let i = 0; i < output.creates.length; i++) {
-      const item = output.creates[i];
+      const item = mergeMessageLinksIntoExtractPemNote(
+        output.creates[i],
+        messageLinkDisplayUrls,
+      );
       const row = await this.insertExtract(userId, messageId, item, ctx.tz);
       if (row) {
         createdExtractMap.set(i, row);

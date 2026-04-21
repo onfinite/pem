@@ -24,6 +24,9 @@ import { PhotoVisionService } from './queues/chat/photo-vision.service';
 import { ChatPhotoRecallIntentService } from './queues/chat/chat-photo-recall-intent.service';
 import { ImageReferenceOnlyReplyService } from './queues/chat/image-reference-only-reply.service';
 import { PhotoAttachmentIntentService } from './queues/chat/photo-attachment-intent.service';
+import { JinaReaderService } from './queues/chat/jina-reader.service';
+import { LinkContentClassifierService } from './queues/chat/link-content-classifier.service';
+import { ChatLinkPipelineService } from './queues/chat/chat-link-pipeline.service';
 import { ReminderCronService } from './queues/reminder/reminder-cron.service';
 import { RecurrenceCronService } from './queues/scheduler/recurrence-cron.service';
 import { WeeklyReflectionProcessor } from './queues/weekly/weekly-reflection.processor';
@@ -76,6 +79,9 @@ import { WeeklyReflectionProcessor } from './queues/weekly/weekly-reflection.pro
     ChatPhotoRecallIntentService,
     ImageReferenceOnlyReplyService,
     PhotoAttachmentIntentService,
+    JinaReaderService,
+    LinkContentClassifierService,
+    ChatLinkPipelineService,
     PhotoVisionService,
     BriefCronService,
     CalendarSyncProcessor,

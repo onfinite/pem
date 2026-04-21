@@ -85,6 +85,20 @@
       "when": 1776600000000,
       "tag": "0011_extract_close_holding",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776718701810,
+      "tag": "0012_organic_wolfsbane",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776719145896,
+      "tag": "0013_motionless_moondragon",
+      "breakpoints": true
     }
   ]
 }

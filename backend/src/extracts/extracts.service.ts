@@ -1248,9 +1248,7 @@ export class ExtractsService {
     return {
       rows: page,
       next_cursor:
-        hasMore && last?.closedAt
-          ? encodeCursor(last.closedAt, last.id)
-          : null,
+        hasMore && last?.closedAt ? encodeCursor(last.closedAt, last.id) : null,
     };
   }
 }

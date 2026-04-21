@@ -6,6 +6,7 @@ import ChatStatusBubble from "@/components/chat/ChatStatusBubble";
 import { ChatScreenEmptyState } from "@/components/chat/ChatScreenEmptyState";
 import { ChatScreenHeader } from "@/components/chat/ChatScreenHeader";
 import { ChatScreenSkeletonBubbles } from "@/components/chat/ChatScreenSkeletonBubbles";
+import { ChatImageSourceSheet } from "@/components/chat/ChatImageSourceSheet";
 import TaskDrawer, { type TaskDrawerHandle } from "@/components/chat/TaskDrawer";
 import { space } from "@/constants/typography";
 import { pemAmber } from "@/constants/theme";
@@ -16,6 +17,7 @@ import { pemImpactLight } from "@/lib/pemHaptics";
 import {
   getBrief,
   getChatMessages,
+  pollChatMessageForLinkPreviews,
   requestBrief,
   sendChatMessage,
   sendVoiceMessage,
@@ -52,7 +54,6 @@ import { useAuth } from "@clerk/expo";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Animated,
@@ -80,6 +81,7 @@ export default function ChatScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [briefData, setBriefData] = useState<BriefResponse | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  const [isImageSourceSheetVisible, setImageSourceSheetVisible] = useState(false);
   /** After first auth-aware draft load — avoids overwriting disk before hydrate. */
   const [pendingImagesHydrated, setPendingImagesHydrated] = useState(false);
   const pendingImageUris = pendingImages.map((p) => p.uri);
@@ -320,6 +322,7 @@ export default function ChatScreen() {
         const res = await uploadChatImagesAndSend(getTokenRef.current, localUris, {
           content: caption ?? undefined,
         });
+        const serverId = res.message.id;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId
@@ -333,7 +336,28 @@ export default function ChatScreen() {
               : m,
           ),
         );
-        setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
+        setStatusMap((prev) => ({ ...prev, [serverId]: "Thinking..." }));
+
+        void (async () => {
+          try {
+            const latest = await pollChatMessageForLinkPreviews(
+              getTokenRef.current,
+              serverId,
+              { maxWaitMs: 22_000, intervalMs: 500 },
+            );
+            if (latest.link_previews?.length) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === serverId
+                    ? { ...m, link_previews: latest.link_previews }
+                    : m,
+                ),
+              );
+            }
+          } catch {
+            /* SSE or GET may already have applied link_previews */
+          }
+        })();
       } catch (e) {
         console.warn("Failed to send image:", e);
         setMessages((prev) =>
@@ -390,7 +414,7 @@ export default function ChatScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: false,
       quality: 1,
       allowsMultipleSelection: remainingSlots > 1,
@@ -434,14 +458,14 @@ export default function ChatScreen() {
     let result: ImagePicker.ImagePickerResult;
     try {
       result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: false,
         quality: 1,
       });
     } catch {
       Alert.alert(
         "Camera unavailable",
-        "The camera is not available here (for example on a simulator). Use Photo library or try on a physical device.",
+        "The camera is not available here (for example on a simulator). Use Photos or try on a physical device.",
       );
       return;
     }
@@ -464,31 +488,18 @@ export default function ChatScreen() {
       void handlePickImageFromLibrary();
       return;
     }
-    const openCamera = () => {
-      void handleTakePhoto();
-    };
-    const openLibrary = () => {
-      void handlePickImageFromLibrary();
-    };
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Cancel", "Take photo", "Photo library"],
-          cancelButtonIndex: 0,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 1) openCamera();
-          if (buttonIndex === 2) openLibrary();
-        },
-      );
-    } else {
-      Alert.alert("Add image", undefined, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Take photo", onPress: openCamera },
-        { text: "Photo library", onPress: openLibrary },
-      ]);
-    }
-  }, [handlePickImageFromLibrary, handleTakePhoto]);
+    setImageSourceSheetVisible(true);
+  }, [handlePickImageFromLibrary]);
+
+  const handleSheetChooseCamera = useCallback(() => {
+    setImageSourceSheetVisible(false);
+    void handleTakePhoto();
+  }, [handleTakePhoto]);
+
+  const handleSheetChoosePhotos = useCallback(() => {
+    setImageSourceSheetVisible(false);
+    void handlePickImageFromLibrary();
+  }, [handlePickImageFromLibrary]);
 
   const handleSendVoice = useCallback(
     async (audioUri: string) => {
@@ -836,6 +847,13 @@ export default function ChatScreen() {
           />
         </View>
         <Animated.View style={{ height: kbHeight }} />
+
+        <ChatImageSourceSheet
+          visible={isImageSourceSheetVisible}
+          onRequestClose={() => setImageSourceSheetVisible(false)}
+          onChooseCamera={handleSheetChooseCamera}
+          onChoosePhotos={handleSheetChoosePhotos}
+        />
       </View>
 
       <TaskDrawer ref={drawerRef} onCountsChanged={handleCountsChanged} />
