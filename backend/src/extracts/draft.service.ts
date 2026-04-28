@@ -5,10 +5,14 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import { eq, and } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
-import { extractsTable, logsTable, type ExtractRow } from '../database/schemas';
-import { ProfileService } from '../profile/profile.service';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import {
+  extractsTable,
+  logsTable,
+  type ExtractRow,
+} from '@/database/schemas/index';
+import { ProfileService } from '@/profile/profile.service';
 
 const SYSTEM = `You are Pem, drafting a message on behalf of the user.
 

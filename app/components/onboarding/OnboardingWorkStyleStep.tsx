@@ -3,7 +3,7 @@ import { pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Briefcase } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
-import { onboardingStyles as s } from "./onboarding.styles";
+import { onboardingStyles as s } from "@/components/onboarding/onboarding.styles";
 
 const WORK_TYPES: { value: "office" | "remote" | "hybrid"; label: string }[] = [
   { value: "office", label: "Office" },

@@ -5,7 +5,7 @@ import {
   persistImagesForCacheMessages,
 } from "@/lib/chatCachePersistedImages";
 
-import type { ClientMessage } from "./chatScreenClientMessage.types";
+import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 
 export const CHAT_MESSAGES_CACHE_KEY = "@pem/chat_messages_v1";
 /** Offline slice + disk image budget; older rows stay in RAM via pagination and load from the API when scrolled up. */

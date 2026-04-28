@@ -8,7 +8,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { usersTable } from './users.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 export const contactsTable = pgTable(
   'contacts',

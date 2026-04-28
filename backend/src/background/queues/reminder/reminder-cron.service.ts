@@ -2,10 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { and, eq, lte, ne } from 'drizzle-orm';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
-import { extractsTable } from '../../../database/schemas';
-import { PushService } from '../../../push/push.service';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import { extractsTable } from '@/database/schemas/index';
+import { PushService } from '@/push/push.service';
 
 @Injectable()
 export class ReminderCronService {

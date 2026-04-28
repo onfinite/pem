@@ -1,6 +1,6 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { editSheetStyles as s } from "./taskEditSheet.styles";
+import { editSheetStyles as s } from "@/components/chat/task-drawer/taskEditSheet.styles";
 
 export type ChipOption = {
   key: string;

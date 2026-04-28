@@ -1,9 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength } from 'class-validator';
+import { IsString, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateSummaryDto {
-  @ApiProperty({ description: 'User profile summary' })
   @IsString()
-  @MaxLength(5000)
+  @MinLength(0)
+  @MaxLength(4000)
   summary!: string;
 }

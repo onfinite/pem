@@ -2,15 +2,15 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, gte, lte, ne, or, isNotNull } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   usersTable,
   type UserPreferences,
-} from '../database/schemas';
-import { CalendarConnectionService } from '../calendar/calendar-connection.service';
-import { GoogleCalendarService } from '../calendar/google-calendar.service';
+} from '@/database/schemas/index';
+import { CalendarConnectionService } from '@/calendar/calendar-connection.service';
+import { GoogleCalendarService } from '@/calendar/google-calendar.service';
 
 export type TimeSlot = {
   start: DateTime;

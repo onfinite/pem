@@ -6,9 +6,13 @@ import {
 } from '@nestjs/common';
 import { and, asc, count, desc, eq, inArray, max, ne, sql } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
-import { extractsTable, listsTable, type ListRow } from '../database/schemas';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import {
+  extractsTable,
+  listsTable,
+  type ListRow,
+} from '@/database/schemas/index';
 
 const DEFAULT_LISTS: { name: string; icon: string }[] = [
   { name: 'Shopping', icon: 'cart' },

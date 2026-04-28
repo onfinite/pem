@@ -8,8 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
-import { clerkProfileFromJwtPayload } from './clerk-jwt-profile';
-import { UserService } from '../users/user.service';
+import { clerkProfileFromJwtPayload } from '@/auth/clerk-jwt-profile';
+import { UserService } from '@/users/user.service';
 
 @Injectable()
 export class ClerkAuthGuard implements CanActivate {

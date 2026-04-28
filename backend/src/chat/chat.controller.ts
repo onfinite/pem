@@ -1,3 +1,5 @@
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import {
   BadRequestException,
   Body,
@@ -19,34 +21,33 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Observable } from 'rxjs';
 
-import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
-import type { MessageImageAsset, UserRow } from '../database/schemas';
-import { BriefCronService } from '../background/queues/brief/brief-cron.service';
-import { ChatImageDedupService } from './chat-image-dedup.service';
-import { ChatService } from './chat.service';
-import { ChatStreamService, type SseEvent } from './chat-stream.service';
-import { SummarizeTranscriptService } from './summarize-transcript.service';
-import { TranscriptionService } from '../transcription/transcription.service';
-import { StorageService } from '../storage/storage.service';
-import { CHAT_JOB_DELAY_MS_DUMP, CHAT_JOB_ID_PREFIX } from './chat.constants';
+import { ClerkAuthGuard } from '@/auth/clerk-auth.guard';
+import { CurrentUser } from '@/auth/current-user.decorator';
+import type { MessageImageAsset, UserRow } from '@/database/schemas/index';
+import { BriefCronService } from '@/background/queues/brief/brief-cron.service';
+import { ChatImageDedupService } from '@/chat/chat-image-dedup.service';
+import { ChatService } from '@/chat/chat.service';
+import { ChatStreamService, type SseEvent } from '@/chat/chat-stream.service';
+import { SummarizeTranscriptService } from '@/chat/summarize-transcript.service';
+import { TranscriptionService } from '@/transcription/transcription.service';
+import { StorageService } from '@/storage/storage.service';
+import {
+  CHAT_JOB_DELAY_MS_DUMP,
+  CHAT_JOB_ID_PREFIX,
+} from '@/chat/chat.constants';
 import { randomUUID } from 'node:crypto';
 
-import { SendMessageDto } from './dto/send-message.dto';
+import { SendMessageDto } from '@/chat/dto/send-message.dto';
 import {
   MAX_PHOTO_UPLOAD_BYTES,
   PhotoUploadUrlDto,
-} from './dto/photo-upload-url.dto';
-import type { MessageRow } from '../database/schemas';
+} from '@/chat/dto/photo-upload-url.dto';
+import type { MessageRow } from '@/database/schemas/index';
 
-@ApiTags('chat')
 @Controller('chat')
 @UseGuards(ClerkAuthGuard)
-@ApiBearerAuth('clerk')
 export class ChatController {
   constructor(
     private readonly chat: ChatService,
@@ -61,10 +62,6 @@ export class ChatController {
 
   @Post('photos/upload-url')
   @HttpCode(200)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  @ApiOperation({
-    summary: 'Presigned PUT URL for chat image (R2 direct upload)',
-  })
   async photoUploadUrl(
     @CurrentUser() user: UserRow,
     @Body() body: PhotoUploadUrlDto,
@@ -109,16 +106,40 @@ export class ChatController {
 
   @Post('messages')
   @HttpCode(200)
-  @Throttle({ default: { limit: 40, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Send a message (text, voice, or image)' })
+  @UseInterceptors(
+    FileInterceptor('audio', { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   async sendMessage(
     @CurrentUser() user: UserRow,
-    @Body() body: SendMessageDto,
+    @Body() body: Record<string, unknown>,
+    @UploadedFile() audio?: Express.Multer.File,
+    @Query('idempotency_key') idempotencyKeyQuery?: string,
   ) {
-    if (body.idempotency_key?.trim()) {
+    if (audio?.buffer) {
+      return this.receiveVoiceWithUploadedAudio(
+        user,
+        audio,
+        body,
+        idempotencyKeyQuery,
+      );
+    }
+
+    const dto = plainToInstance(SendMessageDto, body);
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: false,
+    });
+    if (errors.length > 0) {
+      const msg = errors
+        .flatMap((e) => (e.constraints ? Object.values(e.constraints) : []))
+        .join('; ');
+      throw new BadRequestException(msg || 'Invalid message body');
+    }
+
+    if (dto.idempotency_key?.trim()) {
       const existing = await this.chat.findMessageByIdempotencyKey(
         user.id,
-        body.idempotency_key,
+        dto.idempotency_key,
       );
       if (existing) {
         const serialized = this.chat.serializeMessage(existing);
@@ -131,10 +152,10 @@ export class ChatController {
       }
     }
 
-    if (body.kind === 'image') {
+    if (dto.kind === 'image') {
       const keysFromArray =
-        body.image_keys && body.image_keys.length > 0
-          ? body.image_keys.map((k) => ({
+        dto.image_keys && dto.image_keys.length > 0
+          ? dto.image_keys.map((k) => ({
               key: k.key,
               mime: k.mime ?? null,
               content_sha256: k.content_sha256 ?? null,
@@ -142,8 +163,8 @@ export class ChatController {
           : null;
       const keysRaw =
         keysFromArray ??
-        (body.image_key
-          ? [{ key: body.image_key, mime: null as string | null }]
+        (dto.image_key
+          ? [{ key: dto.image_key, mime: null as string | null }]
           : null);
       const keys = await this.chatImageDedup.prepareImageKeysForPersistence(
         user.id,
@@ -153,11 +174,11 @@ export class ChatController {
         userId: user.id,
         role: 'user',
         kind: 'image',
-        content: body.content?.trim() ? body.content : null,
+        content: dto.content?.trim() ? dto.content : null,
         imageKeys: keys,
         triageCategory: null,
         processingStatus: 'pending',
-        idempotencyKey: body.idempotency_key?.trim() || null,
+        idempotencyKey: dto.idempotency_key?.trim() || null,
       });
       await this.chatImageDedup.registerHashes(user.id, keys);
       await this.chatQueue.add(
@@ -179,17 +200,46 @@ export class ChatController {
       };
     }
 
+    let voiceImageKeys: MessageImageAsset[] | null = null;
+    if (
+      dto.kind === 'voice' &&
+      (dto.image_keys?.length || dto.image_key?.trim())
+    ) {
+      const keysFromArray =
+        dto.image_keys && dto.image_keys.length > 0
+          ? dto.image_keys.map((k) => ({
+              key: k.key,
+              mime: k.mime ?? null,
+              content_sha256: k.content_sha256 ?? null,
+            }))
+          : null;
+      const keysRaw =
+        keysFromArray ??
+        (dto.image_key
+          ? [{ key: dto.image_key, mime: null as string | null }]
+          : null);
+      voiceImageKeys = await this.chatImageDedup.prepareImageKeysForPersistence(
+        user.id,
+        keysRaw ?? [],
+      );
+    }
+
     const msg = await this.chat.saveMessage({
       userId: user.id,
       role: 'user',
-      kind: body.kind,
-      content: body.kind === 'text' ? body.content : null,
-      voiceUrl: body.kind === 'voice' ? body.voice_url : null,
-      audioKey: body.kind === 'voice' ? body.audio_key : null,
+      kind: dto.kind,
+      content: dto.kind === 'text' ? dto.content : null,
+      voiceUrl: dto.kind === 'voice' ? dto.voice_url : null,
+      audioKey: dto.kind === 'voice' ? dto.audio_key : null,
+      imageKeys: voiceImageKeys,
       triageCategory: null,
       processingStatus: 'pending',
-      idempotencyKey: body.idempotency_key?.trim() || null,
+      idempotencyKey: dto.idempotency_key?.trim() || null,
     });
+
+    if (voiceImageKeys?.length) {
+      await this.chatImageDedup.registerHashes(user.id, voiceImageKeys);
+    }
 
     await this.chatQueue.add(
       'process-message',
@@ -214,25 +264,23 @@ export class ChatController {
     };
   }
 
-  @Post('voice')
-  @HttpCode(200)
-  @Throttle({ default: { limit: 40, ttl: 60_000 } })
-  @UseInterceptors(
-    FileInterceptor('audio', { limits: { fileSize: 25 * 1024 * 1024 } }),
-  )
-  @ApiOperation({
-    summary: 'Send a voice message (audio upload + transcription)',
-  })
-  async sendVoice(
-    @CurrentUser() user: UserRow,
-    @UploadedFile() audio: Express.Multer.File,
-    @Body('image_keys') imageKeysJson?: string,
-    @Query('idempotency_key') idempotencyKey?: string,
+  private async receiveVoiceWithUploadedAudio(
+    user: UserRow,
+    audio: Express.Multer.File,
+    body: Record<string, unknown>,
+    idempotencyKeyQuery?: string,
   ) {
-    if (!audio?.buffer) {
-      throw new BadRequestException('No audio file provided');
-    }
-    if (idempotencyKey?.trim()) {
+    const idempotencyFromBody =
+      typeof body.idempotency_key === 'string'
+        ? body.idempotency_key.trim()
+        : '';
+    const idempotencyFromQuery = idempotencyKeyQuery?.trim() ?? '';
+    const idempotencyKey =
+      idempotencyFromBody || idempotencyFromQuery || '';
+    const imageKeysJson =
+      typeof body.image_keys === 'string' ? body.image_keys : undefined;
+
+    if (idempotencyKey) {
       const existing = await this.chat.findMessageByIdempotencyKey(
         user.id,
         idempotencyKey,
@@ -311,7 +359,7 @@ export class ChatController {
       audioKey,
       imageKeys,
       processingStatus: 'pending',
-      idempotencyKey: idempotencyKey?.trim() || null,
+      idempotencyKey: idempotencyKey || null,
     });
     if (imageKeys?.length) {
       await this.chatImageDedup.registerHashes(user.id, imageKeys);
@@ -338,8 +386,6 @@ export class ChatController {
   }
 
   @Get('messages')
-  @SkipThrottle()
-  @ApiOperation({ summary: 'Paginated chat history' })
   async getMessages(
     @CurrentUser() user: UserRow,
     @Query('before') before?: string,
@@ -369,16 +415,12 @@ export class ChatController {
   @Get('stream')
   @Sse()
   @Header('X-Accel-Buffering', 'no')
-  @SkipThrottle()
-  @ApiOperation({ summary: 'SSE stream — one persistent connection per user' })
   sseStream(@CurrentUser() user: UserRow): Observable<SseEvent> {
     return this.stream.createStream(user.id);
   }
 
   @Post('brief')
   @HttpCode(200)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Ensure today brief exists — generates if missing' })
   async ensureBrief(@CurrentUser() user: UserRow) {
     const result = await this.briefCron.ensureBriefForToday(user);
     return result;
@@ -386,8 +428,6 @@ export class ChatController {
 
   @Post('messages/:id/summarize')
   @HttpCode(200)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Generate a summary of a voice message transcript' })
   async summarizeMessage(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -398,7 +438,6 @@ export class ChatController {
 
   @Delete('messages/:id')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Delete a chat message' })
   async deleteMessage(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -408,7 +447,6 @@ export class ChatController {
   }
 
   @Get('messages/:id/extracts')
-  @ApiOperation({ summary: 'Get extracts linked to a specific message' })
   async getMessageExtracts(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -418,7 +456,6 @@ export class ChatController {
   }
 
   @Get('messages/search')
-  @ApiOperation({ summary: 'Search chat messages' })
   async searchMessages(
     @CurrentUser() user: UserRow,
     @Query('q') query: string,
@@ -448,11 +485,6 @@ export class ChatController {
   }
 
   @Get('messages/:id')
-  @SkipThrottle()
-  @ApiOperation({
-    summary:
-      'Single chat message (for polling after send — link_previews, processing_status)',
-  })
   async getMessage(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { View } from "react-native";
-import { inboxStyles } from "./inboxTab.styles";
+import { inboxStyles } from "@/components/chat/task-drawer/inboxTab.styles";
 
 export function InboxSectionItemsGroup({ children }: { children: ReactNode }) {
   return (

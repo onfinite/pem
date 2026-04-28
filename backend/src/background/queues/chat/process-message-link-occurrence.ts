@@ -1,22 +1,22 @@
 import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 
-import type { DrizzleDb } from '../../../database/database.module';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   messageLinksTable,
   type MessageLinkContentType,
   type MessageLinkFetchStatus,
   type MessageLinkRow,
-} from '../../../database/schemas';
-import type { ExtractedUrlOccurrence } from '../../../chat/utils/extract-urls-from-text';
-import { LINK_CACHE_TTL_MS } from '../../../chat/link-reading.constants';
-import type { JinaSnapshotStored } from '../../../chat/types/jina-snapshot-stored.types';
-import { linkTitleHintFromMarkdown } from '../../../chat/utils/link-title-from-markdown';
-import { normalizeJinaSnapshotForStorage } from '../../../chat/utils/normalize-jina-snapshot-for-storage';
-import type { JinaReaderService } from './jina-reader.service';
-import type { LinkContentClassifierService } from './link-content-classifier.service';
-import { isLikelySocialRestrictedHost } from './restricted-link-hosts';
-import { looksLikeLoginWallMarkdown } from './link-login-wall-heuristic';
-import { linkCacheKeyFromNormalizedUrl } from '../../../chat/utils/link-cache-key';
+} from '@/database/schemas/index';
+import type { ExtractedUrlOccurrence } from '@/chat/utils/extract-urls-from-text';
+import { LINK_CACHE_TTL_MS } from '@/chat/link-reading.constants';
+import type { JinaSnapshotStored } from '@/chat/types/jina-snapshot-stored.types';
+import { linkTitleHintFromMarkdown } from '@/chat/utils/link-title-from-markdown';
+import { normalizeJinaSnapshotForStorage } from '@/chat/utils/normalize-jina-snapshot-for-storage';
+import type { JinaReaderService } from '@/background/queues/chat/jina-reader.service';
+import type { LinkContentClassifierService } from '@/background/queues/chat/link-content-classifier.service';
+import { isLikelySocialRestrictedHost } from '@/background/queues/chat/restricted-link-hosts';
+import { looksLikeLoginWallMarkdown } from '@/background/queues/chat/link-login-wall-heuristic';
+import { linkCacheKeyFromNormalizedUrl } from '@/chat/utils/link-cache-key';
 
 async function findFreshCache(
   db: DrizzleDb,
@@ -37,6 +37,7 @@ async function findFreshCache(
     )
     .orderBy(desc(messageLinksTable.fetchedAt))
     .limit(1);
+
   return hit ?? null;
 }
 
@@ -69,6 +70,7 @@ export async function processMessageLinkOccurrence(
         fetchedAt: new Date(),
       })
       .returning();
+
     return row;
   }
 

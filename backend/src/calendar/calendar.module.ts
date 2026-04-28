@@ -1,12 +1,12 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
-import { DatabaseModule } from '../database/database.module';
-import { UsersModule } from '../users/users.module';
-import { CalendarConnectionService } from './calendar-connection.service';
-import { CalendarController } from './calendar.controller';
-import { CalendarSyncService } from './calendar-sync.service';
-import { GoogleCalendarService } from './google-calendar.service';
+import { DatabaseModule } from '@/database/database.module';
+import { UsersModule } from '@/users/users.module';
+import { CalendarConnectionService } from '@/calendar/calendar-connection.service';
+import { CalendarController } from '@/calendar/calendar.controller';
+import { CalendarSyncService } from '@/calendar/calendar-sync.service';
+import { GoogleCalendarService } from '@/calendar/google-calendar.service';
 
 @Module({
   imports: [

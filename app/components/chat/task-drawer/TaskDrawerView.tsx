@@ -7,16 +7,16 @@ import { forwardRef, type ForwardedRef, useCallback, useEffect } from "react";
 import { Animated, Modal, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { InboxTab } from "./InboxTab";
-import { ListsTab } from "./ListsTab";
-import { TaskDrawerCalendarPanel } from "./TaskDrawerCalendarPanel";
-import { TaskDrawerTabBar } from "./TaskDrawerTabBar";
-import { TaskEditSheet } from "./TaskEditSheet";
-import { UndoSnackbar } from "./UndoSnackbar";
-import type { TaskDrawerHandle } from "./types";
-import { taskDrawerViewStyles as styles } from "./taskDrawerView.styles";
-import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
-import { useTaskDrawerController } from "./useTaskDrawerController";
+import { InboxTab } from "@/components/chat/task-drawer/InboxTab";
+import { ListsTab } from "@/components/chat/task-drawer/ListsTab";
+import { TaskDrawerCalendarPanel } from "@/components/chat/task-drawer/TaskDrawerCalendarPanel";
+import { TaskDrawerTabBar } from "@/components/chat/task-drawer/TaskDrawerTabBar";
+import { TaskEditSheet } from "@/components/chat/task-drawer/TaskEditSheet";
+import { UndoSnackbar } from "@/components/chat/task-drawer/UndoSnackbar";
+import type { TaskDrawerHandle } from "@/components/chat/task-drawer/types";
+import { taskDrawerViewStyles as styles } from "@/components/chat/task-drawer/taskDrawerView.styles";
+import { dismissOpenTaskSwipe } from "@/components/chat/task-drawer/taskSwipeRegistry";
+import { useTaskDrawerController } from "@/components/chat/task-drawer/useTaskDrawerController";
 
 const TaskDrawerView = forwardRef<
   TaskDrawerHandle,

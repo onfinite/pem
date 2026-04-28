@@ -9,7 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-import { usersTable } from './users.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 export const MESSAGE_ROLES = ['user', 'pem'] as const;
 export type MessageRole = (typeof MESSAGE_ROLES)[number];

@@ -3,7 +3,7 @@ import { fontFamily, fontSize, radii, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { isRecurringExtract } from "@/utils/isRecurringExtract";
-import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
+import { CALENDAR_EVENT_DOT_COLOR } from "@/components/chat/task-drawer/constants";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   CalendarDays,
@@ -31,10 +31,10 @@ import {
 } from "react-native";
 import { Calendar, type DateData } from "react-native-calendars";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { DraftSection } from "./DraftSection";
-import { reminderIso } from "./taskEditSheet.constants";
-import { editSheetStyles as s } from "./taskEditSheet.styles";
-import type { TaskEditSheetProps } from "./types";
+import { DraftSection } from "@/components/chat/task-drawer/DraftSection";
+import { reminderIso } from "@/components/chat/task-drawer/taskEditSheet.constants";
+import { editSheetStyles as s } from "@/components/chat/task-drawer/taskEditSheet.styles";
+import type { TaskEditSheetProps } from "@/components/chat/task-drawer/types";
 
 const DATE_PRESETS = [
   { key: "today", label: "Today" },

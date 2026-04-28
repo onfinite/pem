@@ -6,7 +6,7 @@ import { OAuth2Client } from 'google-auth-library';
 import {
   signGoogleOAuthState,
   verifyGoogleOAuthState,
-} from './sign-google-oauth-state';
+} from '@/calendar/sign-google-oauth-state';
 
 export type GoogleEventAttendee = {
   email: string;

@@ -5,9 +5,9 @@ globs: backend/**
 
 # Pem backend (`backend/`)
 
-**Package:** NestJS app under **`backend/`** — `npm install`, `npm run start:dev`, `npm run build` from `backend/`. No shared runtime code with `app/`.
+**Package:** NestJS app under **`backend/`** — `npm install`, `npm run start:dev`, `npm run build` from `backend/`. No shared runtime code with `app/`. **Internal imports:** use **`@/`** → **`src/`** (see **`pem-coding-standards.mdc`**, `backend/tsconfig.json`); Nest emits relative requires in **`dist/`**.
 
-**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **pgvector** (vector similarity search), **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`@nestjs/swagger`** (`/docs` when not prod), **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, `embed`, never `generateObject`). **Jina Reader** — **`JINA_API_KEY`**; server fetches `https://r.jina.ai/...` with **`Accept: application/json`** (and `X-Robots-Txt: JinaReader`) for inbound chat URLs (worker path); response is stored as **`jina_snapshot`** jsonb on **`message_links`**. **Background work** lives under **`src/background/`**. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription.
+**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **pgvector** (vector similarity search), **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, `embed`, never `generateObject`). **Jina Reader** — **`JINA_API_KEY`**; server fetches `https://r.jina.ai/...` with **`Accept: application/json`** (and `X-Robots-Txt: JinaReader`) for inbound chat URLs (worker path); response is stored as **`jina_snapshot`** jsonb on **`message_links`**. **Background work** lives under **`src/background/`**. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription.
 
 **Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA, **`notification_time`** for morning brief), **`messages`** (**`role`**: `user` | `pem`, **`kind`**: `text` | `voice` | `brief`, content, voice_url, transcript, **`triage_category`**, **`processing_status`**, polished_text, parent_message_id), **`message_links`** (URLs in a user message: original + normalized fetch URL, canonical URL, title, content type, **`jina_snapshot`** trimmed JSON from Jina Reader, structured summary, extracted metadata jsonb, fetch_status, fetched_at; FK `message_id` → messages; **24h user-scoped cache** on `normalized_fetch_url`), **`message_embeddings`** (pgvector 1536-dim, FK to messages), **`extracts`** (tone, **urgency** `'someday'|'none'` — all timing via `period_start`/`period_end`/`due_at`, **`meta`** jsonb for rarely-queried fields, batch_key, status; **`message_id`** FK to messages; calendar event fields), **`calendar_connections`**, **`reported_issues`**, **`logs`** (unified audit: types include `chat`), **`memory_facts`**.
 
@@ -40,7 +40,7 @@ globs: backend/**
 **API:**
 
 ```
-POST /chat/messages     ← send message (text, voice, or image with `image_key` / optional `content` caption)
+POST /chat/messages     ← send message: JSON body (`kind` text, voice, or image), or `multipart/form-data` with file field `audio` for recorded voice (optional `image_keys`, `idempotency_key` form fields or `?idempotency_key=` for voice)
 POST /chat/photos/upload-url ← presigned PUT to R2 for `chat-images/{userId}/{uuid}.ext`; client PUTs then POSTs message with `kind: image`
 GET  /chat/messages     ← paginated history (?before=ISO&limit=50); image rows include signed `image_urls` when R2 is configured
 GET  /chat/stream       ← SSE (one per user session)

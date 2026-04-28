@@ -10,13 +10,13 @@ import {
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 
-import { formatChatRecallStamp } from '../chat/utils/format-chat-recall-stamp';
+import { formatChatRecallStamp } from '@/chat/utils/format-chat-recall-stamp';
 import {
   dedupeAgentLikeOutput,
   dedupeExtractionLike,
-} from '../background/queues/chat/filter-deduped-creates';
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+} from '@/background/queues/chat/filter-deduped-creates';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 
 import {
   calendarDeleteSchema,
@@ -36,7 +36,7 @@ import {
   type PemExtractionOutput,
   type PemOrchestrationOutput,
   coerceOrchestrationSummaryUpdate,
-} from './pem-agent.schemas';
+} from '@/agents/pem-agent.schemas';
 
 import {
   JSON_RECOVERY_EXTRACTION,
@@ -45,7 +45,7 @@ import {
   SYSTEM_EXTRACTION,
   SYSTEM_MONOLITHIC,
   SYSTEM_ORCHESTRATION,
-} from './pem-agent.system-prompts';
+} from '@/agents/pem-agent.system-prompts';
 
 const PEM_AGENT_STRUCTURED_ATTEMPTS = 3;
 const PEM_EXTRACTION_ATTEMPTS = 3;

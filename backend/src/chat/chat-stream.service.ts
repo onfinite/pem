@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Observable, Subject, merge, interval } from 'rxjs';
 import { finalize, map } from 'rxjs/operators';
 
-import { ChatEventsService } from '../background/chat-events/chat-events.service';
+import { ChatEventsService } from '@/background/chat-events/chat-events.service';
 
 const HEARTBEAT_MS = 30_000;
 

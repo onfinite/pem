@@ -1,11 +1,11 @@
 import { DateTime } from 'luxon';
 
-import type { ExtractRow } from '../database/schemas';
+import type { ExtractRow } from '@/database/schemas/index';
 import {
   collapseRecurringRowsForDisplay,
   getRecurrenceSeriesId,
   isRecurringExtract,
-} from './recurring-series-display';
+} from '@/extracts/recurring-series-display';
 
 function row(p: Partial<ExtractRow> & { id: string }): ExtractRow {
   return {

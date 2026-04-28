@@ -1,15 +1,15 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   logsTable,
   usersTable,
   type UserPreferences,
   type UserRow,
-} from '../database/schemas';
+} from '@/database/schemas/index';
 
 @Injectable()
 export class UserService {

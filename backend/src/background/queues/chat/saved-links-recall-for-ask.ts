@@ -1,8 +1,8 @@
 import { and, desc, eq, ilike, or } from 'drizzle-orm';
 
-import type { DrizzleDb } from '../../../database/database.module';
-import { messageLinksTable } from '../../../database/schemas';
-import { formatChatRecallStamp } from '../../../chat/utils/format-chat-recall-stamp';
+import type { DrizzleDb } from '@/database/database.module';
+import { messageLinksTable } from '@/database/schemas/index';
+import { formatChatRecallStamp } from '@/chat/utils/format-chat-recall-stamp';
 
 const STOP = new Set([
   'what',

@@ -93,7 +93,7 @@ Lint: `npm run lint`. Unit tests (prep result → UI body mapping): `npm test`. 
 
 ## `backend/` — HTTP API (NestJS + Drizzle)
 
-- **Node**, **NestJS**, **Drizzle ORM** (PostgreSQL via `pg`), **Clerk** (JWT via **jose** + JWKS, webhooks via **Svix**), **`@nestjs/throttler`**, **OpenAPI** (**Swagger UI** at `/docs` when **`ENV` ≠ `prod`**)
+- **Node**, **NestJS**, **Drizzle ORM** (PostgreSQL via `pg`), **Clerk** (JWT via **jose** + JWKS, webhooks via **Svix**), **`@nestjs/throttler`**
 
 **Develop**
 

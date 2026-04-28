@@ -22,9 +22,9 @@ import {
 } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
-import { CalendarSyncService } from '../calendar/calendar-sync.service';
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { CalendarSyncService } from '@/calendar/calendar-sync.service';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   logsTable,
@@ -33,32 +33,35 @@ import {
   usersTable,
   type ExtractRow,
   type LogRow,
-} from '../database/schemas';
-import type { UpdateExtractBody } from './dto/update-extract.dto';
-import { classifyExtractBriefBucket } from './extract-brief-bucket';
-import { buildBriefBuckets, type BriefBuckets } from './build-brief-buckets';
+} from '@/database/schemas/index';
+import type { UpdateExtractBody } from '@/extracts/dto/update-extract.dto';
+import { classifyExtractBriefBucket } from '@/extracts/extract-brief-bucket';
+import {
+  buildBriefBuckets,
+  type BriefBuckets,
+} from '@/extracts/build-brief-buckets';
 import {
   decodeCursor,
   decodeOpenCursor,
   encodeCursor,
   encodeOpenCursor,
-} from './extract-cursors';
+} from '@/extracts/extract-cursors';
 import {
   collapseRecurringRowsForDisplay,
   isRecurringExtract,
-} from './recurring-series-display';
+} from '@/extracts/recurring-series-display';
 import type {
   ExtractMutationAudit,
   ExtractQueryFilters,
   SnoozeUntil,
-} from './extracts.types';
+} from '@/extracts/extracts.types';
 
 export type {
   ExtractMutationAudit,
   ExtractQueryFilters,
   SnoozeUntil,
-} from './extracts.types';
-export type { BriefBuckets } from './build-brief-buckets';
+} from '@/extracts/extracts.types';
+export type { BriefBuckets } from '@/extracts/build-brief-buckets';
 
 @Injectable()
 export class ExtractsService {

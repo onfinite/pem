@@ -1,6 +1,6 @@
-import { LINK_PROMPT_BODY_MAX_CHARS } from '../link-reading.constants';
-import { markdownFromJinaSnapshot } from './jina-snapshot-markdown';
-import { parseStoredJinaSnapshot } from './parse-stored-jina-snapshot';
+import { LINK_PROMPT_BODY_MAX_CHARS } from '@/chat/link-reading.constants';
+import { markdownFromJinaSnapshot } from '@/chat/utils/jina-snapshot-markdown';
+import { parseStoredJinaSnapshot } from '@/chat/utils/parse-stored-jina-snapshot';
 
 /**
  * Capped page body for the Pem / Ask link prompt — enough substance for memory_write

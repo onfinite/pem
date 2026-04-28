@@ -3,9 +3,9 @@ import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
-import { toDateKey } from "./dateKeys";
-import { dayStyles } from "./dayDetail.styles";
-import { TaskItem } from "./TaskItem";
+import { toDateKey } from "@/components/chat/task-drawer/dateKeys";
+import { dayStyles } from "@/components/chat/task-drawer/dayDetail.styles";
+import { TaskItem } from "@/components/chat/task-drawer/TaskItem";
 
 export function DayDetail({
   dateKey,

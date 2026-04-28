@@ -5,14 +5,11 @@ import { eq, isNotNull } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 import type { Queue } from 'bullmq';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
-import {
-  calendarConnectionsTable,
-  usersTable,
-} from '../../../database/schemas';
-import { CalendarConnectionService } from '../../../calendar/calendar-connection.service';
-import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import { calendarConnectionsTable, usersTable } from '@/database/schemas/index';
+import { CalendarConnectionService } from '@/calendar/calendar-connection.service';
+import { CalendarSyncService } from '@/calendar/calendar-sync.service';
 
 const WATCH_RENEWAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 

@@ -6,8 +6,8 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
-import { taskDrawerViewStyles as styles } from "./taskDrawerView.styles";
-import type { Tab } from "./useTaskDrawerController";
+import { taskDrawerViewStyles as styles } from "@/components/chat/task-drawer/taskDrawerView.styles";
+import type { Tab } from "@/components/chat/task-drawer/useTaskDrawerController";
 
 function calendarCountLabel(
   dayItemCount: number,

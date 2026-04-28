@@ -4,7 +4,7 @@ import {
   labelForBusinessMapsUrl,
   labelForPlaceRowAction,
   shouldOpenPlaceRowAsMap,
-} from "./placeLinkHeuristics";
+} from "@/lib/placeLinkHeuristics";
 
 describe("isLikelyMapsHttpUrl", () => {
   it("detects Google Maps URLs", () => {

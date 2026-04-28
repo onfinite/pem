@@ -1,9 +1,9 @@
 import { getApiBaseUrl } from "@/lib/apiBaseUrl";
 import type { MutableRefObject } from "react";
 import EventSource from "react-native-sse";
-import { CHAT_STREAM_MAX_RECONNECT_DELAY_MS } from "./chatStream.constants";
-import type { ChatSseEvents, ChatStreamCallbacks } from "./chatStream.types";
-import { dispatchChatSseEvent } from "./dispatchChatSseEvent";
+import { CHAT_STREAM_MAX_RECONNECT_DELAY_MS } from "@/hooks/chatStream/chatStream.constants";
+import type { ChatSseEvents, ChatStreamCallbacks } from "@/hooks/chatStream/chatStream.types";
+import { dispatchChatSseEvent } from "@/hooks/chatStream/dispatchChatSseEvent";
 
 export function openChatStreamConnection(opts: {
   mountedRef: MutableRefObject<boolean>;

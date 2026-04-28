@@ -8,8 +8,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { customType } from 'drizzle-orm/pg-core';
 
-import { messagesTable } from './messages.schema';
-import { usersTable } from './users.schema';
+import { messagesTable } from '@/database/schemas/messages.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 const vector = customType<{ data: number[]; driverParam: string }>({
   dataType() {

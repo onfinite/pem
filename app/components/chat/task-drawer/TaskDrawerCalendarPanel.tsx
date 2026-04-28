@@ -5,12 +5,12 @@ import type { ApiExtract, CalendarViewResponse } from "@/lib/pemApi";
 import { RefreshCw } from "lucide-react-native";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Calendar, type DateData } from "react-native-calendars";
-import type { MarkedDatesMap } from "./buildMarkedDates";
-import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
-import { DayDetail } from "./DayDetail";
-import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
-import { toDateKey } from "./dateKeys";
-import { taskDrawerViewStyles as styles } from "./taskDrawerView.styles";
+import type { MarkedDatesMap } from "@/components/chat/task-drawer/buildMarkedDates";
+import { CALENDAR_EVENT_DOT_COLOR } from "@/components/chat/task-drawer/constants";
+import { DayDetail } from "@/components/chat/task-drawer/DayDetail";
+import { dismissOpenTaskSwipe } from "@/components/chat/task-drawer/taskSwipeRegistry";
+import { toDateKey } from "@/components/chat/task-drawer/dateKeys";
+import { taskDrawerViewStyles as styles } from "@/components/chat/task-drawer/taskDrawerView.styles";
 
 type CalendarTheme = Record<string, string | number | undefined>;
 

@@ -13,27 +13,21 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
-import type { UserRow } from '../database/schemas';
-import { extractMutationAuditFromHeaders } from './extract-audit-from-headers';
-import { ExtractsService } from './extracts.service';
-import { DraftService } from './draft.service';
-import { ExtractsQueryDto } from './dto/extracts-query.dto';
-import { RescheduleExtractDto } from './dto/reschedule-extract.dto';
-import { ReportExtractDto } from './dto/report-extract.dto';
-import { SnoozeExtractDto } from './dto/snooze-extract.dto';
-import {
-  UpdateExtractDto,
-  updateExtractBodySchema,
-} from './dto/update-extract.dto';
+import { ClerkAuthGuard } from '@/auth/clerk-auth.guard';
+import { CurrentUser } from '@/auth/current-user.decorator';
+import type { UserRow } from '@/database/schemas/index';
+import { extractMutationAuditFromHeaders } from '@/extracts/extract-audit-from-headers';
+import { ExtractsService } from '@/extracts/extracts.service';
+import { DraftService } from '@/extracts/draft.service';
+import { ExtractsQueryDto } from '@/extracts/dto/extracts-query.dto';
+import { RescheduleExtractDto } from '@/extracts/dto/reschedule-extract.dto';
+import { ReportExtractDto } from '@/extracts/dto/report-extract.dto';
+import { SnoozeExtractDto } from '@/extracts/dto/snooze-extract.dto';
+import { updateExtractBodySchema } from '@/extracts/dto/update-extract.dto';
 
-@ApiTags('extracts')
 @Controller('extracts')
 @UseGuards(ClerkAuthGuard)
-@ApiBearerAuth('clerk')
 export class ExtractsController {
   constructor(
     private readonly extracts: ExtractsService,
@@ -41,17 +35,11 @@ export class ExtractsController {
   ) {}
 
   @Get('counts')
-  @ApiOperation({
-    summary: 'Task counts for the pill — today, overdue, total open',
-  })
   async getCounts(@CurrentUser() user: UserRow) {
     return this.extracts.getTaskCounts(user.id);
   }
 
   @Get('brief')
-  @ApiOperation({
-    summary: 'Inbox brief — overdue, today, tomorrow, this/next week, later',
-  })
   async getBrief(@CurrentUser() user: UserRow) {
     const buckets = await this.extracts.getBrief(user.id);
     const s = this.extracts.serialize.bind(this.extracts);
@@ -67,10 +55,6 @@ export class ExtractsController {
   }
 
   @Get('calendar')
-  @ApiOperation({
-    summary:
-      'Calendar view — items for a month, undated tasks, overdue, dot map',
-  })
   async getCalendarView(
     @CurrentUser() user: UserRow,
     @Query('month') month?: string,
@@ -79,7 +63,6 @@ export class ExtractsController {
   }
 
   @Get('closed')
-  @ApiOperation({ summary: 'Closed list — newest first' })
   async listClosed(
     @CurrentUser() user: UserRow,
     @Query('limit') limitRaw?: string,
@@ -95,7 +78,6 @@ export class ExtractsController {
   }
 
   @Get('open')
-  @ApiOperation({ summary: 'Open extracts (inbox + snoozed) — newest first' })
   async listOpen(
     @CurrentUser() user: UserRow,
     @Query('limit') limitRaw?: string,
@@ -111,10 +93,6 @@ export class ExtractsController {
   }
 
   @Get('query')
-  @ApiOperation({
-    summary:
-      'Filter extracts — composable query (status, batch_key, tone, urgency, …)',
-  })
   async queryList(@CurrentUser() user: UserRow, @Query() q: ExtractsQueryDto) {
     await this.extracts.wakeSnoozed(user.id);
     const limit = q.limit != null && !Number.isNaN(q.limit) ? q.limit : 30;
@@ -134,7 +112,6 @@ export class ExtractsController {
   }
 
   @Get(':id/history')
-  @ApiOperation({ summary: 'Change history for an extract' })
   async getHistory(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -157,7 +134,6 @@ export class ExtractsController {
 
   @Post(':id/draft')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Generate a draft message for a follow-up item' })
   async generateDraft(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -169,7 +145,6 @@ export class ExtractsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Single extract (detail)' })
   async getOne(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -182,7 +157,6 @@ export class ExtractsController {
 
   @Patch(':id/close')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Close extract — off your active list' })
   async close(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -201,7 +175,6 @@ export class ExtractsController {
 
   @Patch(':id/unclose')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Undo close — bring back to inbox' })
   async unclose(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -220,18 +193,6 @@ export class ExtractsController {
 
   @Patch(':id/rsvp')
   @HttpCode(200)
-  @ApiOperation({ summary: 'RSVP to a calendar invite' })
-  @ApiBody({
-    schema: {
-      properties: {
-        response: {
-          type: 'string',
-          enum: ['accepted', 'declined', 'tentative'],
-        },
-      },
-      required: ['response'],
-    },
-  })
   async rsvp(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -253,7 +214,6 @@ export class ExtractsController {
 
   @Patch(':id/snooze')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Snooze extract' })
   async snooze(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -279,7 +239,6 @@ export class ExtractsController {
 
   @Patch(':id/reschedule')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Reschedule extract — move to a different urgency' })
   async reschedule(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -299,11 +258,6 @@ export class ExtractsController {
 
   @Patch(':id')
   @HttpCode(200)
-  @ApiBody({ type: UpdateExtractDto })
-  @ApiOperation({
-    summary:
-      'Update task (title, when/priority, dates, period, duration, list)',
-  })
   async updateExtract(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -336,9 +290,6 @@ export class ExtractsController {
 
   @Post(':id/report')
   @HttpCode(200)
-  @ApiOperation({
-    summary: 'Report incorrect extract — user flags a bad generation',
-  })
   async report(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,

@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 
-import type { ExtractRow, RecurrenceRule } from '../database/schemas';
+import type { ExtractRow, RecurrenceRule } from '@/database/schemas/index';
 
 function hasRecurrenceRule(row: ExtractRow): boolean {
   const r = row.recurrenceRule as RecurrenceRule | null | undefined;

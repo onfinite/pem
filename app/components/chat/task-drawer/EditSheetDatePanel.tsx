@@ -7,7 +7,7 @@ import { ArrowLeft, Clock } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Calendar, type DateData } from "react-native-calendars";
-import { reminderIso } from "./taskEditSheet.constants";
+import { reminderIso } from "@/components/chat/task-drawer/taskEditSheet.constants";
 
 const DATE_PRESETS = [
   { key: "today", label: "Today" },

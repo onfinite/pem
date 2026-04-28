@@ -1,5 +1,8 @@
-import { normalizeUrlForFetch } from './normalize-url-for-fetch';
-import { LINK_BARE_URL_REGEX, LINK_HTTPS_URL_REGEX } from './link-url-patterns';
+import { normalizeUrlForFetch } from '@/chat/utils/normalize-url-for-fetch';
+import {
+  LINK_BARE_URL_REGEX,
+  LINK_HTTPS_URL_REGEX,
+} from '@/chat/utils/link-url-patterns';
 
 export type ExtractedUrlOccurrence = { normalized: string; raw: string };
 

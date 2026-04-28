@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 
-import { DatabaseModule } from '../database/database.module';
-import { PushService } from './push.service';
+import { DatabaseModule } from '@/database/database.module';
+import { PushService } from '@/push/push.service';
 
 @Module({
   imports: [DatabaseModule],

@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
 
-import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
+import { CalendarSyncService } from '@/calendar/calendar-sync.service';
 
 @Processor('calendar-sync')
 export class CalendarSyncProcessor extends WorkerHost {

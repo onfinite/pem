@@ -1,14 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNotNull, lte } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   calendarConnectionsTable,
   logsTable,
   type CalendarConnectionRow,
   type CalendarProvider,
-} from '../database/schemas';
+} from '@/database/schemas/index';
 
 @Injectable()
 export class CalendarConnectionService {

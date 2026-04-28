@@ -9,7 +9,7 @@ import {
 } from "@/utils/linkPreviewDisplayStrings";
 import { openLinkInInAppBrowser } from "@/utils/openLinkInInAppBrowser";
 import { upgradeAmazonProductImageUrl } from "@/utils/upgradeAmazonProductImageUrl";
-import { UserMessageLinkPreviewShell } from "./UserMessageLinkPreviewShell";
+import { UserMessageLinkPreviewShell } from "@/components/chat/UserMessageLinkPreviewShell";
 import { Image as ExpoImage } from "expo-image";
 import { useCallback, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";

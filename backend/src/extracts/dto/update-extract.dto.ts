@@ -1,4 +1,3 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
 import { z } from 'zod';
 
 const isoInstantOrNull = z.union([
@@ -37,63 +36,3 @@ export const updateExtractBodySchema = z
   .strict();
 
 export type UpdateExtractBody = z.infer<typeof updateExtractBodySchema>;
-
-/** Swagger-only shape (runtime validation uses Zod). */
-export class UpdateExtractDto {
-  @ApiPropertyOptional()
-  text?: string;
-
-  @ApiPropertyOptional()
-  original_text?: string;
-
-  @ApiPropertyOptional({ enum: ['confident', 'tentative', 'holding'] })
-  tone?: string;
-
-  @ApiPropertyOptional({ enum: ['holding', 'none'] })
-  urgency?: string;
-
-  @ApiPropertyOptional({
-    enum: ['shopping', 'follow_ups'],
-    nullable: true,
-  })
-  batch_key?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  due_at?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  period_start?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  period_end?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  period_label?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  duration_minutes?: number | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  pem_note?: string | null;
-
-  @ApiPropertyOptional()
-  is_deadline?: boolean;
-
-  @ApiPropertyOptional({
-    enum: ['low', 'medium', 'high'],
-    nullable: true,
-  })
-  energy_level?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, format: 'uuid' })
-  list_id?: string | null;
-
-  @ApiPropertyOptional({
-    enum: ['high', 'medium', 'low'],
-    nullable: true,
-  })
-  priority?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  reminder_at?: string | null;
-}

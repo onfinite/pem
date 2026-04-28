@@ -1,16 +1,16 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
-import type { DrizzleDb } from '../../../database/database.module';
-import { messagesTable } from '../../../database/schemas';
+import type { DrizzleDb } from '@/database/database.module';
+import { messagesTable } from '@/database/schemas/index';
 import type {
   EmbeddingsService,
   SimilaritySearchOpts,
-} from '../../../embeddings/embeddings.service';
+} from '@/embeddings/embeddings.service';
 import {
   PHOTO_RECALL_STRIP_SCORE_GAP,
   RAG_IMAGE_RECALL_MIN_SIMILARITY,
   RAG_IMAGE_RECALL_TOP_K,
-} from '../../../chat/chat.constants';
+} from '@/chat/chat.constants';
 
 export const PHOTO_RECALL_MAX_MESSAGE_IDS = 10;
 

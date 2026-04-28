@@ -1,4 +1,4 @@
-import { LINK_HTTPS_URL_REGEX } from '../../../chat/utils/link-url-patterns';
+import { LINK_HTTPS_URL_REGEX } from '@/chat/utils/link-url-patterns';
 
 const RECALL_OR_VISUAL_HINT =
   /\b(photo|picture|image|screenshot|remember|recall|uploaded|sent (you |a )?pic|that pic|that photo|from when|last time|which (one|shot)|show me what|from my (camera|gallery))\b/i;

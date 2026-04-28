@@ -3,7 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 
 import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
 
-import type { PendingChatImage } from "./pendingChatImagesFromPicker";
+import type { PendingChatImage } from "@/lib/pendingChatImagesFromPicker";
 
 function storageKey(userId: string): string {
   return `@pem/chat_pending_images_v1_${userId}`;

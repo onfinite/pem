@@ -1,5 +1,8 @@
-import { extractUrlsFromText } from './extract-urls-from-text';
-import { LINK_BARE_URL_REGEX, LINK_HTTPS_URL_REGEX } from './link-url-patterns';
+import { extractUrlsFromText } from '@/chat/utils/extract-urls-from-text';
+import {
+  LINK_BARE_URL_REGEX,
+  LINK_HTTPS_URL_REGEX,
+} from '@/chat/utils/link-url-patterns';
 
 /**
  * True when the message is only whitespace and URL tokens (no other words).

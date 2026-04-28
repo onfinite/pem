@@ -1,4 +1,4 @@
-import type { JinaSnapshotStored } from '../types/jina-snapshot-stored.types';
+import type { JinaSnapshotStored } from '@/chat/types/jina-snapshot-stored.types';
 
 /** Markdown / HTML-ish body from a stored Jina JSON snapshot (for classifiers + image extraction). */
 export function markdownFromJinaSnapshot(

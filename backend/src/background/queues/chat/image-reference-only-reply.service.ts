@@ -4,7 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 
-import { imageReferenceOnlySystemPrompt } from '../../../chat/prompts/image-reference-only-reply.prompt';
+import { imageReferenceOnlySystemPrompt } from '@/chat/prompts/image-reference-only-reply.prompt';
 
 const replySchema = z.object({
   response_text: z

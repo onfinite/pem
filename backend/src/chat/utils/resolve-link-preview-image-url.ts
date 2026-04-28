@@ -1,10 +1,10 @@
-import { collectImageUrlsFromJinaExternal } from './collect-image-urls-from-jina-external';
-import { collectLinkPreviewImageUrlsFromMarkdown } from './link-preview-image-url-from-markdown';
-import { linkImageUrlFromMetadata } from './link-image-url-from-metadata';
-import { pickBestLinkPreviewImageUrl } from './link-preview-image-url-quality';
-import { markdownFromJinaSnapshot } from './jina-snapshot-markdown';
-import { parseStoredJinaSnapshot } from './parse-stored-jina-snapshot';
-import { upgradeAmazonProductImageUrl } from './upgrade-amazon-product-image-url';
+import { collectImageUrlsFromJinaExternal } from '@/chat/utils/collect-image-urls-from-jina-external';
+import { collectLinkPreviewImageUrlsFromMarkdown } from '@/chat/utils/link-preview-image-url-from-markdown';
+import { linkImageUrlFromMetadata } from '@/chat/utils/link-image-url-from-metadata';
+import { pickBestLinkPreviewImageUrl } from '@/chat/utils/link-preview-image-url-quality';
+import { markdownFromJinaSnapshot } from '@/chat/utils/jina-snapshot-markdown';
+import { parseStoredJinaSnapshot } from '@/chat/utils/parse-stored-jina-snapshot';
+import { upgradeAmazonProductImageUrl } from '@/chat/utils/upgrade-amazon-product-image-url';
 
 export function resolveLinkPreviewImageUrl(
   extractedMetadata: Record<string, unknown> | null | undefined,

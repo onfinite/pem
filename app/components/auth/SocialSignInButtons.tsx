@@ -4,7 +4,7 @@ import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/
 import { useSSO } from "@clerk/expo";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
-import GoogleGLogo from "./GoogleGLogo";
+import GoogleGLogo from "@/components/auth/GoogleGLogo";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 

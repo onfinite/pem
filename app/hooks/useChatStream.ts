@@ -1,10 +1,10 @@
 import { useAuth } from "@clerk/expo";
 import { useCallback, useEffect, useRef } from "react";
 import EventSource from "react-native-sse";
-import type { ChatSseEvents, ChatStreamCallbacks } from "./chatStream/chatStream.types";
-import { openChatStreamConnection } from "./chatStream/openChatStreamConnection";
+import type { ChatSseEvents, ChatStreamCallbacks } from "@/hooks/chatStream/chatStream.types";
+import { openChatStreamConnection } from "@/hooks/chatStream/openChatStreamConnection";
 
-export type { ChatStreamCallbacks } from "./chatStream/chatStream.types";
+export type { ChatStreamCallbacks } from "@/hooks/chatStream/chatStream.types";
 
 export function useChatStream(callbacks: ChatStreamCallbacks) {
   const { getToken } = useAuth();

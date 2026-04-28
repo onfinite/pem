@@ -1,7 +1,7 @@
 import type { ApiExtract } from "@/lib/pemApi";
 import { isRecurringExtract } from "@/utils/isRecurringExtract";
 import { useMemo } from "react";
-import { isCalendarBackedExtract } from "./calendarExtract";
+import { isCalendarBackedExtract } from "@/components/chat/task-drawer/calendarExtract";
 
 export function useTaskItemDisplay(item: ApiExtract) {
   const displayAnchor =

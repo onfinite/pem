@@ -1,5 +1,5 @@
-import { LINK_JINA_CONTENT_MAX_CHARS } from '../link-reading.constants';
-import type { JinaSnapshotStored } from '../types/jina-snapshot-stored.types';
+import { LINK_JINA_CONTENT_MAX_CHARS } from '@/chat/link-reading.constants';
+import type { JinaSnapshotStored } from '@/chat/types/jina-snapshot-stored.types';
 
 function capContent(content: string): string {
   if (content.length <= LINK_JINA_CONTENT_MAX_CHARS) return content;

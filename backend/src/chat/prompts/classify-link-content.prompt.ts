@@ -1,4 +1,4 @@
-import type { MessageLinkContentType } from '../../database/schemas';
+import type { MessageLinkContentType } from '@/database/schemas/index';
 
 export function classifyLinkContentPrompt(params: {
   normalizedUrl: string;

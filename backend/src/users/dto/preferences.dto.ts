@@ -1,4 +1,3 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsEnum,
@@ -20,29 +19,24 @@ class WorkHoursDto {
 }
 
 export class PreferencesDto {
-  @ApiPropertyOptional()
   @IsOptional()
   @ValidateNested()
   @Type(() => WorkHoursDto)
   work_hours?: WorkHoursDto;
 
-  @ApiPropertyOptional({ type: [Number] })
   @IsOptional()
   @IsArray()
   work_days?: number[];
 
-  @ApiPropertyOptional({ enum: ['office', 'remote', 'hybrid'] })
   @IsOptional()
   @IsEnum(['office', 'remote', 'hybrid'])
   work_type?: 'office' | 'remote' | 'hybrid';
 
-  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
   @IsEnum(['evenings', 'weekends', 'lunch', 'mornings'], { each: true })
   personal_windows?: ('evenings' | 'weekends' | 'lunch' | 'mornings')[];
 
-  @ApiPropertyOptional({ enum: ['weekend_morning', 'lunch', 'after_work'] })
   @IsOptional()
   @IsEnum(['weekend_morning', 'lunch', 'after_work'])
   errand_window?: 'weekend_morning' | 'lunch' | 'after_work';

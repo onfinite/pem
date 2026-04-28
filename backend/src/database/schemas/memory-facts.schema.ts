@@ -1,7 +1,7 @@
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { messagesTable } from './messages.schema';
-import { usersTable } from './users.schema';
+import { messagesTable } from '@/database/schemas/messages.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 export const MEMORY_STATUSES = ['active', 'historical'] as const;
 export type MemoryStatus = (typeof MEMORY_STATUSES)[number];

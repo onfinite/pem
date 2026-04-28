@@ -3,8 +3,8 @@ import type { ApiExtract } from "@/lib/pemApi";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useCallback, useState } from "react";
 import { Platform, Text, View } from "react-native";
-import { EditSheetChipRow, type ChipOption } from "./EditSheetChipRow";
-import { editSheetStyles as s } from "./taskEditSheet.styles";
+import { EditSheetChipRow, type ChipOption } from "@/components/chat/task-drawer/EditSheetChipRow";
+import { editSheetStyles as s } from "@/components/chat/task-drawer/taskEditSheet.styles";
 
 const DATE_CHIPS: ChipOption[] = [
   { key: "today", label: "Today" },

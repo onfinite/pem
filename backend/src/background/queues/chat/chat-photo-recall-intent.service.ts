@@ -5,30 +5,30 @@ import { generateText, Output } from 'ai';
 import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
-import { messagesTable } from '../../../database/schemas';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import { messagesTable } from '@/database/schemas/index';
 import {
   EmbeddingsService,
   type SimilaritySearchOpts,
-} from '../../../embeddings/embeddings.service';
+} from '@/embeddings/embeddings.service';
 import {
   photoRecallIntentSystemPrompt,
   photoRecallIntentUserPrompt,
-} from '../../../chat/prompts/chat-photo-recall-intent.prompt';
+} from '@/chat/prompts/chat-photo-recall-intent.prompt';
 import {
   PHOTO_RECALL_STRIP_SCORE_GAP,
   RAG_IMAGE_RECALL_MIN_SIMILARITY,
   RAG_IMAGE_RECALL_TOP_K,
-} from '../../../chat/chat.constants';
-import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
+} from '@/chat/chat.constants';
+import { visionLineForHumans } from '@/chat/utils/photo-vision-stored';
 import {
   PHOTO_RECALL_MAX_MESSAGE_IDS,
   dedupeImageRecallHitsByMessage,
   pruneImageRecallHitsByTopScoreGap,
   resolvePhotoRecallMessageIdsFromRagOnly,
-} from './resolve-photo-recall-message-ids';
-import { shouldSkipPhotoRecallStrip } from './photo-recall-strip-guard';
+} from '@/background/queues/chat/resolve-photo-recall-message-ids';
+import { shouldSkipPhotoRecallStrip } from '@/background/queues/chat/photo-recall-strip-guard';
 
 const CANDIDATE_LIMIT = 12;
 const VISION_SNIP = 260;

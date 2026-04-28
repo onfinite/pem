@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
-import { ChatEventsService } from './chat-events.service';
+import { ChatEventsService } from '@/background/chat-events/chat-events.service';
 
 @Global()
 @Module({

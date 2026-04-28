@@ -1,11 +1,11 @@
 import { and, eq, inArray } from 'drizzle-orm';
 
-import type { DrizzleDb } from '../../../database/database.module';
-import { PHOTO_RECALL_STRIP_MAX_ITEMS } from '../../../chat/chat.constants';
-import { visionSectionsForKeys } from '../../../chat/utils/photo-vision-multi-sections';
-import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
-import { messagesTable, type MessageRow } from '../../../database/schemas';
-import { StorageService } from '../../../storage/storage.service';
+import type { DrizzleDb } from '@/database/database.module';
+import { PHOTO_RECALL_STRIP_MAX_ITEMS } from '@/chat/chat.constants';
+import { visionSectionsForKeys } from '@/chat/utils/photo-vision-multi-sections';
+import { visionLineForHumans } from '@/chat/utils/photo-vision-stored';
+import { messagesTable, type MessageRow } from '@/database/schemas/index';
+import { StorageService } from '@/storage/storage.service';
 
 const URL_TTL_SEC = 3600;
 

@@ -7,7 +7,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { usersTable } from './users.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 /** Maps (user, SHA-256 of bytes) → canonical R2 key for exact-duplicate chat images. */
 export const chatImageHashesTable = pgTable(

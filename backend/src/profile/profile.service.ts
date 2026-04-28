@@ -4,9 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import type { MemoryFactRow } from '../database/schemas';
-import { decodeMemoryCursor, ProfileRepository } from './profile.repository';
-import { formatTimedForAgent } from './profile-timed';
+import type { MemoryFactRow } from '@/database/schemas/index';
+import {
+  decodeMemoryCursor,
+  ProfileRepository,
+} from '@/profile/profile.repository';
+import { formatTimedForAgent } from '@/profile/profile-timed';
 
 const MAX_ACTIVE_PER_KEY = 5;
 

@@ -1,4 +1,4 @@
-import { pickBestLinkPreviewImageUrl } from './link-preview-image-url-quality';
+import { pickBestLinkPreviewImageUrl } from '@/chat/utils/link-preview-image-url-quality';
 
 const MAX_SCAN = 200_000;
 

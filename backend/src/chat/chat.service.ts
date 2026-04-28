@@ -11,8 +11,8 @@ import {
   or,
 } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   messageLinksTable,
@@ -23,10 +23,10 @@ import {
   type MessageKind,
   type TriageCategory,
   type ProcessingStatus,
-} from '../database/schemas';
-import type { ChatLinkPreviewSerialized } from './link-preview.types';
-import { resolveLinkPreviewImageUrl } from './utils/resolve-link-preview-image-url';
-import { decodePhotoVisionStored } from './utils/photo-vision-stored';
+} from '@/database/schemas/index';
+import type { ChatLinkPreviewSerialized } from '@/chat/link-preview.types';
+import { resolveLinkPreviewImageUrl } from '@/chat/utils/resolve-link-preview-image-url';
+import { decodePhotoVisionStored } from '@/chat/utils/photo-vision-stored';
 
 @Injectable()
 export class ChatService {

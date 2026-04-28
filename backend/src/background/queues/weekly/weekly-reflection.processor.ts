@@ -7,16 +7,16 @@ import { and, eq, gte, desc, sql } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 import type { Job } from 'bullmq';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   messagesTable,
   usersTable,
-} from '../../../database/schemas';
-import { EmbeddingsService } from '../../../embeddings/embeddings.service';
-import { ProfileService } from '../../../profile/profile.service';
-import { PushService } from '../../../push/push.service';
+} from '@/database/schemas/index';
+import { EmbeddingsService } from '@/embeddings/embeddings.service';
+import { ProfileService } from '@/profile/profile.service';
+import { PushService } from '@/push/push.service';
 
 function buildReflectionSystem(): string {
   return `You are Pem writing a weekly reflection. This is a message in the user's chat — like getting a Sunday evening text from a friend who's been paying attention all week.

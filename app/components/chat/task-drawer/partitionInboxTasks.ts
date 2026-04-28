@@ -1,6 +1,6 @@
 import type { ApiExtract } from "@/lib/pemApi";
 import { isRecurringExtract } from "@/utils/isRecurringExtract";
-import { isCalendarBackedExtract } from "./calendarExtract";
+import { isCalendarBackedExtract } from "@/components/chat/task-drawer/calendarExtract";
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);

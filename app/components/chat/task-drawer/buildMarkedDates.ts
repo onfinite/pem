@@ -1,6 +1,6 @@
 import { pemAmber } from "@/constants/theme";
 import type { CalendarViewResponse } from "@/lib/pemApi";
-import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
+import { CALENDAR_EVENT_DOT_COLOR } from "@/components/chat/task-drawer/constants";
 
 export type MarkedDatesMap = Record<
   string,

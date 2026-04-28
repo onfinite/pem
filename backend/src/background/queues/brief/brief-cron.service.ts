@@ -6,20 +6,20 @@ import { generateText } from 'ai';
 import { and, asc, eq, gt, gte, ne, sql } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   listsTable,
   messagesTable,
   usersTable,
-} from '../../../database/schemas';
-import { EmbeddingsService } from '../../../embeddings/embeddings.service';
-import { ExtractsService } from '../../../extracts/extracts.service';
-import { ProfileService } from '../../../profile/profile.service';
-import { PushService } from '../../../push/push.service';
-import { GoogleCalendarService } from '../../../calendar/google-calendar.service';
-import { calendarConnectionsTable } from '../../../database/schemas';
+} from '@/database/schemas/index';
+import { EmbeddingsService } from '@/embeddings/embeddings.service';
+import { ExtractsService } from '@/extracts/extracts.service';
+import { ProfileService } from '@/profile/profile.service';
+import { PushService } from '@/push/push.service';
+import { GoogleCalendarService } from '@/calendar/google-calendar.service';
+import { calendarConnectionsTable } from '@/database/schemas/index';
 
 function buildBriefSystem(timeOfDay: string, dayOfWeek: string): string {
   return `You are Pem, writing a brief to the user. This is a message in their chat — like getting a text from a trusted friend who manages their day.

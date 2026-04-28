@@ -105,6 +105,31 @@ fetchTaskCounts
 
 ---
 
+## Path aliases (`@/`)
+
+Use **`@/`** for **internal** imports (this monorepo’s source). Keep **package imports** unchanged (`@nestjs/…`, `react`, `expo-…`, etc.).
+
+| Package | Alias | Maps to | Config |
+|---------|--------|---------|--------|
+| **`backend/`** | `@/` | **`src/`** | `backend/tsconfig.json` (`baseUrl` + `paths`). Nest’s `nest build` / watch **rewrites** `@/` to relative paths in emitted **`dist/`** JS. |
+| **`app/`** | `@/` | **`app/`** project root | `app/tsconfig.json`, `babel.config.js` (**`babel-plugin-module-resolver`**), `metro.config.js`, `vitest.config.ts`. |
+
+**Examples**
+
+```typescript
+// Nest — internal
+import { configureApp } from '@/bootstrap/configure-app'
+import { ChatService } from '@/chat/chat.service'
+
+// Expo — internal
+import { pemAmber } from '@/constants/theme'
+import { PemText } from '@/components/ui/PemText'
+```
+
+**Do not** use long `../../` chains (or same-folder `./`) for our own modules — use **`@/…`** so paths stay stable when files move. **Jest** (`backend/package.json`) and **e2e** (`test/jest-e2e.json`) include `moduleNameMapper` for `@/`.
+
+---
+
 ## No long ternaries
 
 This is one of the most important rules in the codebase.
@@ -915,20 +940,13 @@ const result = await db
   .where(like(messages.content, `%${search}%`)) // Drizzle handles escaping
 ```
 
-### Rate limiting — on every public-facing endpoint
+### Rate limiting — global guard
 
-Protect against abuse and runaway costs.
+Protect against abuse and runaway costs. Use **`ThrottlerModule.forRoot`** in **`app.module.ts`** with **`ThrottlerGuard`** as **`APP_GUARD`** — one default for all routes (e.g. per IP). Do not add **`@Throttle`** or **`@SkipThrottle`** on controllers unless you intentionally introduce exceptions.
 
 ```typescript
-// Apply at controller or globally
-@Throttle({ default: { limit: 60, ttl: 60000 } }) // 60 req/min per user
-@Controller('chat')
-export class ChatController { ... }
-
-// Tighter limits on expensive operations
-@Throttle({ default: { limit: 10, ttl: 60000 } }) // 10/min for voice upload
-@Post('voice')
-uploadVoice() { ... }
+ThrottlerModule.forRoot([{ ttl: 60_000, limit: 600 }]),
+{ provide: APP_GUARD, useClass: ThrottlerGuard },
 ```
 
 ### File uploads — validate type and size

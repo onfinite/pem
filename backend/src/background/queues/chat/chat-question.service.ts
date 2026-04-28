@@ -4,40 +4,40 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import { and, eq, gte, lte, inArray, isNotNull, desc, sql } from 'drizzle-orm';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   messagesTable,
   usersTable,
   type ExtractRow,
-} from '../../../database/schemas';
-import { formatChatRecallStamp } from '../../../chat/utils/format-chat-recall-stamp';
+} from '@/database/schemas/index';
+import { formatChatRecallStamp } from '@/chat/utils/format-chat-recall-stamp';
 import {
   asksAboutCompletedTasks,
   buildRecallEmbeddingAugmentation,
   detectQuestionTemporalRange,
   wantsAllTimeCompletedTasks,
-} from './chat-question-temporal';
-import { EmbeddingsService } from '../../../embeddings/embeddings.service';
+} from '@/background/queues/chat/chat-question-temporal';
+import { EmbeddingsService } from '@/embeddings/embeddings.service';
 import {
   ExtractsService,
   type BriefBuckets,
-} from '../../../extracts/extracts.service';
-import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
-import { ProfileService } from '../../../profile/profile.service';
-import { StorageService } from '../../../storage/storage.service';
-import { buildPhotoRecallMetadata } from './build-photo-recall-metadata';
-import { buildPhotoRecallPromptSection } from './build-photo-recall-prompt-section';
-import { ChatPhotoRecallIntentService } from './chat-photo-recall-intent.service';
-import { orderedMessageIdsFromRecallItems } from './resolve-photo-recall-message-ids';
-import { buildSavedLinksRecallPromptSection } from './saved-links-recall-for-ask';
+} from '@/extracts/extracts.service';
+import { visionLineForHumans } from '@/chat/utils/photo-vision-stored';
+import { ProfileService } from '@/profile/profile.service';
+import { StorageService } from '@/storage/storage.service';
+import { buildPhotoRecallMetadata } from '@/background/queues/chat/build-photo-recall-metadata';
+import { buildPhotoRecallPromptSection } from '@/background/queues/chat/build-photo-recall-prompt-section';
+import { ChatPhotoRecallIntentService } from '@/background/queues/chat/chat-photo-recall-intent.service';
+import { orderedMessageIdsFromRecallItems } from '@/background/queues/chat/resolve-photo-recall-message-ids';
+import { buildSavedLinksRecallPromptSection } from '@/background/queues/chat/saved-links-recall-for-ask';
 import {
   ASK_DONE_EXTRACTS_CAP,
   RAG_MIN_SIMILARITY,
   RAG_TOP_K,
   DONE_EXTRACTS_LOOKBACK_DAYS,
-} from '../../../chat/chat.constants';
+} from '@/chat/chat.constants';
 
 const QUESTION_RECENT_MESSAGES_LIMIT = 15;
 

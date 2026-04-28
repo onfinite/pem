@@ -1,22 +1,22 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   messageLinksTable,
   type MessageLinkRow,
-} from '../../../database/schemas';
-import type { ExtractedUrlOccurrence } from '../../../chat/utils/extract-urls-from-text';
-import { LINK_READ_MAX_URLS_PER_MESSAGE } from '../../../chat/link-reading.constants';
-import { JinaReaderService } from './jina-reader.service';
-import { LinkContentClassifierService } from './link-content-classifier.service';
+} from '@/database/schemas/index';
+import type { ExtractedUrlOccurrence } from '@/chat/utils/extract-urls-from-text';
+import { LINK_READ_MAX_URLS_PER_MESSAGE } from '@/chat/link-reading.constants';
+import { JinaReaderService } from '@/background/queues/chat/jina-reader.service';
+import { LinkContentClassifierService } from '@/background/queues/chat/link-content-classifier.service';
 import {
   buildLinkContextPromptSection,
   type LinkPromptItem,
-} from './build-link-context-prompt-section';
-import { processMessageLinkOccurrence } from './process-message-link-occurrence';
-import { linkCacheKeyFromNormalizedUrl } from '../../../chat/utils/link-cache-key';
-import { linkRecallExcerptForPrompt } from '../../../chat/utils/link-recall-excerpt-for-prompt';
+} from '@/background/queues/chat/build-link-context-prompt-section';
+import { processMessageLinkOccurrence } from '@/background/queues/chat/process-message-link-occurrence';
+import { linkCacheKeyFromNormalizedUrl } from '@/chat/utils/link-cache-key';
+import { linkRecallExcerptForPrompt } from '@/chat/utils/link-recall-excerpt-for-prompt';
 
 export type LinkPipelineResult = {
   promptSection: string;

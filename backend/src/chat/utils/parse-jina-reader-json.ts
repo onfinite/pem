@@ -1,7 +1,7 @@
 import type {
   JinaSnapshotExternalGroup,
   JinaSnapshotStored,
-} from '../types/jina-snapshot-stored.types';
+} from '@/chat/types/jina-snapshot-stored.types';
 
 function isExternalShape(v: unknown): v is JinaSnapshotExternalGroup {
   if (!v || typeof v !== 'object') return false;

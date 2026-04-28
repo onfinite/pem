@@ -5,10 +5,10 @@ import { isRecurringExtract } from "@/utils/isRecurringExtract";
 import { CalendarDays, ListTodo, Repeat } from "lucide-react-native";
 import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
-import { CALENDAR_EVENT_DOT_COLOR } from "./constants";
-import { TaskItemMeta } from "./TaskItemMeta";
-import { itemStyles } from "./taskItem.styles";
-import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
+import { CALENDAR_EVENT_DOT_COLOR } from "@/components/chat/task-drawer/constants";
+import { TaskItemMeta } from "@/components/chat/task-drawer/TaskItemMeta";
+import { itemStyles } from "@/components/chat/task-drawer/taskItem.styles";
+import { dismissOpenTaskSwipe } from "@/components/chat/task-drawer/taskSwipeRegistry";
 
 export const TaskItemRow = memo(function TaskItemRow({
   item,

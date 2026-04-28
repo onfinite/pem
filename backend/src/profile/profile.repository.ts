@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   memoryFactsTable,
   type MemoryFactRow,
   type MemoryStatus,
-} from '../database/schemas';
+} from '@/database/schemas/index';
 
 function encodeMemoryCursor(learnedAt: Date, id: string): string {
   return Buffer.from(

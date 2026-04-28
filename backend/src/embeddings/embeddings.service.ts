@@ -4,9 +4,9 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { embed } from 'ai';
 import { eq, sql } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
-import { messageEmbeddingsTable } from '../database/schemas';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import { messageEmbeddingsTable } from '@/database/schemas/index';
 import {
   RAG_IMAGE_RECALL_MIN_SIMILARITY,
   RAG_IMAGE_RECALL_TOP_K,
@@ -14,7 +14,7 @@ import {
   RAG_TEMPORAL_PREFETCH_CAP,
   RAG_TEMPORAL_WINDOW_BOOST,
   RAG_TOP_K,
-} from '../chat/chat.constants';
+} from '@/chat/chat.constants';
 
 export type SimilaritySearchOpts = {
   temporalBoost?: { start: Date; end: Date };

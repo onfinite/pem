@@ -1,7 +1,7 @@
 import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 import { space } from "@/constants/typography";
 import { StyleSheet, View } from "react-native";
-import { MessageLinkPreviewCards } from "./MessageLinkPreviewCards";
+import { MessageLinkPreviewCards } from "@/components/chat/MessageLinkPreviewCards";
 
 type Props = {
   message: ClientMessage;

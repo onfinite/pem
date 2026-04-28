@@ -1,28 +1,23 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class UpdateListDto {
-  @ApiPropertyOptional()
-  @IsString()
   @IsOptional()
+  @IsString()
   @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional()
-  @IsString()
   @IsOptional()
+  @IsString()
   @MaxLength(30)
   color?: string;
 
-  @ApiPropertyOptional()
-  @IsString()
   @IsOptional()
+  @IsString()
   @MaxLength(60)
   icon?: string;
 
-  @ApiPropertyOptional()
-  @IsInt()
   @IsOptional()
+  @IsInt()
   @Min(0)
   sortOrder?: number;
 }

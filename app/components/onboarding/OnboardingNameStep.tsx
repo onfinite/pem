@@ -4,7 +4,7 @@ import { fontFamily, fontSize, radii, space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import { User } from "lucide-react-native";
 import { StyleSheet, TextInput, View } from "react-native";
-import { onboardingStyles as s } from "./onboarding.styles";
+import { onboardingStyles as s } from "@/components/onboarding/onboarding.styles";
 
 interface OnboardingNameStepProps {
   name: string;

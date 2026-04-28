@@ -10,10 +10,10 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { calendarConnectionsTable } from './calendar-connections.schema';
-import { listsTable } from './lists.schema';
-import { messagesTable } from './messages.schema';
-import { usersTable } from './users.schema';
+import { calendarConnectionsTable } from '@/database/schemas/calendar-connections.schema';
+import { listsTable } from '@/database/schemas/lists.schema';
+import { messagesTable } from '@/database/schemas/messages.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 export type RecurrenceRule = {
   freq: 'daily' | 'weekly' | 'monthly' | 'yearly';

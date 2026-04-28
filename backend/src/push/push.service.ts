@@ -3,9 +3,9 @@ import { eq } from 'drizzle-orm';
 import Expo from 'expo-server-sdk';
 import type { ExpoPushMessage } from 'expo-server-sdk';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
-import { usersTable } from '../database/schemas';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import { usersTable } from '@/database/schemas/index';
 
 @Injectable()
 export class PushService {

@@ -3,11 +3,11 @@ import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/lib/pemApi";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
-import { BATCH_META } from "./constants";
-import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
-import { inboxStyles } from "./inboxTab.styles";
-import { InboxSectionItemsGroup } from "./InboxSectionItemsGroup";
-import { TaskItem } from "./TaskItem";
+import { BATCH_META } from "@/components/chat/task-drawer/constants";
+import { dismissOpenTaskSwipe } from "@/components/chat/task-drawer/taskSwipeRegistry";
+import { inboxStyles } from "@/components/chat/task-drawer/inboxTab.styles";
+import { InboxSectionItemsGroup } from "@/components/chat/task-drawer/InboxSectionItemsGroup";
+import { TaskItem } from "@/components/chat/task-drawer/TaskItem";
 
 export function InboxBatchSection({
   batchKey,

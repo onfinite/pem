@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 
-import { startOfIsoWeekMonday } from '../../../chat/utils/start-of-iso-week';
+import { startOfIsoWeekMonday } from '@/chat/utils/start-of-iso-week';
 
 export type QuestionTemporalRange = {
   start: Date;

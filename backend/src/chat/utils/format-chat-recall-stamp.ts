@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 
-import { startOfIsoWeekMonday } from './start-of-iso-week';
+import { startOfIsoWeekMonday } from '@/chat/utils/start-of-iso-week';
 
 /**
  * Human-facing stamp for chat recall context (Ask + agent recent lines).

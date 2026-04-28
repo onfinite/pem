@@ -4,7 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 
-import { photoAttachmentIntentSystemPrompt } from '../../../chat/prompts/photo-attachment-intent.prompt';
+import { photoAttachmentIntentSystemPrompt } from '@/chat/prompts/photo-attachment-intent.prompt';
 
 const stanceSchema = z.object({
   stance: z.enum(['directive_organize', 'narrative_or_speculative']),

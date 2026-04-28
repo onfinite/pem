@@ -1,4 +1,3 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   IsArray,
@@ -11,24 +10,19 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-import { MAX_CHAT_MESSAGE_IMAGES } from '../chat.constants';
+import { MAX_CHAT_MESSAGE_IMAGES } from '@/chat/chat.constants';
 
 class ImageKeyDto {
-  @ApiProperty()
   @IsString()
   @MaxLength(512)
   key!: string;
 
-  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(64)
   mime?: string;
 
-  @ApiPropertyOptional({
-    description:
-      'SHA-256 hex of raw bytes; enables exact duplicate dedup server-side.',
-  })
+  /** SHA-256 hex of raw bytes; enables exact duplicate dedup server-side. */
   @IsOptional()
   @IsString()
   @Matches(/^[a-fA-F0-9]{64}$/)
@@ -36,38 +30,30 @@ class ImageKeyDto {
 }
 
 export class SendMessageDto {
-  @ApiProperty({ enum: ['text', 'voice', 'image'] })
   @IsEnum(['text', 'voice', 'image'])
   kind!: 'text' | 'voice' | 'image';
 
-  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @MaxLength(10_000)
-  @IsOptional()
   content?: string;
 
-  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @MaxLength(2048)
-  @IsOptional()
   voice_url?: string;
 
-  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @MaxLength(512)
-  @IsOptional()
   audio_key?: string;
 
-  @ApiPropertyOptional({
-    description:
-      'R2 object key from POST /chat/photos/upload-url (must start with chat-images/{your_user_id}/)',
-  })
+  /** R2 object key from POST /chat/photos/upload-url (must start with chat-images/{your_user_id}/) */
+  @IsOptional()
   @IsString()
   @MaxLength(512)
-  @IsOptional()
   image_key?: string;
 
-  @ApiPropertyOptional({ type: [ImageKeyDto] })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(MAX_CHAT_MESSAGE_IMAGES)
@@ -75,11 +61,9 @@ export class SendMessageDto {
   @Type(() => ImageKeyDto)
   image_keys?: ImageKeyDto[];
 
-  @ApiPropertyOptional({
-    description: 'Same key + user returns existing message (no duplicate job)',
-  })
+  /** Same key + user returns existing message (no duplicate job) */
+  @IsOptional()
   @IsString()
   @MaxLength(256)
-  @IsOptional()
   idempotency_key?: string;
 }

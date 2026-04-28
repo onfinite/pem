@@ -154,7 +154,18 @@ export type ApiMessage = {
 
 export type SendChatMessageParams =
   | { kind: "text"; content: string; idempotency_key?: string }
-  | { kind: "voice"; voice_url?: string; audio_key?: string; idempotency_key?: string }
+  | {
+      kind: "voice";
+      voice_url?: string;
+      audio_key?: string;
+      image_key?: string;
+      image_keys?: {
+        key: string;
+        mime?: string | null;
+        content_sha256?: string;
+      }[];
+      idempotency_key?: string;
+    }
   | {
       kind: "image";
       image_key?: string;
@@ -218,6 +229,7 @@ export async function sendVoiceMessage(
 ): Promise<{ message: ApiMessage; status: string; deduplicated?: boolean }> {
   const token = await getToken();
   const formData = new FormData();
+  formData.append("kind", "voice");
   const audioPart: { uri: string; name: string; type: string } = {
     uri: audioUri,
     name: "recording.m4a",
@@ -227,10 +239,10 @@ export async function sendVoiceMessage(
   if (opts?.image_keys?.length) {
     formData.append("image_keys", JSON.stringify(opts.image_keys));
   }
-  const q = opts?.idempotency_key
-    ? `?idempotency_key=${encodeURIComponent(opts.idempotency_key)}`
-    : "";
-  const res = await fetch(`${getApiBaseUrl()}/chat/voice${q}`, {
+  if (opts?.idempotency_key?.trim()) {
+    formData.append("idempotency_key", opts.idempotency_key.trim());
+  }
+  const res = await fetch(`${getApiBaseUrl()}/chat/messages`, {
     method: "POST",
     headers: {
       Accept: "application/json",

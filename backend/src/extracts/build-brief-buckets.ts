@@ -1,8 +1,8 @@
 import { DateTime } from 'luxon';
 
-import type { ExtractRow } from '../database/schemas';
-import { classifyExtractBriefBucket } from './extract-brief-bucket';
-import { collapseRecurringRowsForDisplay } from './recurring-series-display';
+import type { ExtractRow } from '@/database/schemas/index';
+import { classifyExtractBriefBucket } from '@/extracts/extract-brief-bucket';
+import { collapseRecurringRowsForDisplay } from '@/extracts/recurring-series-display';
 
 export type BriefBuckets = {
   overdue: ExtractRow[];

@@ -1,7 +1,7 @@
 import {
   signGoogleOAuthState,
   verifyGoogleOAuthState,
-} from './sign-google-oauth-state';
+} from '@/calendar/sign-google-oauth-state';
 
 describe('signGoogleOAuthState', () => {
   const secret = 'test-secret-at-least-32-chars-long!!';

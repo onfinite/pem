@@ -5,8 +5,8 @@ import { generateText } from 'ai';
 import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   messagesTable,
   extractsTable,
@@ -16,59 +16,59 @@ import {
   listsTable,
   type ExtractRow,
   type UserPreferences,
-} from '../../../database/schemas';
-import { TriageService } from '../../../agents/triage.service';
-import { PemAgentService } from '../../../agents/pem-agent.service';
-import type {
-  ExtractAction,
-  PemAgentOutput,
-} from '../../../agents/pem-agent.schemas';
-import { ChatEventsService } from '../../chat-events/chat-events.service';
-import { EmbeddingsService } from '../../../embeddings/embeddings.service';
-import { ExtractsService } from '../../../extracts/extracts.service';
-import { reconcileRelativePeriodLabel } from '../../../extracts/reconcile-relative-period-label';
+} from '@/database/schemas/index';
+import { TriageService } from '@/agents/triage.service';
+import { PemAgentService } from '@/agents/pem-agent.service';
+import type { ExtractAction, PemAgentOutput } from '@/agents/pem-agent.schemas';
+import { ChatEventsService } from '@/background/chat-events/chat-events.service';
+import { EmbeddingsService } from '@/embeddings/embeddings.service';
+import { ExtractsService } from '@/extracts/extracts.service';
+import { reconcileRelativePeriodLabel } from '@/extracts/reconcile-relative-period-label';
 import {
   decodePhotoVisionStored,
   visionLineForHumans,
-} from '../../../chat/utils/photo-vision-stored';
-import { ProfileService } from '../../../profile/profile.service';
-import { CalendarSyncService } from '../../../calendar/calendar-sync.service';
-import { PushService } from '../../../push/push.service';
-import { SchedulerService } from '../../../scheduler/scheduler.service';
-import { TranscriptionService } from '../../../transcription/transcription.service';
-import { StorageService } from '../../../storage/storage.service';
-import { ChatQuestionService } from './chat-question.service';
-import { PhotoVisionService } from './photo-vision.service';
-import { buildPhotoRecallMetadata } from './build-photo-recall-metadata';
-import { buildPhotoRecallPromptSection } from './build-photo-recall-prompt-section';
-import { orderedMessageIdsFromRecallItems } from './resolve-photo-recall-message-ids';
-import { ChatPhotoRecallIntentService } from './chat-photo-recall-intent.service';
-import { ImageReferenceOnlyReplyService } from './image-reference-only-reply.service';
-import { PhotoAttachmentIntentService } from './photo-attachment-intent.service';
-import { ChatLinkPipelineService } from './chat-link-pipeline.service';
-import { linkPreviewsSerializedFromRows } from './link-previews-for-client';
+} from '@/chat/utils/photo-vision-stored';
+import { ProfileService } from '@/profile/profile.service';
+import { CalendarSyncService } from '@/calendar/calendar-sync.service';
+import { PushService } from '@/push/push.service';
+import { SchedulerService } from '@/scheduler/scheduler.service';
+import { TranscriptionService } from '@/transcription/transcription.service';
+import { StorageService } from '@/storage/storage.service';
+import { ChatQuestionService } from '@/background/queues/chat/chat-question.service';
+import { PhotoVisionService } from '@/background/queues/chat/photo-vision.service';
+import { buildPhotoRecallMetadata } from '@/background/queues/chat/build-photo-recall-metadata';
+import { buildPhotoRecallPromptSection } from '@/background/queues/chat/build-photo-recall-prompt-section';
+import { orderedMessageIdsFromRecallItems } from '@/background/queues/chat/resolve-photo-recall-message-ids';
+import { ChatPhotoRecallIntentService } from '@/background/queues/chat/chat-photo-recall-intent.service';
+import { ImageReferenceOnlyReplyService } from '@/background/queues/chat/image-reference-only-reply.service';
+import { PhotoAttachmentIntentService } from '@/background/queues/chat/photo-attachment-intent.service';
+import { ChatLinkPipelineService } from '@/background/queues/chat/chat-link-pipeline.service';
+import { linkPreviewsSerializedFromRows } from '@/background/queues/chat/link-previews-for-client';
 import {
   extractUrlOccurrencesFromText,
   extractUrlOccurrencesFromTexts,
-} from '../../../chat/utils/extract-urls-from-text';
+} from '@/chat/utils/extract-urls-from-text';
 import {
   AGENT_RECENT_MESSAGES_LIMIT,
   DONE_EXTRACTS_LOOKBACK_DAYS,
   RAG_MIN_SIMILARITY,
   RAG_TOP_K,
-} from '../../../chat/chat.constants';
+} from '@/chat/chat.constants';
 import {
   buildRecallEmbeddingAugmentation,
   detectQuestionTemporalRange,
-} from './chat-question-temporal';
-import { shouldEscalateTrivialForPhotoFollowup } from './photo-offer-followup';
-import { normalizeDedupeTaskKey } from './filter-deduped-creates';
-import { clampAgentOutput } from './chat-orchestrator-clamp-output';
-import { buildRrule, parseIsoDate } from './chat-orchestrator-rrule';
+} from '@/background/queues/chat/chat-question-temporal';
+import { shouldEscalateTrivialForPhotoFollowup } from '@/background/queues/chat/photo-offer-followup';
+import { normalizeDedupeTaskKey } from '@/background/queues/chat/filter-deduped-creates';
+import { clampAgentOutput } from '@/background/queues/chat/chat-orchestrator-clamp-output';
+import {
+  buildRrule,
+  parseIsoDate,
+} from '@/background/queues/chat/chat-orchestrator-rrule';
 import {
   displayUrlsFromMessageLinkRows,
   mergeMessageLinksIntoExtractPemNote,
-} from '../../../chat/utils/merge-message-links-into-extract-pem-note';
+} from '@/chat/utils/merge-message-links-into-extract-pem-note';
 
 @Injectable()
 export class ChatOrchestratorService {

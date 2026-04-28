@@ -9,6 +9,7 @@
   },
   "transformIgnorePatterns": ["/node_modules/(?!jose/).+\\.js$"],
   "moduleNameMapper": {
+    "^@/(.*)$": "<rootDir>/../src/$1",
     "^expo-server-sdk$": "<rootDir>/mocks/expo-server-sdk.ts"
   }
 }

@@ -3,11 +3,11 @@ import { Inject, Logger } from '@nestjs/common';
 import { and, asc, eq, gte, inArray, ne } from 'drizzle-orm';
 import type { Job } from 'bullmq';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
-import { messagesTable } from '../../../database/schemas';
-import { BATCH_WINDOW_MS } from '../../../chat/chat.constants';
-import { ChatOrchestratorService } from './chat-orchestrator.service';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
+import { messagesTable } from '@/database/schemas/index';
+import { BATCH_WINDOW_MS } from '@/chat/chat.constants';
+import { ChatOrchestratorService } from '@/background/queues/chat/chat-orchestrator.service';
 
 @Processor('chat')
 export class ChatProcessor extends WorkerHost {

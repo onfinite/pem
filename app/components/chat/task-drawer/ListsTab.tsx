@@ -25,10 +25,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { InboxSectionItemsGroup } from "./InboxSectionItemsGroup";
-import { inboxStyles } from "./inboxTab.styles";
-import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
-import { TaskItem } from "./TaskItem";
+import { InboxSectionItemsGroup } from "@/components/chat/task-drawer/InboxSectionItemsGroup";
+import { inboxStyles } from "@/components/chat/task-drawer/inboxTab.styles";
+import { dismissOpenTaskSwipe } from "@/components/chat/task-drawer/taskSwipeRegistry";
+import { TaskItem } from "@/components/chat/task-drawer/TaskItem";
 
 /** Lets `onSubmitEditing` run before blur-driven dismiss (same tap as keyboard Done). */
 const CREATE_ROW_BLUR_DISMISS_MS = 180;

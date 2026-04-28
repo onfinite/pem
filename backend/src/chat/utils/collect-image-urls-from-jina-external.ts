@@ -1,4 +1,4 @@
-import type { JinaSnapshotExternalGroup } from '../types/jina-snapshot-stored.types';
+import type { JinaSnapshotExternalGroup } from '@/chat/types/jina-snapshot-stored.types';
 
 /** Image URLs declared under Jina Reader `data.external` (icons, apple-touch, etc.). */
 export function collectImageUrlsFromJinaExternal(

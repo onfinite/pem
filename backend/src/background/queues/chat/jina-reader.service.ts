@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { LINK_JINA_FETCH_TIMEOUT_MS } from '../../../chat/link-reading.constants';
-import type { JinaSnapshotStored } from '../../../chat/types/jina-snapshot-stored.types';
-import { parseJinaReaderJsonBody } from '../../../chat/utils/parse-jina-reader-json';
-import { markdownFromJinaSnapshot } from '../../../chat/utils/jina-snapshot-markdown';
+import { LINK_JINA_FETCH_TIMEOUT_MS } from '@/chat/link-reading.constants';
+import type { JinaSnapshotStored } from '@/chat/types/jina-snapshot-stored.types';
+import { parseJinaReaderJsonBody } from '@/chat/utils/parse-jina-reader-json';
+import { markdownFromJinaSnapshot } from '@/chat/utils/jina-snapshot-markdown';
 
 export type JinaReaderResult = {
   /** Normalized snapshot (null when fetch failed / empty / parse error). */

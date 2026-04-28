@@ -1,4 +1,4 @@
-import type { JinaSnapshotStored } from '../types/jina-snapshot-stored.types';
+import type { JinaSnapshotStored } from '@/chat/types/jina-snapshot-stored.types';
 
 /** Narrow `message_links.jina_snapshot` jsonb from Drizzle to the stored reader shape. */
 export function parseStoredJinaSnapshot(v: unknown): JinaSnapshotStored | null {

@@ -16,10 +16,10 @@ import {
   Text,
   View,
 } from "react-native";
-import { InboxLabeledSection } from "./InboxLabeledSection";
-import { inboxStyles } from "./inboxTab.styles";
-import { partitionInboxTasks } from "./partitionInboxTasks";
-import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
+import { InboxLabeledSection } from "@/components/chat/task-drawer/InboxLabeledSection";
+import { inboxStyles } from "@/components/chat/task-drawer/inboxTab.styles";
+import { partitionInboxTasks } from "@/components/chat/task-drawer/partitionInboxTasks";
+import { dismissOpenTaskSwipe } from "@/components/chat/task-drawer/taskSwipeRegistry";
 
 export function InboxTab({
   tasks,

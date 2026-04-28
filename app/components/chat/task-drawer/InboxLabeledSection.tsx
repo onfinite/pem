@@ -4,9 +4,9 @@ import type { ApiExtract } from "@/lib/pemApi";
 import type { LucideIcon } from "lucide-react-native";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
-import { inboxStyles } from "./inboxTab.styles";
-import { InboxSectionItemsGroup } from "./InboxSectionItemsGroup";
-import { TaskItem } from "./TaskItem";
+import { inboxStyles } from "@/components/chat/task-drawer/inboxTab.styles";
+import { InboxSectionItemsGroup } from "@/components/chat/task-drawer/InboxSectionItemsGroup";
+import { TaskItem } from "@/components/chat/task-drawer/TaskItem";
 
 export function InboxLabeledSection({
   sectionKey,

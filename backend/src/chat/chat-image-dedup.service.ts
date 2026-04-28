@@ -1,14 +1,14 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   chatImageHashesTable,
   type MessageImageAsset,
-} from '../database/schemas';
-import { normalizeContentSha256 } from './normalize-content-sha256';
-import { validateChatImageKeysForUser } from './validate-chat-image-keys';
+} from '@/database/schemas/index';
+import { normalizeContentSha256 } from '@/chat/normalize-content-sha256';
+import { validateChatImageKeysForUser } from '@/chat/validate-chat-image-keys';
 
 @Injectable()
 export class ChatImageDedupService {

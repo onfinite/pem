@@ -1,5 +1,5 @@
-import type { ExtractAction } from '../../agents/pem-agent.schemas';
-import type { MessageLinkRow } from '../../database/schemas';
+import type { ExtractAction } from '@/agents/pem-agent.schemas';
+import type { MessageLinkRow } from '@/database/schemas/index';
 
 export function displayUrlsFromMessageLinkRows(
   rows: MessageLinkRow[],

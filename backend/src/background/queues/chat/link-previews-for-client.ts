@@ -1,7 +1,7 @@
-import type { ChatLinkPreviewSerialized } from '../../../chat/link-preview.types';
-import { resolveLinkPreviewImageUrl } from '../../../chat/utils/resolve-link-preview-image-url';
-import type { MessageLinkRow } from '../../../database/schemas';
-import type { LinkPromptItem } from './build-link-context-prompt-section';
+import type { ChatLinkPreviewSerialized } from '@/chat/link-preview.types';
+import { resolveLinkPreviewImageUrl } from '@/chat/utils/resolve-link-preview-image-url';
+import type { MessageLinkRow } from '@/database/schemas/index';
+import type { LinkPromptItem } from '@/background/queues/chat/build-link-context-prompt-section';
 
 function summaryForClient(s: string | null): string | null {
   if (!s?.trim()) return null;

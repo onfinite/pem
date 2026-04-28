@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 
-import type { MessageImageAsset } from '../database/schemas';
-import { MAX_CHAT_MESSAGE_IMAGES } from './chat.constants';
-import { normalizeContentSha256 } from './normalize-content-sha256';
+import type { MessageImageAsset } from '@/database/schemas/index';
+import { MAX_CHAT_MESSAGE_IMAGES } from '@/chat/chat.constants';
+import { normalizeContentSha256 } from '@/chat/normalize-content-sha256';
 
 export function validateChatImageKeysForUser(
   userId: string,

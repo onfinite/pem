@@ -6,7 +6,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Bell } from "lucide-react-native";
 import { useMemo } from "react";
 import { Platform, StyleSheet, View } from "react-native";
-import { onboardingStyles as s } from "./onboarding.styles";
+import { onboardingStyles as s } from "@/components/onboarding/onboarding.styles";
 
 interface OnboardingBriefTimeStepProps {
   selected: string;

@@ -1,6 +1,6 @@
 # Pem backend (NestJS + Drizzle)
 
-HTTP API for Pem: **PostgreSQL** (`users`, `dumps`, `actionables`, `memory_facts`), **Clerk** auth and webhooks, **OpenAPI** in non-prod.
+HTTP API for Pem: **PostgreSQL** (`users`, `dumps`, `actionables`, `memory_facts`), **Clerk** auth and webhooks.
 
 ## Stack
 
@@ -50,15 +50,6 @@ The **`pg` SSL warning** during migrate is from the driver; optional: set `sslmo
 **Note:** `drizzle.config.ts` loads **`.env`** via `dotenv` so CLI commands pick up `DATABASE_URL`.
 
 Dev shortcut without migration files: `npm run db:push` (schema push; not for production workflows).
-
-## OpenAPI (non-production)
-
-When **`ENV` is not `prod`**:
-
-| URL | UI |
-|-----|-----|
-| `/docs` | Swagger UI |
-| `/docs-json` | OpenAPI JSON |
 
 ## Scripts
 

@@ -28,7 +28,7 @@ import {
 } from "react-native";
 
 import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
-import { ChatPendingPhotoBar } from "./ChatPendingPhotoBar";
+import { ChatPendingPhotoBar } from "@/components/chat/ChatPendingPhotoBar";
 
 const MAX_DURATION_S = 30 * 60;
 const WAVEFORM_MAX_BARS = 48;

@@ -4,8 +4,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 
-import { photoVisionSystemPrompt } from '../../../chat/prompts/photo-vision.prompt';
-import { encodePhotoVisionStored } from '../../../chat/utils/photo-vision-stored';
+import { photoVisionSystemPrompt } from '@/chat/prompts/photo-vision.prompt';
+import { encodePhotoVisionStored } from '@/chat/utils/photo-vision-stored';
 
 const visionSchema = z.object({
   summary: z

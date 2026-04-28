@@ -3,10 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import express from 'express';
 
-import { setupSwagger } from './swagger.setup';
-
 /**
- * HTTP layer: JSON body (+ raw body for Svix), CORS, validation, OpenAPI.
+ * HTTP layer: JSON body (+ raw body for Svix), CORS, validation.
  * Call after `NestFactory.create(..., { bodyParser: false })`.
  */
 export function configureApp(app: NestExpressApplication): void {
@@ -40,6 +38,4 @@ export function configureApp(app: NestExpressApplication): void {
       forbidUnknownValues: false,
     }),
   );
-
-  setupSwagger(app, config);
 }

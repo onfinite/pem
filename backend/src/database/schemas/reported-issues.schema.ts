@@ -7,9 +7,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { extractsTable } from './extracts.schema';
-import { messagesTable } from './messages.schema';
-import { usersTable } from './users.schema';
+import { extractsTable } from '@/database/schemas/extracts.schema';
+import { messagesTable } from '@/database/schemas/messages.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 export const reportedIssuesTable = pgTable(
   'reported_issues',

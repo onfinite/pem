@@ -1,20 +1,20 @@
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
-import { openExternalUrl } from "./openExternalUrl";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import {
   isLikelyMapsHttpUrl,
   labelForBusinessMapsUrl,
   labelForPlaceRowAction,
   shouldOpenPlaceRowAsMap,
-} from "./placeLinkHeuristics";
+} from "@/lib/placeLinkHeuristics";
 
 export {
   isLikelyMapsHttpUrl,
   labelForBusinessMapsUrl,
   labelForPlaceRowAction,
   shouldOpenPlaceRowAsMap,
-} from "./placeLinkHeuristics";
+} from "@/lib/placeLinkHeuristics";
 
 export type NativeMapOpenInput = {
   name: string;

@@ -10,15 +10,14 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
-import type { UserRow } from '../database/schemas';
-import { CreateListDto } from './dto/create-list.dto';
-import { UpdateListDto } from './dto/update-list.dto';
-import { type ListRow } from '../database/schemas';
-import { ListsService } from './lists.service';
+import { ClerkAuthGuard } from '@/auth/clerk-auth.guard';
+import { CurrentUser } from '@/auth/current-user.decorator';
+import type { UserRow } from '@/database/schemas/index';
+import { CreateListDto } from '@/lists/dto/create-list.dto';
+import { UpdateListDto } from '@/lists/dto/update-list.dto';
+import { type ListRow } from '@/database/schemas/index';
+import { ListsService } from '@/lists/lists.service';
 
 function serializeList(l: ListRow & { openCount?: number }) {
   return {
@@ -35,22 +34,18 @@ function serializeList(l: ListRow & { openCount?: number }) {
   };
 }
 
-@ApiTags('lists')
 @Controller('lists')
 @UseGuards(ClerkAuthGuard)
-@ApiBearerAuth('clerk')
 export class ListsController {
   constructor(private readonly lists: ListsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'All lists with open task counts' })
   async getAll(@CurrentUser() user: UserRow) {
     const rows = await this.lists.findByUserWithCounts(user.id);
     return { items: rows.map(serializeList) };
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a list' })
   async create(@CurrentUser() user: UserRow, @Body() dto: CreateListDto) {
     const list = await this.lists.create(user.id, dto);
     return { item: serializeList(list) };
@@ -58,7 +53,6 @@ export class ListsController {
 
   @Patch(':id')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Update a list' })
   async update(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -70,7 +64,6 @@ export class ListsController {
 
   @Delete(':id')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Delete a non-default list' })
   async remove(
     @CurrentUser() user: UserRow,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,

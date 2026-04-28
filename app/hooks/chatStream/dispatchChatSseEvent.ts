@@ -1,5 +1,5 @@
 import type { ApiMessage } from "@/lib/pemApi";
-import type { ChatStreamCallbacks } from "./chatStream.types";
+import type { ChatStreamCallbacks } from "@/hooks/chatStream/chatStream.types";
 
 export function dispatchChatSseEvent(
   event: { data?: string | null; type?: string },

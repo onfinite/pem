@@ -3,13 +3,13 @@ import { Cron } from '@nestjs/schedule';
 import { and, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 
-import { DRIZZLE } from '../../../database/database.constants';
-import type { DrizzleDb } from '../../../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   extractsTable,
   usersTable,
   type RecurrenceRule,
-} from '../../../database/schemas';
+} from '@/database/schemas/index';
 
 @Injectable()
 export class RecurrenceCronService {

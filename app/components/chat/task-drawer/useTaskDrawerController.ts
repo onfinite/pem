@@ -14,7 +14,7 @@ import {
   type UpdateExtractPayload,
 } from "@/lib/pemApi";
 import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
-import type { UndoItem } from "./UndoSnackbar";
+import type { UndoItem } from "@/components/chat/task-drawer/UndoSnackbar";
 import type { DateData } from "react-native-calendars";
 import type { ForwardedRef } from "react";
 import {
@@ -25,12 +25,12 @@ import {
   useState,
 } from "react";
 import { Animated, Dimensions, PanResponder } from "react-native";
-import { buildMarkedDates } from "./buildMarkedDates";
-import { SWIPE_THRESHOLD } from "./constants";
-import { toDateKey, toMonthKey } from "./dateKeys";
-import { readOpenCache, writeOpenCache } from "./taskCache";
-import { dismissOpenTaskSwipe } from "./taskSwipeRegistry";
-import type { TaskDrawerHandle } from "./types";
+import { buildMarkedDates } from "@/components/chat/task-drawer/buildMarkedDates";
+import { SWIPE_THRESHOLD } from "@/components/chat/task-drawer/constants";
+import { toDateKey, toMonthKey } from "@/components/chat/task-drawer/dateKeys";
+import { readOpenCache, writeOpenCache } from "@/components/chat/task-drawer/taskCache";
+import { dismissOpenTaskSwipe } from "@/components/chat/task-drawer/taskSwipeRegistry";
+import type { TaskDrawerHandle } from "@/components/chat/task-drawer/types";
 
 export type Tab = "calendar" | "inbox" | "lists";
 

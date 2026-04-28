@@ -1,4 +1,4 @@
-import type { PemAgentOutput } from '../../../agents/pem-agent.schemas';
+import type { PemAgentOutput } from '@/agents/pem-agent.schemas';
 
 const SAFETY_CAPS = {
   creates: 10,

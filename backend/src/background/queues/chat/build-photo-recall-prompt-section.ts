@@ -1,11 +1,11 @@
 import { and, eq, inArray } from 'drizzle-orm';
 
-import type { DrizzleDb } from '../../../database/database.module';
-import { formatChatRecallStamp } from '../../../chat/utils/format-chat-recall-stamp';
-import { visionSectionsForKeys } from '../../../chat/utils/photo-vision-multi-sections';
-import { visionLineForHumans } from '../../../chat/utils/photo-vision-stored';
-import { messagesTable } from '../../../database/schemas';
-import { PHOTO_RECALL_MAX_MESSAGE_IDS } from './resolve-photo-recall-message-ids';
+import type { DrizzleDb } from '@/database/database.module';
+import { formatChatRecallStamp } from '@/chat/utils/format-chat-recall-stamp';
+import { visionSectionsForKeys } from '@/chat/utils/photo-vision-multi-sections';
+import { visionLineForHumans } from '@/chat/utils/photo-vision-stored';
+import { messagesTable } from '@/database/schemas/index';
+import { PHOTO_RECALL_MAX_MESSAGE_IDS } from '@/background/queues/chat/resolve-photo-recall-message-ids';
 
 const MAX_CAPTION_CHARS = 1_200;
 const MAX_VISION_PER_SECTION = 2_500;

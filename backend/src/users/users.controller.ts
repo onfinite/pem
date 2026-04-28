@@ -8,43 +8,24 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
 
-import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
-import type { UserRow } from '../database/schemas';
-import { NotificationTimeDto } from './dto/notification-time.dto';
-import { PreferencesDto } from './dto/preferences.dto';
-import { PushTokenDto } from './dto/push-token.dto';
-import { TimezoneDto } from './dto/timezone.dto';
-import { UpdateNameDto } from './dto/update-name.dto';
-import { UpdateSummaryDto } from './dto/update-summary.dto';
-import { UserMeDto } from './dto/user-me.dto';
-import { UserService } from './user.service';
+import { ClerkAuthGuard } from '@/auth/clerk-auth.guard';
+import { CurrentUser } from '@/auth/current-user.decorator';
+import type { UserRow } from '@/database/schemas/index';
+import { NotificationTimeDto } from '@/users/dto/notification-time.dto';
+import { PreferencesDto } from '@/users/dto/preferences.dto';
+import { PushTokenDto } from '@/users/dto/push-token.dto';
+import { TimezoneDto } from '@/users/dto/timezone.dto';
+import { UpdateNameDto } from '@/users/dto/update-name.dto';
+import { UpdateSummaryDto } from '@/users/dto/update-summary.dto';
+import { UserService } from '@/users/user.service';
 
-@ApiTags('users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly users: UserService) {}
 
   @Get('me')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Current user (Clerk JWT)' })
-  @ApiResponse({ status: 200, description: 'Current user', type: UserMeDto })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid or missing token / user not found',
-  })
-  @ApiResponse({
-    status: 503,
-    description: 'Clerk JWT not configured on server',
-  })
   getMe(@CurrentUser() user: UserRow) {
     return {
       id: user.id,
@@ -63,16 +44,12 @@ export class UsersController {
 
   @Get('me/summary')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Get user profile summary' })
   getSummary(@CurrentUser() user: UserRow) {
     return { summary: user.summary ?? null };
   }
 
   @Patch('me/name')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Set preferred display name' })
   async setName(@CurrentUser() user: UserRow, @Body() body: UpdateNameDto) {
     await this.users.setName(user.id, body.name);
     return { ok: true, name: body.name.trim() };
@@ -80,8 +57,6 @@ export class UsersController {
 
   @Patch('me/summary')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Update user profile summary' })
   async updateSummary(
     @CurrentUser() user: UserRow,
     @Body() body: UpdateSummaryDto,
@@ -92,8 +67,6 @@ export class UsersController {
 
   @Patch('me/notification-time')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Set notification time for daily brief (HH:MM)' })
   async setNotificationTime(
     @CurrentUser() user: UserRow,
     @Body() body: NotificationTimeDto,
@@ -104,9 +77,7 @@ export class UsersController {
 
   @Post('me/onboarding-complete')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Mark onboarding as complete' })
   async completeOnboarding(@CurrentUser() user: UserRow) {
     await this.users.completeOnboarding(user.id);
     return { ok: true };
@@ -114,8 +85,6 @@ export class UsersController {
 
   @Patch('me/push-token')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Save or clear Expo push token' })
   async setPushToken(
     @CurrentUser() user: UserRow,
     @Body() body: PushTokenDto,
@@ -126,8 +95,6 @@ export class UsersController {
 
   @Patch('me/preferences')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Set scheduling preferences' })
   async setPreferences(
     @CurrentUser() user: UserRow,
     @Body() body: PreferencesDto,
@@ -138,8 +105,6 @@ export class UsersController {
 
   @Patch('me/timezone')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Set IANA timezone (e.g. America/Los_Angeles)' })
   async setTimezone(
     @CurrentUser() user: UserRow,
     @Body() body: TimezoneDto,
@@ -150,9 +115,7 @@ export class UsersController {
 
   @Delete('me')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Permanently delete account and all user data' })
   async deleteAccount(@CurrentUser() user: UserRow) {
     await this.users.deleteAccount(user.id);
   }

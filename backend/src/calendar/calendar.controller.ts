@@ -13,19 +13,16 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
 import type { Queue } from 'bullmq';
 import type { Response } from 'express';
 
-import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
-import type { UserRow } from '../database/schemas';
-import { CalendarConnectionService } from './calendar-connection.service';
-import { CalendarSyncService } from './calendar-sync.service';
-import { GoogleCalendarService } from './google-calendar.service';
+import { ClerkAuthGuard } from '@/auth/clerk-auth.guard';
+import { CurrentUser } from '@/auth/current-user.decorator';
+import type { UserRow } from '@/database/schemas/index';
+import { CalendarConnectionService } from '@/calendar/calendar-connection.service';
+import { CalendarSyncService } from '@/calendar/calendar-sync.service';
+import { GoogleCalendarService } from '@/calendar/google-calendar.service';
 
-@ApiTags('calendar')
 @Controller('calendar')
 export class CalendarController {
   private readonly log = new Logger(CalendarController.name);
@@ -41,8 +38,6 @@ export class CalendarController {
 
   @Get('connections')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'List calendar connections' })
   async list(@CurrentUser() user: UserRow) {
     const rows = await this.connections.listForUser(user.id);
     return {
@@ -58,8 +53,6 @@ export class CalendarController {
 
   @Patch('connections/:id/primary')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Set a calendar connection as primary' })
   async setPrimary(@CurrentUser() user: UserRow, @Param('id') id: string) {
     await this.connections.setPrimary(user.id, id);
     return { ok: true };
@@ -67,8 +60,6 @@ export class CalendarController {
 
   @Delete('connections/:id')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Disconnect a specific calendar connection by ID' })
   async disconnectById(@CurrentUser() user: UserRow, @Param('id') id: string) {
     await this.connections.disconnectById(user.id, id);
     return { ok: true };
@@ -78,8 +69,6 @@ export class CalendarController {
 
   @Post('sync-all')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Trigger sync for all calendar connections' })
   async syncAll(@CurrentUser() user: UserRow) {
     return this.sync.syncAllForUser(user.id);
   }
@@ -88,8 +77,6 @@ export class CalendarController {
 
   @Get('google/auth-url')
   @UseGuards(ClerkAuthGuard)
-  @ApiBearerAuth('clerk')
-  @ApiOperation({ summary: 'Get Google OAuth URL for calendar access' })
   getGoogleAuthUrl(
     @CurrentUser() user: UserRow,
     @Query('appRedirect') appRedirect?: string,
@@ -105,7 +92,6 @@ export class CalendarController {
    * openAuthSessionAsync detects it and closes the browser.
    */
   @Get('google/callback')
-  @ApiOperation({ summary: 'Google OAuth callback (browser redirect)' })
   async googleCallback(
     @Query('code') code: string,
     @Query('state') state: string,
@@ -163,8 +149,6 @@ export class CalendarController {
 
   @Post('webhook')
   @HttpCode(200)
-  @SkipThrottle()
-  @ApiOperation({ summary: 'Google Calendar push notification receiver' })
   async googleWebhook(
     @Headers('x-goog-channel-id') channelId?: string,
     @Headers('x-goog-resource-id') resourceId?: string,

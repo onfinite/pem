@@ -7,9 +7,9 @@ import { z } from 'zod';
 import {
   classifyLinkContentPrompt,
   coerceLinkContentType,
-} from '../../../chat/prompts/classify-link-content.prompt';
-import { LINK_CLASSIFIER_MARKDOWN_MAX_CHARS } from '../../../chat/link-reading.constants';
-import type { MessageLinkContentType } from '../../../database/schemas';
+} from '@/chat/prompts/classify-link-content.prompt';
+import { LINK_CLASSIFIER_MARKDOWN_MAX_CHARS } from '@/chat/link-reading.constants';
+import type { MessageLinkContentType } from '@/database/schemas/index';
 
 const linkClassificationSchema = z.object({
   content_type: z

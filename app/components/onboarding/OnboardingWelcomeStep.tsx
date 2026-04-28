@@ -1,7 +1,7 @@
 import PemText from "@/components/ui/PemText";
 import { space } from "@/constants/typography";
 import { Image, StyleSheet, View } from "react-native";
-import { onboardingStyles as s } from "./onboarding.styles";
+import { onboardingStyles as s } from "@/components/onboarding/onboarding.styles";
 
 const pemLogo = require("@/assets/images/pem-icon-1024-transparent.png");
 

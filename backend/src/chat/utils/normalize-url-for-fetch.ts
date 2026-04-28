@@ -1,5 +1,5 @@
-import { stripTrackingParamsFromUrl } from './strip-tracking-params';
-import { isBlockedSsrFHost } from './ssrf-guard-for-http-url';
+import { stripTrackingParamsFromUrl } from '@/chat/utils/strip-tracking-params';
+import { isBlockedSsrFHost } from '@/chat/utils/ssrf-guard-for-http-url';
 
 /**
  * Normalize user-typed URL to https URL for fetching. Returns null if invalid or blocked.

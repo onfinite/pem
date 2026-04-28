@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon';
 
-import type { ExtractRow } from '../database/schemas';
-import { isRecurringExtract } from './recurring-series-display';
+import type { ExtractRow } from '@/database/schemas/index';
+import { isRecurringExtract } from '@/extracts/recurring-series-display';
 
 export type BriefBucketKind =
   | 'overdue'

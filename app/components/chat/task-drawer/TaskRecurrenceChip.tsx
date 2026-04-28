@@ -1,7 +1,7 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { Repeat } from "lucide-react-native";
 import { Text, View } from "react-native";
-import { itemStyles } from "./taskItem.styles";
+import { itemStyles } from "@/components/chat/task-drawer/taskItem.styles";
 
 export function TaskRecurrenceChip({ label }: { label: string }) {
   const { colors } = useTheme();

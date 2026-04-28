@@ -5,8 +5,8 @@ import { formatExtractRecurrence } from "@/utils/formatExtractRecurrence";
 import { Clock, ExternalLink, MapPin } from "lucide-react-native";
 import { useCallback, useMemo } from "react";
 import { Pressable, View, Text } from "react-native";
-import { itemStyles } from "./taskItem.styles";
-import { TaskRecurrenceChip } from "./TaskRecurrenceChip";
+import { itemStyles } from "@/components/chat/task-drawer/taskItem.styles";
+import { TaskRecurrenceChip } from "@/components/chat/task-drawer/TaskRecurrenceChip";
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);

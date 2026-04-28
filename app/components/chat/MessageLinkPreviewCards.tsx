@@ -1,7 +1,7 @@
 import type { ChatLinkPreview } from "@/lib/pemApi";
 import { View, StyleSheet } from "react-native";
 import { space } from "@/constants/typography";
-import { MessageLinkPreviewCard } from "./MessageLinkPreviewCard";
+import { MessageLinkPreviewCard } from "@/components/chat/MessageLinkPreviewCard";
 
 type Props = {
   items: ChatLinkPreview[];

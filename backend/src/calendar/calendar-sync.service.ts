@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { and, eq, isNotNull, lte, or, sql } from 'drizzle-orm';
 
-import { DRIZZLE } from '../database/database.constants';
-import type { DrizzleDb } from '../database/database.module';
+import { DRIZZLE } from '@/database/database.constants';
+import type { DrizzleDb } from '@/database/database.module';
 import {
   calendarConnectionsTable,
   contactsTable,
@@ -12,13 +12,13 @@ import {
   logsTable,
   messagesTable,
   type CalendarConnectionRow,
-} from '../database/schemas';
-import { ChatEventsService } from '../background/chat-events/chat-events.service';
-import { CalendarConnectionService } from './calendar-connection.service';
+} from '@/database/schemas/index';
+import { ChatEventsService } from '@/background/chat-events/chat-events.service';
+import { CalendarConnectionService } from '@/calendar/calendar-connection.service';
 import {
   GoogleCalendarService,
   type GoogleEvent,
-} from './google-calendar.service';
+} from '@/calendar/google-calendar.service';
 
 @Injectable()
 export class CalendarSyncService {

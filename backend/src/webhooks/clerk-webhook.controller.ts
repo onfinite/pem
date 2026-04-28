@@ -8,20 +8,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  ApiHeader,
-  ApiOkResponse,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Webhook } from 'svix';
 
-import { ListsService } from '../lists/lists.service';
-import { UserService } from '../users/user.service';
-import { ClerkWebhookOkDto } from './dto/clerk-webhook-ok.dto';
+import { ListsService } from '@/lists/lists.service';
+import { UserService } from '@/users/user.service';
 
 /** Resolve primary email from Clerk `User` object in webhook `data`. */
 function primaryEmail(data: Record<string, unknown>): string | null {
@@ -82,9 +73,7 @@ function clerkUserId(data: Record<string, unknown>): string | null {
   return null;
 }
 
-@ApiTags('webhooks')
 @Controller()
-@SkipThrottle()
 export class ClerkWebhookController {
   private readonly log = new Logger(ClerkWebhookController.name);
 
@@ -94,24 +83,13 @@ export class ClerkWebhookController {
     private readonly lists: ListsService,
   ) {}
 
+  /**
+   * Verifies Svix signatures on the raw JSON body. Handles `user.created`,
+   * `user.updated`, and `user.deleted`. Subscribe in the Clerk dashboard;
+   * other events return 200 without syncing. The body must be raw and Svix-signed.
+   */
   @Post('webhooks/clerk')
   @HttpCode(200)
-  @ApiOperation({
-    summary: 'Clerk webhook (Svix)',
-    description:
-      'Verifies Svix signatures on the raw JSON body. Handles `user.created`, `user.updated`, and `user.deleted`. ' +
-      'Subscribe to **user.created** (and usually **user.updated**) in the Clerk dashboard — other events return 200 but do not sync users. ' +
-      'Swagger “Try it out” will not work (body must be raw and Svix-signed).',
-  })
-  @ApiHeader({ name: 'svix-id', required: true })
-  @ApiHeader({ name: 'svix-timestamp', required: true })
-  @ApiHeader({ name: 'svix-signature', required: true })
-  @ApiOkResponse({ type: ClerkWebhookOkDto })
-  @ApiResponse({
-    status: 400,
-    description: 'Missing headers, bad signature, or invalid payload',
-  })
-  @ApiResponse({ status: 503, description: 'Webhook secret not configured' })
   async handleClerk(@Req() req: Request) {
     const secret = this.config.get<string>('clerk.webhookSecret');
     if (!secret) {

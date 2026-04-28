@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 
-import { ChatService } from './chat.service';
+import { ChatService } from '@/chat/chat.service';
 
 const SUMMARIZE_PROMPT = `You are Pem, summarizing what the user said in a voice dump — like meeting minutes for a conversation with themselves.
 

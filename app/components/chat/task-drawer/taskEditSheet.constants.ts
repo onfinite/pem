@@ -1,5 +1,5 @@
 import type { ApiExtract } from "@/lib/pemApi";
-import type { ChipOption } from "./EditSheetChipRow";
+import type { ChipOption } from "@/components/chat/task-drawer/EditSheetChipRow";
 
 export const SWIPE_THRESHOLD = 60;
 

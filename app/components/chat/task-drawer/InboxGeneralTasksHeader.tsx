@@ -1,7 +1,7 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import { Inbox } from "lucide-react-native";
 import { Text, View } from "react-native";
-import { inboxStyles } from "./inboxTab.styles";
+import { inboxStyles } from "@/components/chat/task-drawer/inboxTab.styles";
 
 export function InboxGeneralTasksHeader({
   count,

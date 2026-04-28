@@ -1,21 +1,17 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateListDto {
-  @ApiProperty()
   @IsString()
   @MaxLength(100)
-  name: string;
+  name!: string;
 
-  @ApiPropertyOptional()
-  @IsString()
   @IsOptional()
+  @IsString()
   @MaxLength(30)
   color?: string;
 
-  @ApiPropertyOptional()
-  @IsString()
   @IsOptional()
+  @IsString()
   @MaxLength(60)
   icon?: string;
 }

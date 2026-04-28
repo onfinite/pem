@@ -1,7 +1,7 @@
 import type {
   MessageLinkContentType,
   MessageLinkFetchStatus,
-} from '../../../database/schemas';
+} from '@/database/schemas/index';
 
 export type LinkPromptItem = {
   originalUrl: string;

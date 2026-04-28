@@ -7,7 +7,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { usersTable } from './users.schema';
+import { usersTable } from '@/database/schemas/users.schema';
 
 export const CALENDAR_PROVIDERS = ['google'] as const;
 export type CalendarProvider = (typeof CALENDAR_PROVIDERS)[number];
