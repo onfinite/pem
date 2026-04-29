@@ -21,13 +21,22 @@ npm run start:dev
 
 Default port **8000**.
 
+## Source layout (`src/`)
+
+- **`core/`** — Infra only: `config/`, `bootstrap/` (`configureApp`), `auth/` (Clerk guard + JWT helpers), `utils/` (shared helpers + generic URL/SSRF/extract utilities used by chat link pipeline).
+- **`database/`** — Drizzle schemas and `DatabaseModule` (unchanged as the data layer).
+- **`modules/`** — All Nest feature modules (`chat`, `users`, `calendar`, `extracts`, `lists`, `embeddings`, `push`, `profile`, `scheduler`, `storage`, `transcription`, `health`).
+- **`app.module.ts`**, **`main.ts`** — Application entry.
+
+Imports use the `@/` alias → `src/` (e.g. `@/modules/chat/...`, `@/core/config/...`, `@/database/...`).
+
 ## Routes
 
 | Method | Path | Notes |
 |--------|------|--------|
 | GET | `/health` | `{ "status": "ok" }` |
 | GET | `/users/me` | Bearer JWT (Clerk session) |
-| POST | `/webhooks/clerk` | Svix-signed body; `user.created` / `user.deleted` |
+| POST | `/webhooks/clerk` | Svix-signed; **`UsersModule`** — `user.created` / `user.updated` / `user.deleted` |
 
 ## Database
 
@@ -58,6 +67,6 @@ Dev shortcut without migration files: `npm run db:push` (schema push; not for pr
 | `npm run start:dev` | Watch mode |
 | `npm run build` | Compile to `dist/` |
 | `npm run lint` | ESLint |
+| `npm run test:e2e` | E2E (needs `DATABASE_URL`; see `test/setup-e2e.ts`) |
 
 `nest-cli` uses `deleteOutDir: false` so `npm run start:dev` doesn’t delete all of `dist/` right before Node boots (which caused missing `dist/src/main.js`). If something feels stale after refactors, run `rm -rf dist && npm run build`. Production images should run a clean `nest build` (or delete `dist` first).
-| `npm run test:e2e` | E2E (needs `DATABASE_URL`; see `test/setup-e2e.ts`) |

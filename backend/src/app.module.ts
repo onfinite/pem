@@ -1,19 +1,19 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { BullModule } from '@nestjs/bullmq';
+import { ScheduleModule } from '@nestjs/schedule';
 
-import { CalendarModule } from '@/calendar/calendar.module';
-import { ChatModule } from '@/chat/chat.module';
-import { ExtractsModule } from '@/extracts/extracts.module';
-import { ListsModule } from '@/lists/lists.module';
-import configuration from '@/config/configuration';
+import configuration from '@/core/config/configuration';
 import { DatabaseModule } from '@/database/database.module';
-import { BackgroundModule } from '@/background/background.module';
-import { HealthController } from '@/health/health.controller';
-import { StorageModule } from '@/storage/storage.module';
-import { UsersModule } from '@/users/users.module';
-import { WebhooksModule } from '@/webhooks/webhooks.module';
+import { CalendarModule } from '@/modules/calendar/calendar.module';
+import { ChatModule } from '@/modules/chat/chat.module';
+import { ExtractsModule } from '@/modules/extracts/extracts.module';
+import { HealthModule } from '@/modules/health/health.module';
+import { ListsModule } from '@/modules/lists/lists.module';
+import { StorageModule } from '@/modules/storage/storage.module';
+import { UsersModule } from '@/modules/users/users.module';
 
 const isDev = (process.env.ENV ?? process.env.NODE_ENV ?? 'dev') === 'dev';
 
@@ -29,17 +29,34 @@ const isDev = (process.env.ENV ?? process.env.NODE_ENV ?? 'dev') === 'dev';
         limit: isDev ? 10_000 : 600,
       },
     ]),
-    BackgroundModule,
+    ScheduleModule.forRoot(),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (config: ConfigService) => {
+        const url = config.get<string>('redisUrl');
+        if (!url) {
+          throw new Error(
+            'REDIS_URL is required (BullMQ). Set it in .env for the worker queue.',
+          );
+        }
+        return {
+          connection: { url },
+          defaultJobOptions: {
+            removeOnFail: { count: 200 },
+          },
+        };
+      },
+      inject: [ConfigService],
+    }),
     CalendarModule,
     ChatModule,
     DatabaseModule,
     ExtractsModule,
+    HealthModule,
     ListsModule,
     StorageModule,
     UsersModule,
-    WebhooksModule,
   ],
-  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

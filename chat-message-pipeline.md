@@ -275,7 +275,7 @@ Two lanes at runtime:
 
 ## Backend: HTTP → DB → queue
 
-### Controller: `backend/src/chat/chat.controller.ts`
+### Controller: `backend/src/modules/chat/chat.controller.ts`
 
 | Route | What happens |
 |-------|----------------|
@@ -285,23 +285,23 @@ Two lanes at runtime:
 | `GET /chat/messages` | Paginated list; each row serialized + signed media URLs attached. |
 | `GET /chat/stream` | SSE subscription for user (see `ChatStreamService`). |
 
-### Persistence: `backend/src/chat/chat.service.ts`
+### Persistence: `backend/src/modules/chat/services/chat.service.ts`
 
 - `saveMessage` — insert user (or Pem) row.
 - `getMessages` — cursor `before` on `created_at`, limit clamped (default 50, max 100), chronological page.
 - `updateMessage`, `findMessage`, `findMessageByIdempotencyKey`, `serializeMessage`, etc.
 
-### Queue: `backend/src/background/queues/chat/chat.processor.ts`
+### Queue: `backend/src/modules/chat/jobs/chat.processor.ts`
 
 - Job payload: `{ messageId, userId }`.
-- **`mergeRapidMessages`** — within `BATCH_WINDOW_MS` (8s, `chat.constants.ts`), other **pending** user messages from same user may be **merged into this job’s primary** `content`; peers marked `processing_status: 'done'` so their jobs no-op.
+- **`mergeRapidMessages`** — within `BATCH_WINDOW_MS` (8s, `constants/chat.constants.ts`), other **pending** user messages from same user may be **merged into this job’s primary** `content`; peers marked `processing_status: 'done'` so their jobs no-op.
 - Then **`ChatOrchestratorService.processMessage(messageId, userId, { isFinalAttempt })`**.
 
 ---
 
 ## Backend: orchestration
 
-### `backend/src/background/queues/chat/chat-orchestrator.service.ts` — `processMessage` (conceptual order)
+### `backend/src/modules/chat/jobs/chat-orchestrator.service.ts` — `processMessage` (conceptual order)
 
 1. Load message; guard user, skip if already `done`.
 2. Set `processing`, publish SSE status (`Processing...`).
@@ -327,11 +327,11 @@ Two lanes at runtime:
 
 ### Related modules (by concern)
 
-- Triage: `backend/src/agents/triage.service.ts`
-- Question path: `backend/src/background/queues/chat/chat-question.service.ts`
+- Triage: `backend/src/modules/chat/services/triage.service.ts`
+- Question path: `backend/src/modules/chat/jobs/chat-question.service.ts`
 - Vision / photo intent / recall: `photo-vision.service.ts`, `photo-attachment-intent.service.ts`, `chat-photo-recall-intent.service.ts`, `build-photo-recall-metadata.ts`, `image-reference-only-reply.service.ts`
-- Agent + tool output: `backend/src/agents/pem-agent.service.ts`
-- RAG / limits: `backend/src/chat/chat.constants.ts` (`AGENT_RECENT_MESSAGES_LIMIT`, `RAG_*`, `BATCH_WINDOW_MS`, …)
+- Agent + tool output: `backend/src/modules/chat/services/pem-agent.service.ts` (LLM in `agents/pem-agent-llm.ts`)
+- RAG / limits: `backend/src/modules/chat/constants/chat.constants.ts` (`AGENT_RECENT_MESSAGES_LIMIT`, `RAG_*`, `BATCH_WINDOW_MS`, …)
 
 ---
 
@@ -358,11 +358,11 @@ Two lanes at runtime:
 | Image upload | `app/lib/uploadChatImage.ts` |
 | Cached images on disk | `app/lib/chatCachePersistedImages.ts` |
 | SSE hook + connection | `app/hooks/useChatStream.ts`, `app/hooks/chatStream/openChatStreamConnection.ts`, `app/hooks/chatStream/dispatchChatSseEvent.ts` |
-| Chat HTTP + SSE | `backend/src/chat/chat.controller.ts`, `backend/src/chat/chat-stream.service.ts` |
-| DB access | `backend/src/chat/chat.service.ts` |
-| Worker | `backend/src/background/queues/chat/chat.processor.ts` |
-| Orchestrator | `backend/src/background/queues/chat/chat-orchestrator.service.ts` |
-| SSE pub/sub | `backend/src/background/chat-events/` (as wired from `ChatEventsService`) |
+| Chat HTTP + SSE | `backend/src/modules/chat/chat.controller.ts`, `backend/src/modules/chat/services/chat-stream.service.ts` |
+| DB access | `backend/src/modules/chat/services/chat.service.ts` |
+| Worker | `backend/src/modules/chat/jobs/chat.processor.ts` |
+| Orchestrator | `backend/src/modules/chat/jobs/chat-orchestrator.service.ts` |
+| SSE pub/sub | `backend/src/modules/chat/services/chat-events.service.ts` (`ChatEventsService`) |
 
 ---
 

@@ -717,8 +717,10 @@ The repo uses **`app/`** with **expo-router** — align new screens/components w
 src/
   chat/
     chat.controller.ts
-    chat.service.ts
     chat.module.ts
+    constants/
+      chat.constants.ts
+      link-reading.constants.ts
     services/
       classify-intent.service.ts
       embed-message.service.ts

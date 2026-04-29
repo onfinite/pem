@@ -1,4 +1,6 @@
 export type PhotoDisplaySource = {
+  /** When `voice`, `_localUri` is the audio file — never treat it as a photo. */
+  kind?: string | null;
   image_urls?: { url: string }[] | null;
   /** Voice + photos optimistic: image URIs only (voice uses `_localUri`). */
   _pendingImageUris?: string[] | null;
@@ -21,7 +23,9 @@ export function collectUserPhotoDisplayUris(
 
   const pendingLocals = message._pendingLocalUris?.filter(Boolean) ?? [];
   if (pendingLocals.length > 0) return pendingLocals;
-  if (message._localUri) return [message._localUri];
+  if (message.kind !== "voice" && message._localUri) {
+    return [message._localUri];
+  }
 
   const remotes = message.image_urls?.map((x) => x.url).filter(Boolean) ?? [];
   const persisted = message._persistedImageUris?.filter(Boolean) ?? [];

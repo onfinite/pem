@@ -9,7 +9,7 @@ import {
 import {
   readListsCache,
   writeListsCache,
-} from "@/components/chat/task-drawer/listCache";
+} from "@/components/inbox/task-drawer/listCache";
 
 export function useLists() {
   const { getToken } = useAuth();

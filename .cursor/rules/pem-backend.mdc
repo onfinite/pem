@@ -7,7 +7,7 @@ globs: backend/**
 
 **Package:** NestJS app under **`backend/`** — `npm install`, `npm run start:dev`, `npm run build` from `backend/`. No shared runtime code with `app/`. **Internal imports:** use **`@/`** → **`src/`** (see **`pem-coding-standards.mdc`**, `backend/tsconfig.json`); Nest emits relative requires in **`dist/`**.
 
-**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **pgvector** (vector similarity search), **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`ValidationPipe`**. **Config** — **`src/config/configuration.ts`**. **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, `embed`, never `generateObject`). **Jina Reader** — **`JINA_API_KEY`**; server fetches `https://r.jina.ai/...` with **`Accept: application/json`** (and `X-Robots-Txt: JinaReader`) for inbound chat URLs (worker path); response is stored as **`jina_snapshot`** jsonb on **`message_links`**. **Background work** lives under **`src/background/`**. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription.
+**Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **pgvector** (vector similarity search), **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`ValidationPipe`**. **Config** — **`src/core/config/configuration.ts`** (loaded from **`AppModule`**). **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, `embed`, never `generateObject`). **Jina Reader** — **`JINA_API_KEY`**; server fetches `https://r.jina.ai/...` with **`Accept: application/json`** (and `X-Robots-Txt: JinaReader`) for inbound chat URLs (worker path); response is stored as **`jina_snapshot`** jsonb on **`message_links`**. **BullMQ** — **`BullModule.forRootAsync`** + **`ScheduleModule.forRoot()`** in **`AppModule`**; each feature module registers its queue(s) and hosts processors/crons. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription.
 
 **Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA, **`notification_time`** for morning brief), **`messages`** (**`role`**: `user` | `pem`, **`kind`**: `text` | `voice` | `brief`, content, voice_url, transcript, **`triage_category`**, **`processing_status`**, polished_text, parent_message_id), **`message_links`** (URLs in a user message: original + normalized fetch URL, canonical URL, title, content type, **`jina_snapshot`** trimmed JSON from Jina Reader, structured summary, extracted metadata jsonb, fetch_status, fetched_at; FK `message_id` → messages; **24h user-scoped cache** on `normalized_fetch_url`), **`message_embeddings`** (pgvector 1536-dim, FK to messages), **`extracts`** (tone, **urgency** `'someday'|'none'` — all timing via `period_start`/`period_end`/`due_at`, **`meta`** jsonb for rarely-queried fields, batch_key, status; **`message_id`** FK to messages; calendar event fields), **`calendar_connections`**, **`reported_issues`**, **`logs`** (unified audit: types include `chat`), **`memory_facts`**.
 
@@ -63,21 +63,10 @@ DELETE /calendar/connections/:id
 
 | Area | Role |
 |------|------|
-| `src/chat/` | `ChatModule` — controller, service, stream service. `POST /chat/messages`, `GET /chat/messages`, `GET /chat/stream` (SSE). |
-| `src/agents/` | `AgentsModule` — `TriageService` (gpt-4o-mini), `PemAgentService` (gpt-4o: extraction + orchestration passes, monolithic fallback). |
-| `src/embeddings/` | `EmbeddingsModule` — embed messages, similarity search via pgvector. |
-| `src/background/queues/chat/` | BullMQ `chat` queue: `ChatProcessor`, `ChatOrchestratorService`, `ChatQuestionService`. |
-| `src/background/queues/brief/` | `BriefCronService` — morning brief generation + push. |
-| `src/background/queues/calendar/` | BullMQ `calendar-sync` queue: sync processor, cron. |
-| `src/background/chat-events/` | Redis pub/sub — user-scoped channels for SSE. |
-| `src/calendar/` | `CalendarModule` — connections CRUD, Google OAuth, sync. |
-| `src/extracts/` | Extract CRUD, brief buckets, draft generation. |
-| `src/users/` | User CRUD, timezone, push token. |
-| `src/profile/` | `memory_facts` CRUD. |
-| `src/push/` | Expo push. |
-| `src/transcription/` | Whisper via OpenAI API. |
-| `src/storage/` | R2 audio storage. |
-| `src/auth/`, `src/webhooks/`, `src/health/` | unchanged. |
+| `src/core/` | Cross-cutting infra: **`config/`**, **`bootstrap/`** (`configureApp`), **`auth/`** (Clerk JWT guard, decorators, JWKS helpers), **`utils/`** (logging, sleep, dedupe helpers, **URL stack**: SSRF guard, tracking-param strip, normalize for fetch, link regexes, extract occurrences, ISO-week, Amazon image URL upgrade, markdown title hint). |
+| `src/database/` | Drizzle **`schemas/`**, **`database.module.ts`**, constants — unchanged as the persistence layer. |
+| `src/modules/` | All Nest feature modules: **`chat/`** (HTTP + SSE, **`jobs/`**, **`agents/`**, **`crons/`**, chat events), **`users/`**, **`calendar/`**, **`extracts/`**, **`lists/`**, **`embeddings/`**, **`push/`**, **`profile/`**, **`scheduler/`**, **`storage/`**, **`transcription/`**, **`health/`**. |
+| `src/app.module.ts`, `src/main.ts` | Application root. |
 
 **Drizzle:** Change schema in TS → **`npm run db:generate`** → review → **`npm run db:migrate`**. Never hand-edit `drizzle/*.sql` or `drizzle/meta/`.
 

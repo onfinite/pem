@@ -7,7 +7,7 @@ import { ChatScreenEmptyState } from "@/components/chat/ChatScreenEmptyState";
 import { ChatScreenHeader } from "@/components/chat/ChatScreenHeader";
 import { ChatScreenSkeletonBubbles } from "@/components/chat/ChatScreenSkeletonBubbles";
 import { ChatImageSourceSheet } from "@/components/chat/ChatImageSourceSheet";
-import TaskDrawer, { type TaskDrawerHandle } from "@/components/chat/TaskDrawer";
+import TaskDrawer, { type TaskDrawerHandle } from "@/components/inbox/TaskDrawer";
 import { space } from "@/constants/typography";
 import { pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
