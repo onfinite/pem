@@ -6,11 +6,10 @@ import { DatabaseModule } from '@/database/database.module';
 import { ProfileModule } from '@/modules/profile/profile.module';
 import { PushModule } from '@/modules/push/push.module';
 import { UsersModule } from '@/modules/users/users.module';
-import { DraftService } from '@/modules/extracts/draft.service';
 import { ExtractsController } from '@/modules/extracts/extracts.controller';
-import { ExtractsService } from '@/modules/extracts/extracts.service';
-import { RecurrenceCronService } from '@/modules/extracts/recurrence-cron.service';
-import { ReminderCronService } from '@/modules/extracts/reminder-cron.service';
+import { ExtractsService } from '@/modules/extracts/services/extracts.service';
+import { RecurrenceCronService } from '@/modules/extracts/services/recurrence-cron.service';
+import { ReminderCronService } from '@/modules/extracts/services/reminder-cron.service';
 
 @Module({
   imports: [
@@ -22,12 +21,7 @@ import { ReminderCronService } from '@/modules/extracts/reminder-cron.service';
     PushModule,
   ],
   controllers: [ExtractsController],
-  providers: [
-    ExtractsService,
-    DraftService,
-    ReminderCronService,
-    RecurrenceCronService,
-  ],
+  providers: [ExtractsService, ReminderCronService, RecurrenceCronService],
   exports: [ExtractsService, UsersModule],
 })
 export class ExtractsModule {}

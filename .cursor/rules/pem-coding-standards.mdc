@@ -722,24 +722,14 @@ src/
       chat.constants.ts
       link-reading.constants.ts
     services/
-      classify-intent.service.ts
-      embed-message.service.ts
-      sse.service.ts
-      morning-brief.service.ts
+      chat.service.ts
+      chat-question-llm.service.ts
+      pem-agent.system-prompt.ts
     jobs/
-      process-dump.job.ts
-      process-command.job.ts
-      transcribe-voice.job.ts
-      embed-message.job.ts
-      synthesize-themes.job.ts
+      chat.processor.ts
     dto/
       send-message.dto.ts
       paginate-messages.dto.ts
-    prompts/
-      classify-intent.prompt.ts
-      process-dump.prompt.ts
-      answer-question.prompt.ts
-      morning-brief.prompt.ts
   tasks/
     tasks.controller.ts
     tasks.service.ts
@@ -773,23 +763,14 @@ src/
 
 ## Prompts are isolated
 
-AI prompts are first-class code. They live in their own files.
-They are functions that take typed inputs and return strings.
+AI prompts are first-class code. They live in their own **`.ts` files** next to the code that uses them — typically under **`modules/<feature>/services/`** (e.g. **`pem-agent.system-prompt.ts`**) or as private helpers on an **`@Injectable()`** *Llm* service (e.g. **`ChatQuestionLlmService`**) — not buried inside unrelated orchestration services.
+
+They are functions that take typed inputs and return strings (or are private string builders on an injectable).
 
 ```typescript
-// prompts/classify-intent.prompt.ts
-export function classifyIntentPrompt(content: string): string {
-  return `
-You are classifying a message sent to Pem, an AI life assistant.
-Classify into exactly one: dump | command | question
-
-dump: offloading thoughts, things to remember, stream of consciousness
-command: explicit instruction to do something ("cancel", "add", "schedule")
-question: asking for information or status
-
-Message: "${content}"
-Return only the intent. No explanation.
-  `.trim()
+// services/chat-question-llm.service.ts — excerpt: prompt builder on an @Injectable() service
+buildAskQuestionSystemPrompt(nameNote: string): string {
+  return `You are Pem — a friend who remembers everything.${nameNote} …`.trim()
 }
 ```
 

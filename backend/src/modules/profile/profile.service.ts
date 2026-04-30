@@ -11,31 +11,31 @@ import {
 } from '@/modules/profile/profile.repository';
 import { formatTimedForAgent } from '@/modules/profile/profile-timed';
 
-const MAX_ACTIVE_PER_KEY = 5;
-
-/** Short snake_case key for memory (e.g. `location`, `car_budget`). */
-export function normalizeProfileKey(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_]/g, '')
-    .slice(0, 128);
-}
-
-function noteForContext(raw: string): string {
-  const t = raw.trim();
-  if (!t.startsWith('{')) return raw;
-  try {
-    return formatTimedForAgent(raw);
-  } catch {
-    return raw;
-  }
-}
-
 @Injectable()
 export class ProfileService {
+  private static readonly maxActivePerKey = 5;
+
   constructor(private readonly repo: ProfileRepository) {}
+
+  /** Short snake_case key for memory (e.g. `location`, `car_budget`). */
+  private static normalizeProfileKey(raw: string): string {
+    return raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '')
+      .slice(0, 128);
+  }
+
+  private static noteForContext(raw: string): string {
+    const t = raw.trim();
+    if (!t.startsWith('{')) return raw;
+    try {
+      return formatTimedForAgent(raw);
+    } catch {
+      return raw;
+    }
+  }
 
   async listFacts(
     userId: string,
@@ -66,7 +66,7 @@ export class ProfileService {
     const map = await this.repo.getActiveMap(userId);
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(map)) {
-      out[k] = noteForContext(v);
+      out[k] = ProfileService.noteForContext(v);
     }
     return out;
   }
@@ -86,7 +86,7 @@ export class ProfileService {
         month: 'short',
         year: 'numeric',
       });
-      const text = noteForContext(r.note).trim();
+      const text = ProfileService.noteForContext(r.note).trim();
       lines.push(`- (${r.memoryKey}) ${text} (as of ${when})`);
     }
     return `What I know about this user:\n${lines.join('\n')}
@@ -95,11 +95,11 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
   }
 
   async remember(userId: string, key: string): Promise<string | null> {
-    const k = normalizeProfileKey(key);
+    const k = ProfileService.normalizeProfileKey(key);
     if (!k) return null;
     const row = await this.repo.getActiveByMemoryKey(userId, k);
     if (!row) return null;
-    return noteForContext(row.note);
+    return ProfileService.noteForContext(row.note);
   }
 
   /**
@@ -112,7 +112,7 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
     note: string,
     sourceMessageId: string,
   ): Promise<void> {
-    const memoryKey = normalizeProfileKey(memoryKeyRaw);
+    const memoryKey = ProfileService.normalizeProfileKey(memoryKeyRaw);
     if (!memoryKey) {
       return;
     }
@@ -130,7 +130,11 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
       provenance: 'agent',
     });
 
-    await this.repo.capActivePerKey(userId, memoryKey, MAX_ACTIVE_PER_KEY);
+    await this.repo.capActivePerKey(
+      userId,
+      memoryKey,
+      ProfileService.maxActivePerKey,
+    );
   }
 
   /** User-added from Settings (does not supersede — must be unique active key). */
@@ -139,7 +143,7 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
     keyRaw: string,
     noteRaw: string,
   ): Promise<MemoryFactRow> {
-    const memoryKey = normalizeProfileKey(keyRaw);
+    const memoryKey = ProfileService.normalizeProfileKey(keyRaw);
     if (!memoryKey) {
       throw new BadRequestException(
         'Use a short label (letters, numbers, spaces). e.g. Location, Car budget',
@@ -178,7 +182,9 @@ Use this when interpreting the dump, matching open tasks, and choosing tone or t
       throw new NotFoundException('Fact not found');
     }
     const nextKey =
-      patch.key !== undefined ? normalizeProfileKey(patch.key) : row.memoryKey;
+      patch.key !== undefined
+        ? ProfileService.normalizeProfileKey(patch.key)
+        : row.memoryKey;
     const nextNote = patch.note !== undefined ? patch.note.trim() : row.note;
     if (!nextKey) {
       throw new BadRequestException('Invalid label');

@@ -1,0 +1,1 @@
+ALTER TABLE "extracts" DROP COLUMN "draft_text";

@@ -4,12 +4,12 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ChatModule } from '@/modules/chat/chat.module';
 import { DatabaseModule } from '@/database/database.module';
 import { UsersModule } from '@/modules/users/users.module';
-import { CalendarConnectionService } from '@/modules/calendar/calendar-connection.service';
 import { CalendarController } from '@/modules/calendar/calendar.controller';
-import { CalendarCronService } from '@/modules/calendar/calendar-cron.service';
-import { CalendarSyncProcessor } from '@/modules/calendar/calendar-sync.processor';
-import { CalendarSyncService } from '@/modules/calendar/calendar-sync.service';
-import { GoogleCalendarService } from '@/modules/calendar/google-calendar.service';
+import { CalendarSyncProcessor } from '@/modules/calendar/jobs/calendar-sync.processor';
+import { CalendarConnectionService } from '@/modules/calendar/services/calendar-connection.service';
+import { CalendarCronService } from '@/modules/calendar/services/calendar-cron.service';
+import { CalendarSyncService } from '@/modules/calendar/services/calendar-sync.service';
+import { GoogleCalendarService } from '@/modules/calendar/services/google-calendar.service';
 
 @Module({
   imports: [

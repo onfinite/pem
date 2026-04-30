@@ -12,17 +12,14 @@ import {
   messagesTable,
   usersTable,
 } from '@/database/schemas/index';
-import { EmbeddingsService } from '@/modules/embeddings/embeddings.service';
-import { ExtractsService } from '@/modules/extracts/extracts.service';
+import { EmbeddingsService } from '@/modules/chat/services/embeddings.service';
+import { ExtractsService } from '@/modules/extracts/services/extracts.service';
 import { ProfileService } from '@/modules/profile/profile.service';
 import { PushService } from '@/modules/push/push.service';
-import { GoogleCalendarService } from '@/modules/calendar/google-calendar.service';
+import { GoogleCalendarService } from '@/modules/calendar/services/google-calendar.service';
 import { calendarConnectionsTable } from '@/database/schemas/index';
 import { logWithContext } from '@/core/utils/format-log-context';
-import {
-  buildBriefSystem,
-  generateBriefBodyText,
-} from '@/modules/chat/agents/brief-body-llm';
+import { BriefBodyLlmService } from '@/modules/chat/services/brief-body-llm.service';
 
 @Injectable()
 export class BriefCronService {
@@ -36,6 +33,7 @@ export class BriefCronService {
     private readonly profile: ProfileService,
     private readonly extracts: ExtractsService,
     private readonly googleCal: GoogleCalendarService,
+    private readonly briefBodyLlm: BriefBodyLlmService,
   ) {}
 
   @Cron('0 * * * *')
@@ -158,8 +156,7 @@ export class BriefCronService {
     userName?: string | null,
     userSummary?: string | null,
   ): Promise<string | null> {
-    const apiKey = this.config.get<string>('openai.apiKey');
-    if (!apiKey) {
+    if (!this.config.get<string>('openai.apiKey')) {
       this.log.warn(
         logWithContext('No OpenAI API key — skipping brief', {
           scope: 'brief.generate',
@@ -376,7 +373,10 @@ ${worriesSection ? `## Recurring concerns\n${worriesSection}` : ''}`;
     const timeOfDay =
       luxNow.hour < 12 ? 'morning' : luxNow.hour < 17 ? 'afternoon' : 'evening';
     const dayOfWeek = luxNow.toFormat('cccc');
-    const systemPrompt = buildBriefSystem(timeOfDay, dayOfWeek);
+    const systemPrompt = this.briefBodyLlm.buildBriefSystem(
+      timeOfDay,
+      dayOfWeek,
+    );
 
     const agentModel = this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
 
@@ -388,8 +388,7 @@ ${worriesSection ? `## Recurring concerns\n${worriesSection}` : ''}`;
       : '';
 
     try {
-      const briefText = await generateBriefBodyText({
-        apiKey,
+      const briefText = await this.briefBodyLlm.generateBriefBodyText({
         agentModel,
         systemPrompt,
         userPrompt: `${summaryBlock}${nameNote}\n\n${context}`,

@@ -52,7 +52,7 @@ export const messageLinksTable = pgTable(
     canonicalUrl: text('canonical_url'),
     pageTitle: text('page_title'),
     contentType: text('content_type').$type<MessageLinkContentType | null>(),
-    /** Jina Reader JSON (`Accept: application/json`), trimmed for size. */
+    /** Legacy jsonb; new rows use direct HTML OG fetch only (column left null). */
     jinaSnapshot: jsonb('jina_snapshot'),
     structuredSummary: text('structured_summary'),
     extractedMetadata: jsonb('extracted_metadata').$type<Record<

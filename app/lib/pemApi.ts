@@ -432,7 +432,6 @@ export type ApiExtract = {
   closed_at: string | null;
   pem_note: string | null;
   recommended_at: string | null;
-  draft_text: string | null;
   event_start_at: string | null;
   event_end_at: string | null;
   /** Block / focus time suggested by agent (ISO). */
@@ -676,18 +675,6 @@ export async function requestBrief(getToken: () => Promise<string | null>) {
     method: "POST",
     getToken,
   });
-}
-
-// ── Draft ────────────────────────────────────────────────
-
-export async function generateExtractDraft(
-  getToken: () => Promise<string | null>,
-  extractId: string,
-) {
-  return apiFetch<{ draft: string; item: ApiExtract }>(
-    `/extracts/${extractId}/draft`,
-    { method: "POST", getToken },
-  );
 }
 
 // ── History ──────────────────────────────────────────────

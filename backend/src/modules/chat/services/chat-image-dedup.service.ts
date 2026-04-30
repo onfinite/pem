@@ -7,8 +7,10 @@ import {
   chatImageHashesTable,
   type MessageImageAsset,
 } from '@/database/schemas/index';
-import { normalizeContentSha256 } from '@/modules/chat/utils/normalize-content-sha256';
-import { validateChatImageKeysForUser } from '@/modules/chat/utils/validate-chat-image-keys';
+import {
+  normalizeContentSha256,
+  validateChatImageKeysForUser,
+} from '@/modules/chat/helpers/chat-image-keys.helpers';
 
 @Injectable()
 export class ChatImageDedupService {

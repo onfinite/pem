@@ -12,11 +12,11 @@ import {
   messagesTable,
   usersTable,
 } from '@/database/schemas/index';
-import { EmbeddingsService } from '@/modules/embeddings/embeddings.service';
+import { EmbeddingsService } from '@/modules/chat/services/embeddings.service';
 import { ProfileService } from '@/modules/profile/profile.service';
 import { PushService } from '@/modules/push/push.service';
 import { logWithContext } from '@/core/utils/format-log-context';
-import { generateWeeklyReflectionBodyText } from '@/modules/chat/agents/weekly-reflection-body-llm';
+import { WeeklyReflectionLlmService } from '@/modules/chat/services/weekly-reflection-llm.service';
 
 @Injectable()
 @Processor('weekly-planning')
@@ -29,6 +29,7 @@ export class WeeklyReflectionProcessor extends WorkerHost {
     private readonly embeddings: EmbeddingsService,
     private readonly profile: ProfileService,
     private readonly push: PushService,
+    private readonly weeklyReflectionLlm: WeeklyReflectionLlmService,
   ) {
     super();
   }
@@ -77,8 +78,7 @@ export class WeeklyReflectionProcessor extends WorkerHost {
       return;
     }
 
-    const apiKey = this.config.get<string>('openai.apiKey');
-    if (!apiKey) return;
+    if (!this.config.get<string>('openai.apiKey')) return;
 
     const weekAgo = luxNow.minus({ days: 7 }).toJSDate();
 
@@ -201,8 +201,7 @@ ${ragText ? `Recurring themes:\n${ragText}` : ''}`;
       const agentModel =
         this.config.get<string>('openai.agentModel') ?? 'gpt-4o';
 
-      const reflectionText = await generateWeeklyReflectionBodyText({
-        apiKey,
+      const reflectionText = await this.weeklyReflectionLlm.generateBodyText({
         agentModel,
         userPrompt: `${summaryBlock}${nameNote}\n\n${context}`,
       });

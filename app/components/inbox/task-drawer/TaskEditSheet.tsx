@@ -31,7 +31,6 @@ import {
 } from "react-native";
 import { Calendar, type DateData } from "react-native-calendars";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { DraftSection } from "@/components/inbox/task-drawer/DraftSection";
 import { reminderIso } from "@/components/inbox/task-drawer/taskEditSheet.constants";
 import { editSheetStyles as s } from "@/components/inbox/task-drawer/taskEditSheet.styles";
 import type { TaskEditSheetProps } from "@/components/inbox/task-drawer/types";
@@ -361,8 +360,6 @@ export function TaskEditSheet({
               multiline
               numberOfLines={3}
             />
-
-            <DraftSection extract={extract} />
 
             {isSyncedFromCalendar && (
               <View style={[s.banner, { backgroundColor: colors.secondarySurface }]}>

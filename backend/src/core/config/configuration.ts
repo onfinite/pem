@@ -14,9 +14,6 @@ export type AppConfig = {
     agentModel: string;
   };
   redisUrl: string | undefined;
-  jina: {
-    apiKey: string | undefined;
-  };
   googleCalendar: {
     clientId: string | undefined;
     clientSecret: string | undefined;
@@ -60,9 +57,6 @@ export default (): AppConfig => {
       agentModel: process.env.OPENAI_AGENT_MODEL ?? 'gpt-4o',
     },
     redisUrl: process.env.REDIS_URL,
-    jina: {
-      apiKey: process.env.JINA_API_KEY?.trim() || undefined,
-    },
     googleCalendar: {
       clientId: process.env.GOOGLE_CALENDAR_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,

@@ -8,11 +8,6 @@ import type { DrizzleDb } from '@/database/database.module';
 import { usersTable } from '@/database/schemas/index';
 import { logWithContext } from '@/core/utils/format-log-context';
 
-function pushDataKind(data: Record<string, unknown>): string {
-  const k = data.kind;
-  return typeof k === 'string' ? k : '';
-}
-
 @Injectable()
 export class PushService {
   private readonly log = new Logger(PushService.name);
@@ -90,7 +85,7 @@ export class PushService {
             this.log.warn(
               logWithContext(`push error: ${t.message}`, {
                 userId,
-                pushKind: pushDataKind(payload.data),
+                pushKind: this.pushDataKind(payload.data),
                 scope: 'push',
               }),
             );
@@ -100,10 +95,15 @@ export class PushService {
       this.log.warn(
         logWithContext(e instanceof Error ? e.message : String(e), {
           userId,
-          pushKind: pushDataKind(payload.data),
+          pushKind: this.pushDataKind(payload.data),
           scope: 'push',
         }),
       );
     }
+  }
+
+  private pushDataKind(data: Record<string, unknown>): string {
+    const k = data.kind;
+    return typeof k === 'string' ? k : '';
   }
 }

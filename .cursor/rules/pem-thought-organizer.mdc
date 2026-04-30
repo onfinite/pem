@@ -331,7 +331,7 @@ Events: `inbox.updated`, `item.created`, `stream.done`. Redis pub/sub + Nest `@S
 ## App screens
 
 1. Brief (home — daily brief with overdue, today timeline, tomorrow, this week, next week, later, batch chips)
-2. Item detail (bottom sheet with history, draft, snooze, copy/share)
+2. Item detail (bottom sheet with history, snooze, copy/share)
 3. Dumps (dump history — thoughts, dictations, anything)
 4. Done
 5. Settings
@@ -360,7 +360,6 @@ GET    /extracts/open
 GET    /extracts/query
 GET    /extracts/:id
 GET    /extracts/:id/history
-POST   /extracts/:id/draft
 PATCH  /extracts/:id/done | /dismiss | /undone | /undismiss | /snooze
 POST   /ask                 ← direct Q&A
 PATCH  /users/me/timezone

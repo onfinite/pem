@@ -25,8 +25,8 @@ import {
   type ProcessingStatus,
 } from '@/database/schemas/index';
 import type { ChatLinkPreviewSerialized } from '@/modules/chat/types/link-preview.types';
-import { resolveLinkPreviewImageUrl } from '@/modules/chat/utils/resolve-link-preview-image-url';
-import { decodePhotoVisionStored } from '@/modules/chat/utils/photo-vision-stored';
+import { resolveLinkPreviewImageUrl } from '@/modules/chat/helpers/chat-link-client-preview.helpers';
+import { decodePhotoVisionStored } from '@/modules/chat/helpers/photo-vision-stored';
 
 @Injectable()
 export class ChatService {
@@ -167,10 +167,7 @@ export class ChatService {
             ? `${r.structuredSummary.slice(0, 400)}…`
             : r.structuredSummary
           : null,
-        image_url: resolveLinkPreviewImageUrl(
-          r.extractedMetadata,
-          r.jinaSnapshot,
-        ),
+        image_url: resolveLinkPreviewImageUrl(r.extractedMetadata),
       });
       map.set(r.messageId, list);
     }

@@ -25,7 +25,7 @@ Default port **8000**.
 
 - **`core/`** — Infra only: `config/`, `bootstrap/` (`configureApp`), `auth/` (Clerk guard + JWT helpers), `utils/` (shared helpers + generic URL/SSRF/extract utilities used by chat link pipeline).
 - **`database/`** — Drizzle schemas and `DatabaseModule` (unchanged as the data layer).
-- **`modules/`** — All Nest feature modules (`chat`, `users`, `calendar`, `extracts`, `lists`, `embeddings`, `push`, `profile`, `scheduler`, `storage`, `transcription`, `health`).
+- **`modules/`** — All Nest feature modules (`chat`, `users`, `calendar`, `extracts`, `lists`, `push`, `profile`, `storage`, `health`). Chat **`services/`** holds Nest **`*.service.ts`** providers; LLM-heavy flows use additional **`@Injectable()`** classes such as **`OrchestratorLlmService`**, **`PemAgentLlmService`** (+ **`pem-agent.system-prompt.ts`**), **`ChatQuestionLlmService`**, etc. (no separate `agents/` or `prompts/` folders). Also **`helpers/`**, **`constants/`**, **`types/`**, **`jobs/`**.
 - **`app.module.ts`**, **`main.ts`** — Application entry.
 
 Imports use the `@/` alias → `src/` (e.g. `@/modules/chat/...`, `@/core/config/...`, `@/database/...`).

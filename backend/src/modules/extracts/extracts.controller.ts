@@ -17,9 +17,8 @@ import {
 import { ClerkAuthGuard } from '@/core/auth/clerk-auth.guard';
 import { CurrentUser } from '@/core/auth/current-user.decorator';
 import type { UserRow } from '@/database/schemas/index';
-import { extractMutationAuditFromHeaders } from '@/modules/extracts/extract-audit-from-headers';
-import { ExtractsService } from '@/modules/extracts/extracts.service';
-import { DraftService } from '@/modules/extracts/draft.service';
+import { extractMutationAuditFromHeaders } from '@/modules/extracts/helpers/extract-audit-from-headers';
+import { ExtractsService } from '@/modules/extracts/services/extracts.service';
 import { ExtractsQueryDto } from '@/modules/extracts/dto/extracts-query.dto';
 import { RescheduleExtractDto } from '@/modules/extracts/dto/reschedule-extract.dto';
 import { ReportExtractDto } from '@/modules/extracts/dto/report-extract.dto';
@@ -29,10 +28,7 @@ import { updateExtractBodySchema } from '@/modules/extracts/dto/update-extract.d
 @Controller('extracts')
 @UseGuards(ClerkAuthGuard)
 export class ExtractsController {
-  constructor(
-    private readonly extracts: ExtractsService,
-    private readonly draft: DraftService,
-  ) {}
+  constructor(private readonly extracts: ExtractsService) {}
 
   @Get('counts')
   async getCounts(@CurrentUser() user: UserRow) {
@@ -130,18 +126,6 @@ export class ExtractsController {
         created_at: l.createdAt.toISOString(),
       })),
     };
-  }
-
-  @Post(':id/draft')
-  @HttpCode(200)
-  async generateDraft(
-    @CurrentUser() user: UserRow,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ) {
-    const row = await this.extracts.findForUser(user.id, id);
-    if (!row) throw new NotFoundException('Extract not found');
-    const draftText = await this.draft.generateDraft(user.id, row);
-    return { draft: draftText, item: this.extracts.serialize(row) };
   }
 
   @Get(':id')

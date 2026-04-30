@@ -19,9 +19,9 @@ import type { Response } from 'express';
 import { ClerkAuthGuard } from '@/core/auth/clerk-auth.guard';
 import { CurrentUser } from '@/core/auth/current-user.decorator';
 import type { UserRow } from '@/database/schemas/index';
-import { CalendarConnectionService } from '@/modules/calendar/calendar-connection.service';
-import { CalendarSyncService } from '@/modules/calendar/calendar-sync.service';
-import { GoogleCalendarService } from '@/modules/calendar/google-calendar.service';
+import { CalendarConnectionService } from '@/modules/calendar/services/calendar-connection.service';
+import { CalendarSyncService } from '@/modules/calendar/services/calendar-sync.service';
+import { GoogleCalendarService } from '@/modules/calendar/services/google-calendar.service';
 import { logWithContext } from '@/core/utils/format-log-context';
 
 @Controller('calendar')

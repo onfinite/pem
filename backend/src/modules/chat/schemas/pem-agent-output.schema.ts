@@ -90,7 +90,6 @@ export const extractActionSchema = z.object({
   pem_note: nullStr.describe(
     'Short context note from Pem shown on task detail — e.g. "Annual checkup", "Kane prefers mornings". Write as Pem speaking about the user by their name (never say "User"). Omit if no useful context beyond the task text.',
   ),
-  draft_text: nullStr.describe('Draft message for contact-related tasks'),
 });
 
 export const updateActionSchema = z.object({
@@ -114,7 +113,6 @@ export const updateActionSchema = z.object({
       period_end: nullStr.optional(),
       period_label: nullStr.optional(),
       pem_note: nullStr.optional(),
-      draft_text: nullStr.optional(),
       event_start_at: nullStr
         .optional()
         .describe('New event start ISO datetime if rescheduling'),

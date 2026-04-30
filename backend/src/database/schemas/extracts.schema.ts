@@ -90,7 +90,6 @@ export const extractsTable = pgTable(
       withTimezone: true,
       mode: 'date',
     }),
-    draftText: text('draft_text'),
 
     externalEventId: text('external_event_id'),
     calendarConnectionId: uuid('calendar_connection_id').references(

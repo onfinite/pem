@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
 import type { PemAgentOutput } from '@/modules/chat/types/pem-agent.types';
-import { PemAgentLlm } from '@/modules/chat/agents/pem-agent-llm';
+import { PemAgentLlmService } from '@/modules/chat/services/pem-agent-llm.service';
 
-type PemAgentRunParams = Parameters<PemAgentLlm['run']>[0];
+type PemAgentRunParams = Parameters<PemAgentLlmService['run']>[0];
 
 @Injectable()
 export class PemAgentService {
-  constructor(private readonly llm: PemAgentLlm) {}
+  constructor(private readonly llm: PemAgentLlmService) {}
 
   run(params: PemAgentRunParams): Promise<PemAgentOutput> {
     return this.llm.run(params);

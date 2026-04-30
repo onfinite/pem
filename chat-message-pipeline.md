@@ -301,7 +301,7 @@ Two lanes at runtime:
 
 ## Backend: orchestration
 
-### `backend/src/modules/chat/jobs/chat-orchestrator.service.ts` — `processMessage` (conceptual order)
+### `backend/src/modules/chat/services/chat-orchestrator.service.ts` — `processMessage` (conceptual order)
 
 1. Load message; guard user, skip if already `done`.
 2. Set `processing`, publish SSE status (`Processing...`).
@@ -328,9 +328,9 @@ Two lanes at runtime:
 ### Related modules (by concern)
 
 - Triage: `backend/src/modules/chat/services/triage.service.ts`
-- Question path: `backend/src/modules/chat/jobs/chat-question.service.ts`
-- Vision / photo intent / recall: `photo-vision.service.ts`, `photo-attachment-intent.service.ts`, `chat-photo-recall-intent.service.ts`, `build-photo-recall-metadata.ts`, `image-reference-only-reply.service.ts`
-- Agent + tool output: `backend/src/modules/chat/services/pem-agent.service.ts` (LLM in `agents/pem-agent-llm.ts`)
+- Question path: `backend/src/modules/chat/services/chat-question.service.ts`
+- Vision / photo intent / recall: `backend/src/modules/chat/services/photo-vision.service.ts`, `photo-attachment-intent.service.ts`, `chat-photo-recall-intent.service.ts`, `backend/src/modules/chat/helpers/build-photo-recall-metadata.ts`, `backend/src/modules/chat/services/image-reference-only-reply.service.ts`
+- Agent + tool output: `backend/src/modules/chat/services/pem-agent.service.ts` (delegates to injectable `PemAgentLlmService` in `services/pem-agent-llm.service.ts`; system strings in `services/pem-agent.system-prompt.ts`)
 - RAG / limits: `backend/src/modules/chat/constants/chat.constants.ts` (`AGENT_RECENT_MESSAGES_LIMIT`, `RAG_*`, `BATCH_WINDOW_MS`, …)
 
 ---
@@ -361,7 +361,7 @@ Two lanes at runtime:
 | Chat HTTP + SSE | `backend/src/modules/chat/chat.controller.ts`, `backend/src/modules/chat/services/chat-stream.service.ts` |
 | DB access | `backend/src/modules/chat/services/chat.service.ts` |
 | Worker | `backend/src/modules/chat/jobs/chat.processor.ts` |
-| Orchestrator | `backend/src/modules/chat/jobs/chat-orchestrator.service.ts` |
+| Orchestrator | `backend/src/modules/chat/services/chat-orchestrator.service.ts` |
 | SSE pub/sub | `backend/src/modules/chat/services/chat-events.service.ts` (`ChatEventsService`) |
 
 ---

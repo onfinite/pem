@@ -7,7 +7,7 @@ import { DRIZZLE } from '@/database/database.constants';
 import type { DrizzleDb } from '@/database/database.module';
 import { messagesTable } from '@/database/schemas/index';
 import { BATCH_WINDOW_MS } from '@/modules/chat/constants/chat.constants';
-import { ChatOrchestratorService } from '@/modules/chat/jobs/chat-orchestrator.service';
+import { ChatOrchestratorService } from '@/modules/chat/services/chat-orchestrator.service';
 import { logWithContext } from '@/core/utils/format-log-context';
 
 @Processor('chat')
