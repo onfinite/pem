@@ -159,6 +159,16 @@ export default function VoiceBubble({
   const player = useAudioPlayer(audioSource, { keepAudioSessionActive: true });
   const status = useAudioPlayerStatus(player);
 
+  /** `useAudioPlayer(undefined)` then a file URI often never reports duration until we `replace` after download or after deferred transcript patches the row. */
+  useEffect(() => {
+    if (!localUri || isSending) return;
+    try {
+      player.replace({ uri: localUri });
+    } catch (e) {
+      console.warn("[VoiceBubble] player.replace:", e);
+    }
+  }, [localUri, isSending, message.transcript, message.content, message.voice_url, player]);
+
   const duration = status.duration || 0;
   const currentTime = status.currentTime || 0;
   const progress = duration > 0 ? currentTime / duration : 0;
@@ -295,7 +305,10 @@ export default function VoiceBubble({
         </View>
 
         <View style={styles.bottomRow}>
-          {isUser && isSending && !transcript ? (
+          {isUser &&
+          !transcript?.trim() &&
+          !isFailed &&
+          (!!message.voice_url || !!message._localUri) ? (
             <Text style={[styles.toggleText, { color: dimText, fontStyle: "italic" }]}>
               Transcribing...
             </Text>
