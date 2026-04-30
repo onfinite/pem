@@ -36,7 +36,7 @@
 
 1. **You tap send** — the app calls the API over **HTTP**. The server **saves** your message in Postgres, **enqueues** a background job, and returns **right away** with the real message id and any signed media URLs. It does **not** wait for AI or tools on that same request.
 2. **Your message row** stays in the DB with `processing_status` set so the worker knows what to pick up.
-3. A **BullMQ worker** runs **`ChatProcessor`** → **`ChatOrchestratorService.processMessage`**. That path can take seconds (transcription was already done for multipart voice; here we do triage, optional vision/links, models, writes to tasks/calendar/memory, etc.).
+3. A **BullMQ worker** runs **`ChatProcessor`** → **`ChatOrchestratorService.processMessage`**. That path can take seconds: for **recorded voice with R2**, **Whisper runs here** (after downloading the object); then triage, optional vision/links, models, writes to tasks/calendar/memory, etc. **Without R2** (local dev), Whisper still runs on the HTTP path because there is no stored object for the worker to fetch.
 4. **When Pem’s reply is ready**, the server **publishes** events on a **Redis** channel scoped to your user. The **SSE** connection (`GET /chat/stream`) subscribed to that channel delivers **`pem_message`**, **`status`**, **`message_updated`**, and friends to the app so the UI updates without another manual refresh.
 
 **Design rule:** **HTTP** = persist + acknowledge + enqueue. **Worker** = heavy pipeline. **SSE** = push incremental updates to the open chat screen.
@@ -213,7 +213,7 @@ Think of **three parallel concerns**:
 ### Voice
 
 1. `sendVoiceMessage` builds **`multipart/form-data`**: field `audio` (file), `kind: voice`, optional `image_keys` JSON string for composer photos.
-2. Server transcribes, may upload audio to object storage, saves row with `content`/`transcript`, enqueues job — same mental model as text after that.
+2. Server uploads audio to object storage when R2 is configured, saves the row (`processing_status: pending`), enqueues **`process-message`**, returns JSON **without** waiting for Whisper. The worker then transcribes, updates `content`/`transcript`, and emits **`message_updated`** so the UI can show text. If R2 is **not** configured, Whisper still runs on the HTTP handler (no blob for the worker to read).
 
 ### SSE wiring: `useChatStream` → `openChatStreamConnection` → `dispatchChatSseEvent`
 
@@ -247,7 +247,7 @@ The FlatList doesn’t always map 1:1 to `messages[]` — helpers merge in **dat
 |---------------|------|
 | `POST /chat/messages` | Main send. If body includes **file field `audio`**, delegated to **`ChatVoiceUploadService.acceptRecordedAudio`** (multipart). Else JSON validated as **`SendMessageDto`**. |
 | Idempotency | Optional `idempotency_key` in body or, for multipart voice, query `?idempotency_key=`. If a row already exists for that user + key, return it with **`deduplicated: true`** (no duplicate job). |
-| `kind: "image"` | Dedup/prepare image keys (`ChatImageDedupService`), `saveMessage` (`pending`), **register hashes**, enqueue **`process-message`**, return serialized row + signed media. |
+| `kind: "image"` | Client has already **PUT** bytes to R2 via **`POST /chat/photos/upload-url`**. HTTP handler only validates keys, **`saveMessage`** (`pending`), registers hashes, enqueues **`process-message`**. **No vision / image “reading” on this request** — that runs in the worker (see below). |
 | `kind: "text"` \| `"voice"` (JSON) | `saveMessage` with content / voice fields; optional voice **imageKeys** from payload; enqueue job. **Triage is not run here** — it runs in the orchestrator after content is fully known. |
 | `POST /chat/photos/upload-url` | Presigned PUT for `chat-images/{userId}/{uuid}.ext`; duplicate SHA can short-circuit second upload. |
 | `GET /chat/messages` | Paginated history; `ChatMessagesForClientService.serializeListWithMediaAndLinks` adds signed URLs + link preview shapes. |
@@ -257,10 +257,24 @@ The FlatList doesn’t always map 1:1 to `messages[]` — helpers merge in **dat
 ### Voice upload detail: `api/src/modules/media/voice/chat-voice-upload.service.ts`
 
 1. Parse idempotency + optional `image_keys` JSON from multipart.
-2. **`TranscriptionService.transcribe`** on the audio buffer.
-3. If storage enabled: upload to `chat-voice/{userId}/{timestamp}.m4a`, set `voiceUrl` / `audioKey`.
-4. `saveMessage` with `kind: 'voice'`, `content` + `transcript`, optional `imageKeys`, `processingStatus: 'pending'`.
-5. Enqueue **`process-message`** with **`buildChatProcessMessageJobOpts`** (see below).
+2. If **R2 / storage is enabled:** upload bytes to `chat-voice/{userId}/{timestamp}.m4a`, set `voiceUrl` / `audioKey`, **`saveMessage`** with `content` and `transcript` **null** (Whisper deferred to the worker).
+3. If **storage is disabled:** **`TranscriptionService.transcribe`** on the buffer, then **`saveMessage`** with `content` + `transcript` filled (no object for the worker to download).
+4. Optional `imageKeys` + hash registration unchanged.
+5. Enqueue **`process-message`** with **`buildChatProcessMessageJobOpts`**.
+
+In **`ChatOrchestratorService`**, when the row is voice with empty `transcript`/`content` but has a storage key, the worker **`downloadObject`s** the m4a, runs **`TranscriptionService.transcribeFromBuffer`**, **`ChatService.updateMessage`**, and publishes **`message_updated`** for `transcript` and `content` before triage/links/agent. If **`mergeRapidMessages`** already merged peer **text** into `content`, the worker **skips** re-transcribing (batched text wins).
+
+### Photos — upload vs “reading” (vision)
+
+Photos do **not** use speech **transcription** (that’s **Whisper** on **audio** only). For images, Pem builds a **text description** of what’s in the picture using a **vision** model — think “describe this image,” not “transcribe this recording.”
+
+| Step | Where | What |
+|------|--------|------|
+| Upload | **Client + HTTP** | `POST /chat/photos/upload-url` → presigned **PUT** to R2. |
+| Save + enqueue | **HTTP** | `POST /chat/messages` with `kind: "image"` stores **keys**, optional **caption** in `content`, `processing_status: pending`, then **`process-message`** job. **No vision LLM call here.** |
+| Read pixels + describe | **Worker** | **`ChatOrchestratorService.resolveImagePipelineContent`** (private helper): if `vision_summary` is still empty and R2 is on, **`storage.downloadObject`** per **`image_keys`**, then **`PhotoVisionService.analyzeImage`** on each buffer; results are merged into **`vision_summary`** (and related columns) on the message row, then combined with the user’s **caption** into the **`content` string** used for triage, links, Ask, and agent. |
+
+If **`vision_summary`** is already set (e.g. retry or partial path), vision is skipped and the stored summary is reused. **Voice + attached photos** use the same **`resolveImagePipelineContent`** path after voice text is available.
 
 ### Job enqueue: `api/src/modules/chat/helpers/chat-inbound.helpers.ts`
 

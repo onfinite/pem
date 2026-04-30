@@ -69,6 +69,8 @@ import {
   parseIsoDate,
 } from '@/modules/agent/helpers/chat-orchestrator.helpers';
 import { logWithContext } from '@/core/utils/format-log-context';
+import { ChatService } from '@/modules/messages/chat.service';
+import { TranscriptionService } from '@/modules/media/voice/transcription.service';
 
 @Injectable()
 export class ChatOrchestratorService {
@@ -94,6 +96,8 @@ export class ChatOrchestratorService {
     private readonly photoAttachmentIntent: PhotoAttachmentIntentService,
     private readonly linkPipeline: ChatLinkPipelineService,
     private readonly orchestratorLlm: OrchestratorLlmService,
+    private readonly chat: ChatService,
+    private readonly transcription: TranscriptionService,
   ) {}
 
   async processMessage(
@@ -150,14 +154,42 @@ export class ChatOrchestratorService {
 
       let content = msg.content ?? '';
 
-      if (msg.kind === 'voice' && !msg.transcript && msg.voiceUrl) {
-        await this.publishStatus(userId, messageId, 'Transcribing voice...');
-        // Voice transcription happens before this point in the controller/upload flow
-        // If transcript is already set, use it. Otherwise content stays empty.
-        content = msg.transcript ?? '';
-      }
+      const voiceKey = (msg.audioKey ?? msg.voiceUrl)?.trim() ?? '';
+      const canTranscribeInWorker =
+        msg.kind === 'voice' &&
+        !msg.transcript?.trim() &&
+        !content.trim() &&
+        voiceKey.length > 0 &&
+        this.storage.enabled;
 
-      if (msg.transcript) {
+      if (canTranscribeInWorker) {
+        await this.publishStatus(userId, messageId, 'Transcribing voice...');
+        const downloaded = await this.storage.downloadObject(voiceKey);
+        if (!downloaded?.buffer.length) {
+          throw new Error('Voice audio missing from storage');
+        }
+        const transcriptText = await this.transcription.transcribeFromBuffer({
+          buffer: downloaded.buffer,
+          mimetype: downloaded.contentType,
+          originalname: 'recording.m4a',
+        });
+        await this.chat.updateMessage(
+          messageId,
+          { content: transcriptText, transcript: transcriptText },
+          userId,
+        );
+        await this.chatEvents.publish(userId, 'message_updated', {
+          messageId,
+          field: 'transcript',
+          value: transcriptText,
+        });
+        await this.chatEvents.publish(userId, 'message_updated', {
+          messageId,
+          field: 'content',
+          value: transcriptText,
+        });
+        content = transcriptText;
+      } else if (msg.transcript?.trim()) {
         content = msg.transcript;
       }
 

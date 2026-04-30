@@ -11,10 +11,10 @@ globs: api/**
 
 **Tables (Drizzle: `src/database/schemas/`):** **`users`** (incl. **`timezone`** IANA, **`notification_time`** for morning brief), **`messages`** (**`role`**: `user` | `pem`, **`kind`**: `text` | `voice` | `brief`, content, voice_url, transcript, **`triage_category`**, **`processing_status`**, polished_text, parent_message_id), **`message_links`** (URLs in a user message: original + normalized URL, canonical URL, page title, content type, optional legacy **`jina_snapshot`** jsonb, structured summary / OG description, **`extracted_metadata`** jsonb e.g. `image_url`, fetch_status, fetched_at; FK `message_id` → messages; **24h user-scoped cache** on `normalized_fetch_url`), **`message_embeddings`** (pgvector 1536-dim, FK to messages), **`extracts`** (tone, **urgency** `'someday'|'none'` — all timing via `period_start`/`period_end`/`due_at`, **`meta`** jsonb for rarely-queried fields, batch_key, status; **`message_id`** FK to messages; calendar event fields), **`calendar_connections`**, **`reported_issues`**, **`logs`** (unified audit: types include `chat`), **`memory_facts`**.
 
-**Chat pipeline (workflow-style agent):** User sends message → `POST /chat/messages` → save → enqueue BullMQ `chat` job → return immediately (no AI on the HTTP path; triage runs in the worker).
+**Chat pipeline (workflow-style agent):** User sends message → `POST /chat/messages` → save → enqueue BullMQ `chat` job → return immediately (no triage/agent on the HTTP path; with **R2**, recorded-voice **Whisper** also runs in the worker after `downloadObject`; without R2, Whisper runs in **`ChatVoiceUploadService`** because there is no blob to fetch).
 
 `ChatOrchestratorService` processes:
-1. **Transcribe** (voice messages via Whisper)
+1. **Transcribe** (deferred voice with R2: Whisper in worker + `message_updated`; otherwise transcript already on the row)
 2. **Link reading** (when the message contains URLs): **URL-only messages** run OG HTML fetch before triage; **mixed messages** fetch only for `question_only` | `needs_agent`. **`ChatLinkPipelineService`** stores **`message_links`** and injects **OG title + description (+ image when present)** into Ask + Pem agent prompts so **`memory_writes`** can carry substance. **`GET /chat/messages`** attaches **`link_previews`** for display.
 3. **Triage** (`TriageService`, gpt-4o-mini, routing-only) → `trivial` | `question_only` | `off_topic` | `needs_agent`
 4. **Route:**

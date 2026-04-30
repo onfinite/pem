@@ -70,8 +70,6 @@ export class ChatVoiceUploadService {
       );
     }
 
-    const transcript = await this.transcription.transcribe(audio);
-
     let audioKey: string | null = null;
     let voiceUrl: string | null = null;
     if (this.storage.enabled && audio.buffer) {
@@ -84,11 +82,20 @@ export class ChatVoiceUploadService {
       voiceUrl = audioKey;
     }
 
+    /** With R2, Whisper runs in the BullMQ worker after enqueue. Without R2, transcribe here (no object for the worker to fetch). */
+    let transcript: string | null = null;
+    let content: string | null = null;
+    if (!this.storage.enabled) {
+      const text = await this.transcription.transcribe(audio);
+      transcript = text;
+      content = text;
+    }
+
     const msg = await this.chat.saveMessage({
       userId: user.id,
       role: 'user',
       kind: 'voice',
-      content: transcript,
+      content,
       transcript,
       voiceUrl,
       audioKey,

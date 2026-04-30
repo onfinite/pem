@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { logWithContext } from '@/core/utils/format-log-context';
 
-/** OpenAI Whisper — used by chat voice upload; no persistence here. */
+/** OpenAI Whisper — used by chat voice upload and chat worker (R2-backed deferred transcription). */
 @Injectable()
 export class TranscriptionService {
   private readonly log = new Logger(TranscriptionService.name);
@@ -14,6 +14,22 @@ export class TranscriptionService {
     if (!audio?.buffer) {
       throw new BadRequestException('No audio file provided');
     }
+    return this.transcribeFromBuffer({
+      buffer: Buffer.from(audio.buffer),
+      mimetype: audio.mimetype || 'audio/m4a',
+      originalname: audio.originalname || 'recording.m4a',
+    });
+  }
+
+  /** Whisper from raw bytes (e.g. audio downloaded from R2 in the chat worker). */
+  async transcribeFromBuffer(params: {
+    buffer: Buffer;
+    mimetype: string;
+    originalname?: string;
+  }): Promise<string> {
+    if (!params.buffer?.length) {
+      throw new BadRequestException('No audio bytes provided');
+    }
 
     const apiKey = this.config.get<string>('openai.apiKey');
     if (!apiKey) {
@@ -21,10 +37,10 @@ export class TranscriptionService {
     }
 
     const formData = new FormData();
-    const blob = new Blob([new Uint8Array(audio.buffer)], {
-      type: audio.mimetype || 'audio/m4a',
+    const blob = new Blob([new Uint8Array(params.buffer)], {
+      type: params.mimetype || 'audio/m4a',
     });
-    formData.append('file', blob, audio.originalname || 'recording.m4a');
+    formData.append('file', blob, params.originalname || 'recording.m4a');
     formData.append('model', 'whisper-1');
 
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -39,7 +55,7 @@ export class TranscriptionService {
         logWithContext(`Whisper API error: ${res.status} ${errBody}`, {
           scope: 'whisper',
           httpStatus: res.status,
-          fileName: audio.originalname ?? '',
+          fileName: params.originalname ?? '',
         }),
       );
       throw new BadRequestException('Transcription failed');
