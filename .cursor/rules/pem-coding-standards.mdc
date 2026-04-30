@@ -1,5 +1,5 @@
 ---
-description: Pem — Coding standards. Applies to all files in the codebase. NestJS backend and React Native frontend. Read this before writing any code.
+description: Pem — Coding standards. Applies to all files in the codebase. NestJS API and React Native frontend. Read this before writing any code.
 globs: **/*
 alwaysApply: true
 ---
@@ -111,8 +111,8 @@ Use **`@/`** for **internal** imports (this monorepo’s source). Keep **package
 
 | Package | Alias | Maps to | Config |
 |---------|--------|---------|--------|
-| **`backend/`** | `@/` | **`src/`** | `backend/tsconfig.json` (`baseUrl` + `paths`). Nest’s `nest build` / watch **rewrites** `@/` to relative paths in emitted **`dist/`** JS. |
-| **`app/`** | `@/` | **`app/`** project root | `app/tsconfig.json`, `babel.config.js` (**`babel-plugin-module-resolver`**), `metro.config.js`, `vitest.config.ts`. |
+| **`api/`** | `@/` | **`src/`** | `api/tsconfig.json` (`baseUrl` + `paths`). Nest’s `nest build` / watch **rewrites** `@/` to relative paths in emitted **`dist/`** JS. |
+| **`mobile-app/`** | `@/` | **`mobile-app/`** project root | `mobile-app/tsconfig.json`, `babel.config.js` (**`babel-plugin-module-resolver`**), `metro.config.js`, `vitest.config.ts`. |
 
 **Examples**
 
@@ -126,7 +126,7 @@ import { pemAmber } from '@/constants/theme'
 import { PemText } from '@/components/ui/PemText'
 ```
 
-**Do not** use long `../../` chains (or same-folder `./`) for our own modules — use **`@/…`** so paths stay stable when files move. **Jest** (`backend/package.json`) and **e2e** (`test/jest-e2e.json`) include `moduleNameMapper` for `@/`.
+**Do not** use long `../../` chains (or same-folder `./`) for our own modules — use **`@/…`** so paths stay stable when files move. **Jest** (`api/package.json`) and **e2e** (`test/jest-e2e.json`) include `moduleNameMapper` for `@/`.
 
 ---
 
@@ -475,7 +475,7 @@ constants/
 
 ---
 
-## NestJS backend specifics
+## NestJS API specifics
 
 ### Controllers are thin — they only route
 ```typescript
@@ -627,7 +627,7 @@ export const radius = {
 }
 ```
 
-Prefer **`app/constants/theme.ts`** and **`typography.ts`** (Pem brand) over duplicating values.
+Prefer **`mobile-app/constants/theme.ts`** and **`typography.ts`** (Pem brand) over duplicating values.
 
 ### No `any` — ever
 ```typescript
@@ -653,9 +653,9 @@ return <Content />
 
 ## Folder structure
 
-### React Native app (`app/` — expo-router)
+### React Native app (`mobile-app/` — expo-router)
 ```
-app/
+mobile-app/
   app/                    ← routes: (app)/, (public)/, _layout, index
   components/
     chat/                 ← bubbles/, input/, media/, links/, chrome/, calendar/, TaskPill
@@ -675,7 +675,7 @@ app/
 
 See **`pem-app.mdc`** for product + navigation notes.
 
-### NestJS backend
+### NestJS API (`api/`)
 ```
 src/
   modules/

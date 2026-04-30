@@ -1,4 +1,4 @@
-# Pem backend (NestJS + Drizzle)
+# Pem API (NestJS + Drizzle)
 
 HTTP API for Pem: **PostgreSQL** (users, messages, extracts, calendar, embeddings, etc.), **Clerk** auth and webhooks, **BullMQ** workers.
 
@@ -11,7 +11,7 @@ HTTP API for Pem: **PostgreSQL** (users, messages, extracts, calendar, embedding
 ## Setup
 
 ```bash
-cd backend
+cd api
 npm install
 cp .env.example .env   # fill DATABASE_URL + Clerk vars (see repo root README)
 npm run start:dev

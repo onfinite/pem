@@ -1,16 +1,16 @@
 ---
 description: Expo app — routing, imports, UI tokens, and RN patterns (thought organizer)
-globs: app/**/*
+globs: mobile-app/**/*
 alwaysApply: false
 ---
 
-# Pem mobile app (`app/`)
+# Pem mobile app (`mobile-app/`)
 
 **Product:** **dump → organized extracts + thoughts journal**. Primary surface: **`/inbox`** (Daily Brief). Voice-first dump via inline bar, text secondary. **Intake bar** — user picks **Dump** or **Ask** via **? ask** / **× dump** toggle beside the field (no swipe); same text/voice UI, different endpoints (`/dumps` vs `/ask`, including voice variants).
 
 ## Screens & navigation
 
-- **Navigation:** **expo-router** **`Stack`** (`app/(app)/_layout.tsx`) + **`AppDrawerProvider`** / **`AppDrawerContent`** — simplified drawer:
+- **Navigation:** **expo-router** **`Stack`** (`mobile-app/app/(app)/_layout.tsx`) + **`AppDrawerProvider`** / **`AppDrawerContent`** — simplified drawer:
   - **Main:** Brief · Dumps · Done
   - **Bottom:** Settings
 - Batch/category pages accessible via batch chips on Brief or `/category/[slug]` route.
@@ -20,7 +20,7 @@ alwaysApply: false
 
 ## TypeScript & components
 
-- **Path aliases:** import internal modules with **`@/`** from the **`app/`** package root (`app/tsconfig.json`, Babel **`module-resolver`**, **`metro.config.js`**, **`vitest.config.ts`**). See **`pem-coding-standards.mdc`** (*Path aliases*).
+- **Path aliases:** import internal modules with **`@/`** from the **`mobile-app/`** package root (`mobile-app/tsconfig.json`, Babel **`module-resolver`**, **`metro.config.js`**, **`vitest.config.ts`**). See **`pem-coding-standards.mdc`** (*Path aliases*).
 - **TypeScript strict** — functional components only.
 - **API:** **`services/api/pemApi.ts`** — types: `ApiExtract`, `BriefResponse`, `LogEntry`, `AskPemResponse`, `ExtractsQueryParams`. Key functions: `getBrief`, `getExtractHistory`, `patchExtractDone`/`Dismiss`/`Undone`/`Undismiss`/`Snooze`, `createDump`, `createVoiceDump`, `retryDumpExtraction`, `askPem`, `createVoiceAsk`, `getAskHistory`. Routes: `/inbox/brief`, `/dumps`, `/dumps/voice`, `POST /dumps/:id/retry`, `/ask`, `/ask/voice`, `/ask/history`, `/extracts/...`.
 - **Inbox UI tokens:** **`constants/inboxChrome.ts`** (light/dark glance surfaces); compose with **`ThemeContext`**.

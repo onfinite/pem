@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Rewrites relative TS/TSX imports under app/ to @/… (see app/tsconfig.json paths).
+ * Rewrites relative TS/TSX imports under mobile-app/ to @/… (see mobile-app/tsconfig.json paths).
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appRoot = path.join(__dirname, "..", "app");
+const appRoot = path.join(__dirname, "..", "mobile-app");
 
 function walkFiles(dir, acc = []) {
   if (!fs.existsSync(dir)) return acc;

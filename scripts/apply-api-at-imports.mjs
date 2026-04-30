@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * One-shot codemod: rewrite relative TS imports under backend/src and backend/test
- * to @/… (paths must match backend/tsconfig.json).
+ * One-shot codemod: rewrite relative TS imports under api/src and api/test
+ * to @/… (paths must match api/tsconfig.json).
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const backendRoot = path.join(__dirname, "..", "backend");
-const srcRoot = path.join(backendRoot, "src");
+const apiRoot = path.join(__dirname, "..", "api");
+const srcRoot = path.join(apiRoot, "src");
 
 function walkTsFiles(dir, acc = []) {
   if (!fs.existsSync(dir)) return acc;
@@ -54,7 +54,7 @@ function transformSource(fromFile, text) {
 
 const files = [
   ...walkTsFiles(srcRoot),
-  ...walkTsFiles(path.join(backendRoot, "test")),
+  ...walkTsFiles(path.join(apiRoot, "test")),
 ];
 
 let changed = 0;

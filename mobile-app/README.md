@@ -1,8 +1,8 @@
-# Pem mobile app (`app/`)
+# Pem mobile app (`mobile-app/`)
 
 Expo + React Native client. **Product story, stack, and env** are documented in the **repo root [`README.md`](../README.md)**.
 
-## Commands (from `app/`)
+## Commands (from `mobile-app/`)
 
 ```bash
 npm install

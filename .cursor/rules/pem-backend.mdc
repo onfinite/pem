@@ -1,11 +1,11 @@
 ---
-description: NestJS backend in backend/ — Drizzle, Clerk, conventions (chat architecture)
-globs: backend/**
+description: NestJS API in api/ — Drizzle, Clerk, conventions (chat architecture)
+globs: api/**
 ---
 
-# Pem backend (`backend/`)
+# Pem API (`api/`)
 
-**Package:** NestJS app under **`backend/`** — `npm install`, `npm run start:dev`, `npm run build` from `backend/`. No shared runtime code with `app/`. **Internal imports:** use **`@/`** → **`src/`** (see **`pem-coding-standards.mdc`**, `backend/tsconfig.json`); Nest emits relative requires in **`dist/`**.
+**Package:** NestJS app under **`api/`** — `npm install`, `npm run start:dev`, `npm run build` from `api/`. No shared runtime code with `mobile-app/`. **Internal imports:** use **`@/`** → **`src/`** (see **`pem-coding-standards.mdc`**, `api/tsconfig.json`); Nest emits relative requires in **`dist/`**.
 
 **Stack:** **NestJS** ~11, **Drizzle ORM** + **`pg`**, **pgvector** (vector similarity search), **Clerk** JWT (**`jose`** + JWKS), **Svix** for `POST /webhooks/clerk`, **`@nestjs/throttler`**, **`ValidationPipe`**. **Config** — **`src/core/config/configuration.ts`** (loaded from **`AppModule`**). **OpenAI** via **Vercel AI SDK v6** (`generateText` + `Output`, `embed`, never `generateObject`). **Link previews** — **`OgHtmlReaderService`** in **`MediaModule`** (`src/modules/media/links/`): SSRF-guarded **`fetch`** + **Cheerio** parse of **`og:title`**, **`og:description`**, **`og:image`** (plus `<title>` fallback); metadata is stored on **`message_links`** (`page_title`, `structured_summary`, `extracted_metadata` for image URL). **`jina_snapshot`** remains a nullable legacy column. **BullMQ** — **`BullModule.forRootAsync`** + **`ScheduleModule.forRoot()`** in **`AppModule`**; **`ChatModule`** and **`MediaModule`** each call **`BullModule.registerQueue({ name: 'chat' })`** so **`InjectQueue('chat')`** resolves in the controller and in **`ChatVoiceUploadService`**; **`BriefsModule`** registers **`weekly-planning`**; processors live in **`MessagingModule`** / **`BriefsModule`**. **Expo** push — **`notifyInboxUpdated`**. OpenAI **Whisper API** for voice transcription.
 

@@ -13,31 +13,31 @@ const WARN_ONLY = process.env.STANDARDS_WARN_ONLY === "1";
 const LIMITS = [
   {
     name: "RN component / screen (.tsx)",
-    globs: ["app"],
+    globs: ["mobile-app"],
     match: (p) => p.endsWith(".tsx") && !p.includes("node_modules"),
     max: 150,
   },
   {
     name: "NestJS service (.service.ts)",
-    globs: ["backend/src"],
+    globs: ["api/src"],
     match: (p) => p.endsWith(".service.ts"),
     max: 200,
   },
   {
     name: "NestJS controller (.controller.ts)",
-    globs: ["backend/src"],
+    globs: ["api/src"],
     match: (p) => p.endsWith(".controller.ts"),
     max: 80,
   },
   {
-    name: "Hook (app/hooks/use*.ts)",
-    globs: ["app/hooks"],
-    match: (p) => /^app\/hooks\/use[^/]+\.ts$/.test(p),
+    name: "Hook (mobile-app/hooks/use*.ts)",
+    globs: ["mobile-app/hooks"],
+    match: (p) => /^mobile-app\/hooks\/use[^/]+\.ts$/.test(p),
     max: 80,
   },
   {
-    name: "Util (**/utils/*.ts in app or backend)",
-    globs: ["app", "backend/src"],
+    name: "Util (**/utils/*.ts in mobile-app or api)",
+    globs: ["mobile-app", "api/src"],
     match: (p) =>
       p.includes("/utils/") &&
       p.endsWith(".ts") &&

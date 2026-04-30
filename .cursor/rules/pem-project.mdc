@@ -24,18 +24,18 @@ alwaysApply: true
 
 **Product (Pem):** A mobile product for **busy minds** — users **dump** thoughts (text); Pem **preps** (search, research, options, drafts) in parallel; users **come back** to **preps** ready to act on and mark done. Pem does the **middle work** between “I need to deal with this” and “I’m ready” — **not** a chatbot to babysit or a task manager to maintain; **you** always perform the final action (send, buy, decide). Full product story, prep types table, and navigation direction: **repo `README.md`** (*What is Pem?*).
 
-**Brand & color:** For **palette, typography, logo usage, voice** when unsure, read **`brand/pem-brand.html`** in the repo (browser) and **`brand/README.md`**. Implementations should stay aligned with **`app/constants/theme.ts`** and **`app/constants/typography.ts`**.
+**Brand & color:** For **palette, typography, logo usage, voice** when unsure, read **`brand/pem-brand.html`** in the repo (browser) and **`brand/README.md`**. Implementations should stay aligned with **`mobile-app/constants/theme.ts`** and **`mobile-app/constants/typography.ts`**.
 
-**Layout:** `app/` = mobile client, `backend/` = HTTP API (NestJS + Drizzle). Treat them as separate packages; do not assume shared runtime code between them.
+**Layout:** `mobile-app/` = mobile client, `api/` = HTTP API (NestJS + Drizzle). Treat them as separate packages; do not assume shared runtime code between them.
 
 **Stacks (authoritative):**
 
 | Area | Stack |
 |------|--------|
-| Mobile | **Expo ~54**, **React 19**, **React Native**, **expo-router** (file-based routes), **TypeScript** (strict), **New Architecture** + **React Compiler** (see `app/app.json` experiments) |
-| API | **`backend/`** — **Node**, **NestJS**, **Drizzle ORM**, **PostgreSQL** (`pg`), **Clerk** (JWT via **jose** + JWKS, webhooks via **Svix**), **@nestjs/throttler** |
+| Mobile | **Expo ~54**, **React 19**, **React Native**, **expo-router** (file-based routes), **TypeScript** (strict), **New Architecture** + **React Compiler** (see `mobile-app/app.json` experiments) |
+| API | **`api/`** — **Node**, **NestJS**, **Drizzle ORM**, **PostgreSQL** (`pg`), **Clerk** (JWT via **jose** + JWKS, webhooks via **Svix**), **@nestjs/throttler** |
 
-**Conventions:** Prefer small, focused changes; match existing naming (`Pem*` UI primitives in `app/`, Nest modules in `backend/`). **Internal imports** use the **`@/`** alias (`@/*` → `backend/src/*` or `app/` root); see **`pem-coding-standards.mdc`** (*Path aliases*). Run `expo lint` in `app/` and `npm run lint` in `backend/` when editing those trees. **Detailed standards** (file line limits, components/hooks, no long JSX ternaries, isolated prompts, security and scalability checklists): **`pem-coding-standards.mdc`**.
+**Conventions:** Prefer small, focused changes; match existing naming (`Pem*` UI primitives in `mobile-app/`, Nest modules in `api/`). **Internal imports** use the **`@/`** alias (`@/*` → `api/src/*` or `mobile-app/` root); see **`pem-coding-standards.mdc`** (*Path aliases*). Run `expo lint` in `mobile-app/` and `npm run lint` in `api/` when editing those trees. **Detailed standards** (file line limits, components/hooks, no long JSX ternaries, isolated prompts, security and scalability checklists): **`pem-coding-standards.mdc`**.
 
 **`README.md` as source of truth:** The repo-root **`README.md`** is canonical **human-facing documentation** (stack, layout, how to run, env, contributor workflow). Whenever a change affects what contributors need to know—**new packages**, **dependencies**, **patterns**, **setup**, **commands**, or **folder roles**—**update `README.md` in the same effort** so it stays accurate. Do not leave README stale while code or `.mdc` files move ahead.
 
@@ -43,9 +43,9 @@ alwaysApply: true
 
 | What changed | Update (non-exhaustive) |
 |----------------|-------------------------|
-| **DB** — Drizzle schema, new/renamed columns, table drops | Edit **`src/database/schemas/`** only; run **`npm run db:generate`** (never hand-write SQL under `drizzle/` or hand-edit `meta/`). See **Drizzle workflow** below. Update `pem-backend.mdc` + `backend/README.md` when workflow or tables change. |
-| **API** — routes, payloads, SSE/event names, auth | `pem-backend.mdc`; keep DTOs accurate; **`app/lib/pemApi.ts`** types when the client consumes it |
-| **Styling & UI architecture** — tokens, navigation routes, new patterns | `pem-app.mdc`; **`app/constants/theme.ts`** & **typography** stay the implementation source of truth |
+| **DB** — Drizzle schema, new/renamed columns, table drops | Edit **`src/database/schemas/`** only; run **`npm run db:generate`** (never hand-write SQL under `drizzle/` or hand-edit `meta/`). See **Drizzle workflow** below. Update `pem-backend.mdc` + `api/README.md` when workflow or tables change. |
+| **API** — routes, payloads, SSE/event names, auth | `pem-backend.mdc`; keep DTOs accurate; **`mobile-app/services/api/pemApi.ts`** types when the client consumes it |
+| **Styling & UI architecture** — tokens, navigation routes, new patterns | `pem-app.mdc`; **`mobile-app/constants/theme.ts`** & **typography** stay the implementation source of truth |
 | **Product / strategy** — what Pem is, intake, naming (“prep” vs actionables, etc.) | `pem-thought-organizer.mdc`, `pem-product-brief.mdc`, **`README.md`** *What is Pem?* — whichever files own that story |
 | **Dependencies, env vars, scripts, folder roles** | `pem-project.mdc` stack table; **root `README.md`** |
 | **Coding style / PR checklist** — line limits, naming, security & scalability | `pem-coding-standards.mdc` |
@@ -54,7 +54,7 @@ Also update **`README.md`** whenever contributor-facing facts change (see above)
 
 **Are we doing it in practice?** Only if every change follows the table. When you notice drift (e.g. backend `.mdc` still describing dropped tables), **fix the `.mdc` in the same fix** as the code correction.
 
-**Drizzle workflow (`backend/`):**
+**Drizzle workflow (`api/`):**
 
 - **Source of truth:** `src/database/schemas/` (TypeScript). Do **not** add or edit `.sql` files under `drizzle/` by hand, and do **not** manually edit `drizzle/meta/` (snapshots, `_journal.json`) — **Drizzle Kit** owns that state when you run **`npm run db:generate`**.
 - **`npm run db:generate`** — diffs schema → writes the next migration SQL + updates `meta/`. Use whenever the schema changes.
