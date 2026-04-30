@@ -1,7 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module, forwardRef } from '@nestjs/common';
 
-import { ChatModule } from '@/modules/chat/chat.module';
+import { MessagingModule } from '@/modules/messaging/messaging.module';
 import { DatabaseModule } from '@/database/database.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { CalendarController } from '@/modules/calendar/calendar.controller';
@@ -13,7 +13,7 @@ import { GoogleCalendarService } from '@/modules/calendar/services/google-calend
 
 @Module({
   imports: [
-    forwardRef(() => ChatModule),
+    forwardRef(() => MessagingModule),
     DatabaseModule,
     UsersModule,
     BullModule.registerQueue({ name: 'calendar-sync' }),

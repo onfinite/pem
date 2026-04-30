@@ -227,19 +227,19 @@ Two lanes at runtime:
 | Live updates | `useChatStream({ onPemMessage, onStatus, onMessageUpdated, onTasksUpdated, … })`. |
 | Optimistic sends | `handleSendText`, `handleSendImage`, `handleSendVoice`, `handleComposerSend` (text vs pending photos). |
 
-### HTTP helpers: `app/lib/pemApi.ts`
+### HTTP helpers: `app/services/api/pemApi.ts`
 
 - `sendChatMessage` → `POST /chat/messages` (JSON: `kind: text | voice | image`, optional `idempotency_key`, image keys, caption).
 - `sendVoiceMessage` → `POST /chat/voice` (multipart `audio`, optional `image_keys` JSON).
 - `getChatMessages` → `GET /chat/messages?before=&limit=`.
 - `requestPhotoUploadUrl` → `POST /chat/photos/upload-url` (presigned PUT for R2).
 
-### Image upload path: `app/lib/uploadChatImage.ts`
+### Image upload path: `app/services/media/uploadChatImage.ts`
 
 - `uploadPendingChatImageKeys` — presign + `PUT` each local URI.
 - `uploadChatImagesAndSend` — uploads then `sendChatMessage({ kind: "image", image_keys, content? })`.
 
-### SSE: `app/hooks/useChatStream.ts` + `app/hooks/chatStream/`
+### SSE: `app/hooks/chat/useChatStream.ts` + `app/hooks/chat/chatStream/`
 
 - `openChatStreamConnection` — `EventSource` to `{API}/chat/stream` with `Authorization: Bearer <Clerk JWT>`.
 - `dispatchChatSseEvent` — parses JSON by event type: `pem_message`, `status`, `message_updated`, `pem_token`, `pem_stream_done`, `tasks_updated`.
@@ -247,7 +247,7 @@ Two lanes at runtime:
 ### Offline slice and disk images
 
 - **AsyncStorage**: last **50** “cacheable” sent messages (no optimistic-only fields blocking cache) — see `CACHE_LIMIT` and `writeCache` in `chat.tsx`.
-- **Disk**: `app/lib/chatCachePersistedImages.ts` — downloads user chat images and Pem photo-recall thumbnails under `documentDirectory/pem-chat-images/v1/`, attaches `_persistedImageUris` / `_persistedPhotoRecall` to cached JSON, **prunes** files not referenced by that slice after each persist pass.
+- **Disk**: `app/services/cache/chatCachePersistedImages.ts` — downloads user chat images and Pem photo-recall thumbnails under `documentDirectory/pem-chat-images/v1/`, attaches `_persistedImageUris` / `_persistedPhotoRecall` to cached JSON, **prunes** files not referenced by that slice after each persist pass.
 
 ---
 
@@ -285,13 +285,13 @@ Two lanes at runtime:
 | `GET /chat/messages` | Paginated list; each row serialized + signed media URLs attached. |
 | `GET /chat/stream` | SSE subscription for user (see `ChatStreamService`). |
 
-### Persistence: `backend/src/modules/chat/services/chat.service.ts`
+### Persistence: `backend/src/modules/messages/chat.service.ts`
 
 - `saveMessage` — insert user (or Pem) row.
 - `getMessages` — cursor `before` on `created_at`, limit clamped (default 50, max 100), chronological page.
 - `updateMessage`, `findMessage`, `findMessageByIdempotencyKey`, `serializeMessage`, etc.
 
-### Queue: `backend/src/modules/chat/jobs/chat.processor.ts`
+### Queue: `backend/src/modules/messaging/jobs/chat.processor.ts`
 
 - Job payload: `{ messageId, userId }`.
 - **`mergeRapidMessages`** — within `BATCH_WINDOW_MS` (8s, `constants/chat.constants.ts`), other **pending** user messages from same user may be **merged into this job’s primary** `content`; peers marked `processing_status: 'done'` so their jobs no-op.
@@ -301,7 +301,7 @@ Two lanes at runtime:
 
 ## Backend: orchestration
 
-### `backend/src/modules/chat/services/chat-orchestrator.service.ts` — `processMessage` (conceptual order)
+### `backend/src/modules/messaging/chat-orchestrator.service.ts` — `processMessage` (conceptual order)
 
 1. Load message; guard user, skip if already `done`.
 2. Set `processing`, publish SSE status (`Processing...`).
@@ -327,10 +327,10 @@ Two lanes at runtime:
 
 ### Related modules (by concern)
 
-- Triage: `backend/src/modules/chat/services/triage.service.ts`
-- Question path: `backend/src/modules/chat/services/chat-question.service.ts`
-- Vision / photo intent / recall: `backend/src/modules/chat/services/photo-vision.service.ts`, `photo-attachment-intent.service.ts`, `chat-photo-recall-intent.service.ts`, `backend/src/modules/chat/helpers/build-photo-recall-metadata.ts`, `backend/src/modules/chat/services/image-reference-only-reply.service.ts`
-- Agent + tool output: `backend/src/modules/chat/services/pem-agent.service.ts` (delegates to injectable `PemAgentLlmService` in `services/pem-agent-llm.service.ts`; system strings in `services/pem-agent.system-prompt.ts`)
+- Triage: `backend/src/modules/messaging/triage.service.ts`
+- Question path: `backend/src/modules/agent/question/chat-question.service.ts`
+- Vision / photo intent / recall: `backend/src/modules/media/photo/photo-vision.service.ts`, `photo-attachment-intent.service.ts`, `chat-photo-recall-intent.service.ts`, `backend/src/modules/media/photo/helpers/build-photo-recall-metadata.ts`, `backend/src/modules/media/photo/image-reference-only-reply.service.ts`
+- Agent + tool output: `backend/src/modules/agent/pem-agent.service.ts` (delegates to `PemAgentLlmService` in `pem-agent-llm.service.ts`; system strings in `pem-agent.system-prompt.ts`)
 - RAG / limits: `backend/src/modules/chat/constants/chat.constants.ts` (`AGENT_RECENT_MESSAGES_LIMIT`, `RAG_*`, `BATCH_WINDOW_MS`, …)
 
 ---
@@ -354,15 +354,15 @@ Two lanes at runtime:
 | Area | Path |
 |------|------|
 | Chat screen + cache + sends | `app/app/(app)/chat.tsx` |
-| API client | `app/lib/pemApi.ts` |
-| Image upload | `app/lib/uploadChatImage.ts` |
-| Cached images on disk | `app/lib/chatCachePersistedImages.ts` |
-| SSE hook + connection | `app/hooks/useChatStream.ts`, `app/hooks/chatStream/openChatStreamConnection.ts`, `app/hooks/chatStream/dispatchChatSseEvent.ts` |
-| Chat HTTP + SSE | `backend/src/modules/chat/chat.controller.ts`, `backend/src/modules/chat/services/chat-stream.service.ts` |
-| DB access | `backend/src/modules/chat/services/chat.service.ts` |
-| Worker | `backend/src/modules/chat/jobs/chat.processor.ts` |
-| Orchestrator | `backend/src/modules/chat/services/chat-orchestrator.service.ts` |
-| SSE pub/sub | `backend/src/modules/chat/services/chat-events.service.ts` (`ChatEventsService`) |
+| API client | `app/services/api/pemApi.ts` |
+| Image upload | `app/services/media/uploadChatImage.ts` |
+| Cached images on disk | `app/services/cache/chatCachePersistedImages.ts` |
+| SSE hook + connection | `app/hooks/chat/useChatStream.ts`, `app/hooks/chat/chatStream/openChatStreamConnection.ts`, `app/hooks/chat/chatStream/dispatchChatSseEvent.ts` |
+| Chat HTTP + SSE | `backend/src/modules/chat/chat.controller.ts`, `backend/src/modules/messaging/chat-stream.service.ts` |
+| DB access | `backend/src/modules/messages/chat.service.ts` |
+| Worker | `backend/src/modules/messaging/jobs/chat.processor.ts` |
+| Orchestrator | `backend/src/modules/messaging/chat-orchestrator.service.ts` |
+| SSE pub/sub | `backend/src/modules/messaging/chat-events.service.ts` (`ChatEventsService`) |
 
 ---
 

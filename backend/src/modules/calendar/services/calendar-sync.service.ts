@@ -13,7 +13,7 @@ import {
   messagesTable,
   type CalendarConnectionRow,
 } from '@/database/schemas/index';
-import { ChatEventsService } from '@/modules/chat/services/chat-events.service';
+import { ChatEventsService } from '@/modules/messaging/chat-events.service';
 import { CalendarConnectionService } from '@/modules/calendar/services/calendar-connection.service';
 import {
   GoogleCalendarService,

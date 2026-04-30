@@ -15,12 +15,12 @@ import {
   getUserSummary,
   setNotificationTime,
   updateUserSummary,
-} from "@/lib/pemApi";
-import { openExternalUrl } from "@/lib/openExternalUrl";
+} from "@/services/api/pemApi";
+import { openExternalUrl } from "@/services/links/openExternalUrl";
 import {
   mergeSettingsScreenCache,
   readSettingsScreenCache,
-} from "@/lib/settingsScreenCache";
+} from "@/services/cache/settingsScreenCache";
 import { useAuth, useClerk, useUser } from "@clerk/expo";
 import { router } from "expo-router";
 import DateTimePicker from "@react-native-community/datetimepicker";

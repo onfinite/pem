@@ -1,5 +1,5 @@
-import type { PersistedPhotoRecallRow } from "@/lib/chatCachePersistedImages";
-import type { ApiMessage } from "@/lib/pemApi";
+import type { PersistedPhotoRecallRow } from "@/services/cache/chatCachePersistedImages";
+import type { ApiMessage } from "@/services/api/pemApi";
 
 export type ClientMessage = ApiMessage & {
   _clientStatus?: "sending" | "sent" | "failed";

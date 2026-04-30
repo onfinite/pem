@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Image, type ImageProps, StyleSheet, View } from "react-native";
 
-import { isLikelyBlockedRemoteImageUrl, normalizeRemoteImageUri } from "@/lib/remoteImageUrl";
+import { isLikelyBlockedRemoteImageUrl, normalizeRemoteImageUri } from "@/services/media/remoteImageUrl";
 
 type Props = Omit<ImageProps, "source"> & {
   uri: string;

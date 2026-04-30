@@ -1,18 +1,18 @@
-import ChatBubble from "@/components/chat/ChatBubble";
-import ChatDateHeader from "@/components/chat/ChatDateHeader";
-import ChatInput from "@/components/chat/ChatInput";
-import ChatSearchBar from "@/components/chat/ChatSearchBar";
-import ChatStatusBubble from "@/components/chat/ChatStatusBubble";
-import { ChatScreenEmptyState } from "@/components/chat/ChatScreenEmptyState";
-import { ChatScreenHeader } from "@/components/chat/ChatScreenHeader";
-import { ChatScreenSkeletonBubbles } from "@/components/chat/ChatScreenSkeletonBubbles";
-import { ChatImageSourceSheet } from "@/components/chat/ChatImageSourceSheet";
+import ChatBubble from "@/components/chat/bubbles/ChatBubble";
+import ChatDateHeader from "@/components/chat/bubbles/ChatDateHeader";
+import ChatInput from "@/components/chat/input/ChatInput";
+import ChatSearchBar from "@/components/chat/chrome/ChatSearchBar";
+import ChatStatusBubble from "@/components/chat/bubbles/ChatStatusBubble";
+import { ChatScreenEmptyState } from "@/components/chat/chrome/ChatScreenEmptyState";
+import { ChatScreenHeader } from "@/components/chat/chrome/ChatScreenHeader";
+import { ChatScreenSkeletonBubbles } from "@/components/chat/chrome/ChatScreenSkeletonBubbles";
+import { ChatImageSourceSheet } from "@/components/chat/input/ChatImageSourceSheet";
 import TaskDrawer, { type TaskDrawerHandle } from "@/components/inbox/TaskDrawer";
 import { space } from "@/constants/typography";
 import { pemAmber } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
-import { useChatStream } from "@/hooks/useChatStream";
-import { useMessageSearch } from "@/hooks/useMessageSearch";
+import { useChatStream } from "@/hooks/chat/useChatStream";
+import { useMessageSearch } from "@/hooks/shared/useMessageSearch";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import {
   getBrief,
@@ -22,14 +22,14 @@ import {
   sendChatMessage,
   sendVoiceMessage,
   type BriefResponse,
-} from "@/lib/pemApi";
+} from "@/services/api/pemApi";
 import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 import { buildHeaderSummary } from "@/lib/chatScreenHeaderSummary";
 import {
   mergeServerMessagesWithClientLocals,
   readChatMessagesCache,
   writeChatMessagesCache,
-} from "@/lib/chatScreenMessageCache";
+} from "@/services/cache/chatScreenMessageCache";
 import {
   buildChatDisplayItems,
   type ChatDisplayItem,
@@ -38,16 +38,16 @@ import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
 import {
   uploadChatImagesAndSend,
   uploadPendingChatImageKeys,
-} from "@/lib/uploadChatImage";
+} from "@/services/media/uploadChatImage";
 import {
   pendingImagesFromPickerAssets,
   type PendingChatImage,
-} from "@/lib/pendingChatImagesFromPicker";
+} from "@/services/media/pendingChatImagesFromPicker";
 import {
   loadPendingImagesDraft,
   savePendingImagesDraft,
-} from "@/lib/pendingChatImagesDraft";
-import { setChatScreenFocused } from "@/lib/chatPushPresence";
+} from "@/services/media/pendingChatImagesDraft";
+import { setChatScreenFocused } from "@/services/push/chatPushPresence";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";

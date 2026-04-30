@@ -6,7 +6,7 @@ import { space } from "@/constants/typography";
 import { useAuth } from "@clerk/expo";
 import { Redirect } from "expo-router";
 import { Shield } from "lucide-react-native";
-import { openExternalUrl } from "@/lib/openExternalUrl";
+import { openExternalUrl } from "@/services/links/openExternalUrl";
 import { useEffect, useRef } from "react";
 import { Animated, Image, StyleSheet, View } from "react-native";
 

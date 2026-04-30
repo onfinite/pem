@@ -1,2 +1,2 @@
-export { default } from "@/components/inbox/task-drawer/TaskDrawerView";
-export type { TaskDrawerHandle } from "@/components/inbox/task-drawer/types";
+export { default } from "@/components/drawer/tabs/TaskDrawerView";
+export type { TaskDrawerHandle } from "@/components/drawer/types";

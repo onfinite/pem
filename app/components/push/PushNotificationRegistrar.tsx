@@ -1,5 +1,5 @@
-import { isChatScreenFocusedRef } from "@/lib/chatPushPresence";
-import { setUserPushToken } from "@/lib/pemApi";
+import { isChatScreenFocusedRef } from "@/services/push/chatPushPresence";
+import { setUserPushToken } from "@/services/api/pemApi";
 import { useAuth } from "@clerk/expo";
 import Constants from "expo-constants";
 import * as Device from "expo-device";

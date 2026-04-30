@@ -1,4 +1,4 @@
-import { getMe, patchTimezone } from "@/lib/pemApi";
+import { getMe, patchTimezone } from "@/services/api/pemApi";
 import { useAuth } from "@clerk/expo";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef } from "react";

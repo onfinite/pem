@@ -8,15 +8,15 @@ import {
   getGoogleAuthUrl,
   setCalendarPrimary,
   type CalendarConnection,
-} from "@/lib/pemApi";
+} from "@/services/api/pemApi";
 import {
   mergeSettingsScreenCache,
   readSettingsScreenCache,
-} from "@/lib/settingsScreenCache";
+} from "@/services/cache/settingsScreenCache";
 import { useAuth } from "@clerk/expo";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { triggerCalendarSync } from "@/lib/pemApi";
+import { triggerCalendarSync } from "@/services/api/pemApi";
 import { CalendarDays, Crown, Plus, RefreshCw, Trash2 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Animated, Easing, Pressable, StyleSheet, View } from "react-native";

@@ -2,7 +2,7 @@ import TimezoneRegistrar from "@/components/auth/TimezoneRegistrar";
 import PushNotificationRegistrar from "@/components/push/PushNotificationRegistrar";
 import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getMe } from "@/lib/pemApi";
+import { getMe } from "@/services/api/pemApi";
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";

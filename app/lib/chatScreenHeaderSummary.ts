@@ -1,4 +1,4 @@
-import type { BriefResponse } from "@/lib/pemApi";
+import type { BriefResponse } from "@/services/api/pemApi";
 
 export function buildHeaderSummary(brief: BriefResponse | null): {
   text: string;

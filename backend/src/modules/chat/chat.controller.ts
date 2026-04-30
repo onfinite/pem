@@ -26,17 +26,17 @@ import { Observable } from 'rxjs';
 import { ClerkAuthGuard } from '@/core/auth/clerk-auth.guard';
 import { CurrentUser } from '@/core/auth/current-user.decorator';
 import type { MessageImageAsset, UserRow } from '@/database/schemas/index';
-import { BriefCronService } from '@/modules/chat/services/brief-cron.service';
-import { ChatImageDedupService } from '@/modules/chat/services/chat-image-dedup.service';
-import { ChatMessageSignedMediaService } from '@/modules/chat/services/chat-message-signed-media.service';
-import { ChatMessagesForClientService } from '@/modules/chat/services/chat-messages-for-client.service';
-import { ChatService } from '@/modules/chat/services/chat.service';
+import { BriefCronService } from '@/modules/briefs/brief-cron.service';
+import { ChatImageDedupService } from '@/modules/media/photo/chat-image-dedup.service';
+import { ChatMessageSignedMediaService } from '@/modules/media/chat-message-signed-media.service';
+import { ChatMessagesForClientService } from '@/modules/messaging/chat-messages-for-client.service';
+import { ChatService } from '@/modules/messages/chat.service';
 import {
   ChatStreamService,
   type SseEvent,
-} from '@/modules/chat/services/chat-stream.service';
-import { ChatVoiceUploadService } from '@/modules/chat/services/chat-voice-upload.service';
-import { SummarizeTranscriptService } from '@/modules/chat/services/summarize-transcript.service';
+} from '@/modules/messaging/chat-stream.service';
+import { ChatVoiceUploadService } from '@/modules/media/voice/chat-voice-upload.service';
+import { SummarizeTranscriptService } from '@/modules/media/voice/summarize-transcript.service';
 import { StorageService } from '@/modules/storage/storage.service';
 import { randomUUID } from 'node:crypto';
 import {

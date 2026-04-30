@@ -1,14 +1,12 @@
 # Pem backend (NestJS + Drizzle)
 
-HTTP API for Pem: **PostgreSQL** (`users`, `dumps`, `actionables`, `memory_facts`), **Clerk** auth and webhooks.
+HTTP API for Pem: **PostgreSQL** (users, messages, extracts, calendar, embeddings, etc.), **Clerk** auth and webhooks, **BullMQ** workers.
 
 ## Stack
 
-- **NestJS** 11, **Drizzle ORM**, **pg**
-
-**Prep runner (high level):** Vague travel / situational asks default to **composite** (`COMPOSITE_BRIEF`) via heuristics + composite detection; **narrow** Serp flight pipe or explicit fare-only messages can stay **single-lane**. **Composite fan-out (default):** a mini-model **plans 2–4 parallel lanes** (e.g. flights vs hotels vs map); each lane runs a **separate** `generateText` tool loop in parallel; lane outputs are **concatenated**, then a **merge** pass (mini-model, **no tools**) dedupes and unifies into one memo, then the composite JSON formatter runs (thinness / adaptive fallbacks as before). Disable fan-out with `COMPOSITE_FANOUT_ENABLED=false`, or disable merge only with `COMPOSITE_MERGE_ENABLED=false`. The composite **normalizer** (`normalizeCompositeBrief`) repairs common mini-model mistakes; the formatter is retried once on failure.
+- **NestJS** 11, **Drizzle ORM**, **pg**, **BullMQ** + Redis
 - **Clerk:** `jose` (JWKS + RS256) for `Authorization: Bearer`, **Svix** for `POST /webhooks/clerk`
-- **Rate limiting:** `@nestjs/throttler` (100/min; webhook route is skipped)
+- **Rate limiting:** `@nestjs/throttler` (see `AppModule` for limits)
 
 ## Setup
 
@@ -25,10 +23,10 @@ Default port **8000**.
 
 - **`core/`** — Infra only: `config/`, `bootstrap/` (`configureApp`), `auth/` (Clerk guard + JWT helpers), `utils/` (shared helpers + generic URL/SSRF/extract utilities used by chat link pipeline).
 - **`database/`** — Drizzle schemas and `DatabaseModule` (unchanged as the data layer).
-- **`modules/`** — All Nest feature modules (`chat`, `users`, `calendar`, `extracts`, `lists`, `push`, `profile`, `storage`, `health`). Chat **`services/`** holds Nest **`*.service.ts`** providers; LLM-heavy flows use additional **`@Injectable()`** classes such as **`OrchestratorLlmService`**, **`PemAgentLlmService`** (+ **`pem-agent.system-prompt.ts`**), **`ChatQuestionLlmService`**, etc. (no separate `agents/` or `prompts/` folders). Also **`helpers/`**, **`constants/`**, **`types/`**, **`jobs/`**.
+- **`modules/`** — Feature modules. **Chat surface** is split by responsibility: **`chat/`** (controller + `chat.module` + DTOs + `chat.constants`), **`messages/`** (`ChatService` — message rows), **`memory/`** (`EmbeddingsService`), **`media/`** (voice, photo, links, signed URLs), **`agent/`** (Pem agent + Ask question path), **`messaging/`** (SSE, events, triage, orchestrator, `jobs/chat.processor`), **`briefs/`** (morning brief + weekly reflection). Also **`users/`**, **`calendar/`**, **`extracts/`**, **`lists/`**, **`push/`**, **`profile/`**, **`storage/`**, **`health/`**.
 - **`app.module.ts`**, **`main.ts`** — Application entry.
 
-Imports use the `@/` alias → `src/` (e.g. `@/modules/chat/...`, `@/core/config/...`, `@/database/...`).
+Imports use the `@/` alias → `src/` (e.g. `@/modules/messaging/...`, `@/modules/media/...`, `@/core/config/...`, `@/database/...`).
 
 ## Routes
 

@@ -1,7 +1,7 @@
 import { pemAmber } from "@/constants/theme";
 import { fontFamily, fontSize, space, radii } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
-import type { TaskCounts } from "@/lib/pemApi";
+import type { TaskCounts } from "@/services/api/pemApi";
 import { AlertTriangle, CheckCircle, Circle } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 

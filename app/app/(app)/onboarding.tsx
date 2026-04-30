@@ -16,7 +16,7 @@ import {
   setSchedulingPreferences,
   triggerCalendarSync,
   updateUserName,
-} from "@/lib/pemApi";
+} from "@/services/api/pemApi";
 import { pemImpactLight, pemNotificationSuccess } from "@/lib/pemHaptics";
 import { useAuth } from "@clerk/expo";
 import * as Linking from "expo-linking";

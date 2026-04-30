@@ -1,5 +1,5 @@
 import { fontFamily, fontSize, space } from "@/constants/typography";
-import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { useNetworkStatus } from "@/hooks/shared/useNetworkStatus";
 import { WifiOff } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

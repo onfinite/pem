@@ -653,128 +653,68 @@ return <Content />
 
 ## Folder structure
 
-### React Native app
+### React Native app (`app/` — expo-router)
 ```
-src/
-  screens/
-    ChatScreen/
-      ChatScreen.tsx          ← max 150 lines
-      ChatScreen.types.ts
-      index.ts                ← re-exports ChatScreen
+app/
+  app/                    ← routes: (app)/, (public)/, _layout, index
   components/
-    chat/
-      MessageList.tsx
-      UserTextBubble.tsx
-      UserVoiceBubble.tsx
-      PemTextBubble.tsx
-      PemBriefBubble.tsx
-      PemStatusBubble.tsx
-      DateHeader.tsx
-    input/
-      ChatInput.tsx
-      MicButton.tsx
-      RecordingBar.tsx
-      TextBar.tsx
-    drawer/
-      TaskCalDrawer.tsx
-      TaskCalPill.tsx
-      TasksView.tsx
-      CalendarView.tsx
-      ListView.tsx
-      WeekView.tsx
-    shared/
-      Spinner.tsx
-      ErrorState.tsx
-      EmptyState.tsx
+    chat/                 ← bubbles/, input/, media/, links/, chrome/, calendar/, TaskPill
+    drawer/               ← tabs/, inbox/, calendar/, edit/, task-item/, feedback/, types, constants
+    inbox/                ← TaskDrawer.tsx barrel → drawer
+    auth/, ui/, layout/, …
+  services/               ← api/, cache/, media/, push/, links/
   hooks/
-    useChatMessages.ts
-    useVoiceRecording.ts
-    useSSE.ts
-    useTaskCounts.ts
-    useCalendarEvents.ts
-    useChatInput.ts
+    chat/                 ← useChatStream + chatStream/
+    drawer/               ← useTaskDrawerController, useTaskItemDisplay
+    shared/               ← useLists, useMessageSearch, useNetworkStatus
   utils/
-    formatDuration.ts
-    formatRelativeDate.ts
-    groupMessagesByDate.ts
-    isOverdue.ts
-    truncateText.ts
-  constants/
-    theme.ts
-    api.ts
-    chat.constants.ts
-  types/
-    message.types.ts
-    task.types.ts
-    calendar.types.ts
-    user.types.ts
+    formatting/, text/, images/, guards/
+  lib/                    ← pemHaptics, buildChatDisplayItems, chat types, …
+  constants/, contexts/, assets/
 ```
 
-The repo uses **`app/`** with **expo-router** — align new screens/components with existing `app/` layout (see **`pem-app.mdc`**).
+See **`pem-app.mdc`** for product + navigation notes.
 
 ### NestJS backend
 ```
 src/
-  chat/
-    chat.controller.ts
-    chat.module.ts
-    constants/
-      chat.constants.ts
-      link-reading.constants.ts
-    services/
-      chat.service.ts
-      chat-question-llm.service.ts
-      pem-agent.system-prompt.ts
-    jobs/
-      chat.processor.ts
-    dto/
-      send-message.dto.ts
-      paginate-messages.dto.ts
-  tasks/
-    tasks.controller.ts
-    tasks.service.ts
-    tasks.module.ts
-    dto/
-  calendar/
-    calendar.controller.ts
-    calendar.service.ts
-    calendar.module.ts
+  modules/
+    chat/                 ← HTTP: controller, module, dto/, chat.constants
+    messages/             ← ChatService (message persistence)
+    memory/               ← EmbeddingsService
+    media/                ← voice/, photo/, links/, signed media
+    agent/                ← pem-agent, orchestrator LLM, question/
+    messaging/            ← SSE, events, triage, orchestrator, jobs/chat.processor
+    briefs/               ← morning brief + weekly reflection
+    extracts/
+    calendar/
+    users/
+    ...
   database/
-    schema/
-      messages.schema.ts
-      actionables.schema.ts
-      users.schema.ts
-      message-embeddings.schema.ts
-    migrations/
-  common/
-    decorators/
-      get-user.decorator.ts
-    guards/
-      clerk-auth.guard.ts
-    filters/
-      all-exceptions.filter.ts
+    schemas/
+  core/
+    auth/
+    bootstrap/
+    config/
     utils/
-      chunk-array.ts
-      retry.ts
-      sleep.ts
 ```
 
 ---
 
 ## Prompts are isolated
 
-AI prompts are first-class code. They live in their own **`.ts` files** next to the code that uses them — typically under **`modules/<feature>/services/`** (e.g. **`pem-agent.system-prompt.ts`**) or as private helpers on an **`@Injectable()`** *Llm* service (e.g. **`ChatQuestionLlmService`**) — not buried inside unrelated orchestration services.
+AI prompts are first-class code. They live in their own **`.ts` files** next to the code that uses them — typically under **`modules/agent/`** (e.g. **`pem-agent.system-prompt.ts`**) or as private helpers on an **`@Injectable()`** *Llm* service (e.g. **`ChatQuestionLlmService`**) — not buried inside unrelated orchestration services.
 
 They are functions that take typed inputs and return strings (or are private string builders on an injectable).
 
 ```typescript
-// services/chat-question-llm.service.ts — excerpt: prompt builder on an @Injectable() service
+// modules/agent/question/chat-question-llm.service.ts — excerpt: prompt builder on an @Injectable() service
 buildAskQuestionSystemPrompt(nameNote: string): string {
   return `You are Pem — a friend who remembers everything.${nameNote} …`.trim()
 }
 ```
 
-Avoid embedding huge prompt strings in service files — **extract** when adding or refactoring (existing **`pem-agent.service.ts`** may be grandfathered until split per line limits).
+Avoid embedding huge prompt strings in service files — **extract** when adding or refactoring (large orchestrators should still be split per line limits).
 
 ---
 
