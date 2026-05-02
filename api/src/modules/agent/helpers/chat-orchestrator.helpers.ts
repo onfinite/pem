@@ -13,7 +13,6 @@ const SAFETY_CAPS = {
   calendar_deletes: 3,
   scheduling: 10,
   recurrence_detections: 10,
-  rsvp_actions: 5,
   memory_writes: 10,
 } as const;
 
@@ -40,7 +39,6 @@ export function clampAgentOutput(output: PemAgentOutput): PemAgentOutput {
       0,
       SAFETY_CAPS.recurrence_detections,
     ),
-    rsvp_actions: output.rsvp_actions.slice(0, SAFETY_CAPS.rsvp_actions),
     memory_writes: output.memory_writes.slice(0, SAFETY_CAPS.memory_writes),
   };
 }

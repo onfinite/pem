@@ -640,18 +640,6 @@ export async function patchExtractClose(
   });
 }
 
-export async function patchExtractRsvp(
-  getToken: () => Promise<string | null>,
-  id: string,
-  response: "accepted" | "declined" | "tentative",
-) {
-  return apiFetch<{ item: ApiExtract }>(`/extracts/${id}/rsvp`, {
-    method: "PATCH",
-    getToken,
-    body: JSON.stringify({ response }),
-  });
-}
-
 // ── Brief ────────────────────────────────────────────────
 
 export type BriefResponse = {

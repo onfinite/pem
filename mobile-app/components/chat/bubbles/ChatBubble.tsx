@@ -9,7 +9,6 @@ import * as Clipboard from "expo-clipboard";
 import { UserPhotoPreviewModal } from "@/components/chat/media/UserPhotoPreviewModal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
-import InviteRsvpActions from "@/components/chat/calendar/InviteRsvpActions";
 import { MarkdownText } from "@/components/chat/bubbles/MarkdownText";
 import VoiceBubble from "@/components/chat/bubbles/VoiceBubble";
 import { UserPhotoBubble } from "@/components/chat/bubbles/UserPhotoBubble";
@@ -347,20 +346,7 @@ export default function ChatBubble({
             </Pressable>
           )}
 
-          {!isUser &&
-            meta?.type === "calendar_invite" &&
-            typeof meta.extract_id === "string" && (
-              <InviteRsvpActions
-                extractId={meta.extract_id}
-                currentStatus={
-                  typeof meta.self_rsvp_status === "string"
-                    ? meta.self_rsvp_status
-                    : null
-                }
-              />
-            )}
-
-          {(effectiveLinkPreviews?.length ?? 0) > 0 ? (
+          {isUser && (effectiveLinkPreviews?.length ?? 0) > 0 ? (
             <UserMessageLinkAttachmentsRow message={message} />
           ) : null}
 

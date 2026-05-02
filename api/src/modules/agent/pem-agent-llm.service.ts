@@ -32,7 +32,6 @@ import {
   pemExtractionOutputSchema,
   pemOrchestrationOutputSchema,
   recurrenceDetectionSchema,
-  rsvpActionSchema,
   schedulingSchema,
   updateActionSchema,
   type PemAgentOutput,
@@ -68,7 +67,6 @@ const DEFAULT_ORCHESTRATION: PemOrchestrationOutput = {
   calendar_deletes: [],
   scheduling: [],
   recurrence_detections: [],
-  rsvp_actions: [],
   summary_update: null,
   polished_text: null,
   detected_theme: null,
@@ -151,7 +149,6 @@ export class PemAgentLlmService {
       calendar_deletes: [],
       scheduling: [],
       recurrence_detections: [],
-      rsvp_actions: [],
       summary_update: null,
       polished_text: null,
       detected_theme: null,
@@ -926,20 +923,13 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       recurrenceDetectionSchema,
       'recurrence_detections',
     );
-    const rsvp_actions = mapArr(
-      o.rsvp_actions,
-      rsvpActionSchema,
-      'rsvp_actions',
-    );
-
     const hasWork =
       calendar_writes.length > 0 ||
       memory_writes.length > 0 ||
       calendar_updates.length > 0 ||
       calendar_deletes.length > 0 ||
       scheduling.length > 0 ||
-      recurrence_detections.length > 0 ||
-      rsvp_actions.length > 0;
+      recurrence_detections.length > 0;
 
     let response_text =
       typeof o.response_text === 'string' && o.response_text.trim()
@@ -953,7 +943,6 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       if (calendar_updates.length) bits.push(`Updated calendar events.`);
       if (calendar_deletes.length) bits.push(`Removed calendar events.`);
       if (scheduling.length) bits.push(`Suggested times.`);
-      if (rsvp_actions.length) bits.push(`Updated RSVPs.`);
       response_text = bits.join(' ') || "I've got that.";
     }
 
@@ -967,7 +956,6 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       calendar_deletes,
       scheduling,
       recurrence_detections,
-      rsvp_actions,
       summary_update: coerceOrchestrationSummaryUpdate(o.summary_update),
       polished_text:
         typeof o.polished_text === 'string' ? o.polished_text : null,
@@ -1095,8 +1083,6 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       o.recurrence_detections,
       recurrenceDetectionSchema,
     );
-    const rsvp_actions = mapArr(o.rsvp_actions, rsvpActionSchema);
-
     const hasWork =
       creates.length > 0 ||
       updates.length > 0 ||
@@ -1106,8 +1092,7 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       calendar_updates.length > 0 ||
       calendar_deletes.length > 0 ||
       scheduling.length > 0 ||
-      recurrence_detections.length > 0 ||
-      rsvp_actions.length > 0;
+      recurrence_detections.length > 0;
 
     let response_text =
       typeof o.response_text === 'string' && o.response_text.trim()
@@ -1137,7 +1122,6 @@ ${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}$
       calendar_deletes,
       scheduling,
       recurrence_detections,
-      rsvp_actions,
       summary_update: coerceOrchestrationSummaryUpdate(o.summary_update),
       polished_text:
         typeof o.polished_text === 'string' ? o.polished_text : null,

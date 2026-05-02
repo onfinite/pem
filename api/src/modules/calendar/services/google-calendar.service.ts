@@ -37,6 +37,31 @@ export class GoogleCalendarService {
 
   constructor(private readonly config: ConfigService) {}
 
+  /**
+   * When false, the browser OAuth flow cannot start — required Google Calendar env vars are missing.
+   */
+  isGoogleCalendarOAuthConfigured(): boolean {
+    return this.getMissingGoogleCalendarOAuthEnvVars().length === 0;
+  }
+
+  /** Env var names that are unset or blank (for clear 503 messages). */
+  getMissingGoogleCalendarOAuthEnvVars(): string[] {
+    const missing: string[] = [];
+    if (!this.config.get<string>('googleCalendar.clientId')?.trim()) {
+      missing.push('GOOGLE_CALENDAR_CLIENT_ID');
+    }
+    if (!this.config.get<string>('googleCalendar.clientSecret')?.trim()) {
+      missing.push('GOOGLE_CALENDAR_CLIENT_SECRET');
+    }
+    if (!this.config.get<string>('googleCalendar.redirectUri')?.trim()) {
+      missing.push('GOOGLE_CALENDAR_REDIRECT_URI');
+    }
+    if (!this.config.get<string>('googleCalendar.oauthStateSecret')?.trim()) {
+      missing.push('GOOGLE_OAUTH_STATE_SECRET');
+    }
+    return missing;
+  }
+
   private getOAuthClient(): OAuth2Client {
     return new google.auth.OAuth2(
       this.config.get<string>('googleCalendar.clientId'),
@@ -545,43 +570,6 @@ export class GoogleCalendarService {
       .map((b) => ({ start: new Date(b.start!), end: new Date(b.end!) }));
 
     return { busyBlocks, newAccessToken };
-  }
-
-  /** Update RSVP status for the authenticated user on an event. */
-  async rsvpEvent(
-    accessToken: string,
-    refreshToken: string,
-    eventId: string,
-    response: 'accepted' | 'declined' | 'tentative',
-  ): Promise<{ newAccessToken: string | null }> {
-    const client = this.getOAuthClient();
-    client.setCredentials({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-
-    let newAccessToken: string | null = null;
-    client.on('tokens', (tokens) => {
-      if (tokens.access_token) newAccessToken = tokens.access_token;
-    });
-
-    const cal = google.calendar({ version: 'v3', auth: client });
-    const { data: event } = await cal.events.get({
-      calendarId: 'primary',
-      eventId,
-    });
-
-    const attendees = (event.attendees ?? []).map((a) =>
-      a.self ? { ...a, responseStatus: response } : a,
-    );
-
-    await cal.events.patch({
-      calendarId: 'primary',
-      eventId,
-      requestBody: { attendees },
-    });
-
-    return { newAccessToken };
   }
 
   /** Subscribe to push notifications for a calendar via Google's watch API. */

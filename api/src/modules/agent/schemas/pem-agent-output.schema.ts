@@ -251,11 +251,6 @@ export function coerceOrchestrationSummaryUpdate(v: unknown): string | null {
   return null;
 }
 
-export const rsvpActionSchema = z.object({
-  extract_id: z.string(),
-  response: z.enum(['accepted', 'declined', 'tentative']),
-});
-
 export const memoryWriteSchema = z.object({
   memory_key: z.string().default('general'),
   note: z
@@ -289,7 +284,6 @@ export const pemOrchestrationOutputSchema = z.object({
   calendar_deletes: z.array(calendarDeleteSchema).max(3).default([]),
   scheduling: z.array(schedulingSchema).max(10).default([]),
   recurrence_detections: z.array(recurrenceDetectionSchema).max(10).default([]),
-  rsvp_actions: z.array(rsvpActionSchema).max(5).default([]),
   summary_update: z
     .union([z.string(), z.array(z.string())])
     .nullish()

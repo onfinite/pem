@@ -175,27 +175,6 @@ export class ExtractsController {
     return { item: this.extracts.serialize(row) };
   }
 
-  @Patch(':id/rsvp')
-  @HttpCode(200)
-  async rsvp(
-    @CurrentUser() user: UserRow,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Body('response') response: string,
-  ) {
-    const valid = ['accepted', 'declined', 'tentative'];
-    if (!valid.includes(response)) {
-      throw new BadRequestException(
-        `response must be one of: ${valid.join(', ')}`,
-      );
-    }
-    const row = await this.extracts.rsvp(
-      user.id,
-      id,
-      response as 'accepted' | 'declined' | 'tentative',
-    );
-    return { item: this.extracts.serialize(row) };
-  }
-
   @Patch(':id/snooze')
   @HttpCode(200)
   async snooze(

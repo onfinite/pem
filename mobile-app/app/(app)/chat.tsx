@@ -8,8 +8,10 @@ import { ChatScreenHeader } from "@/components/chat/chrome/ChatScreenHeader";
 import { ChatScreenSkeletonBubbles } from "@/components/chat/chrome/ChatScreenSkeletonBubbles";
 import { ChatImageSourceSheet } from "@/components/chat/input/ChatImageSourceSheet";
 import TaskDrawer, { type TaskDrawerHandle } from "@/components/inbox/TaskDrawer";
-import { space } from "@/constants/typography";
+import { CHAT_CALENDAR_INTEGRATION_FALLBACK_BODY } from "@/constants/chatScreen.constants";
+import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
 import { pemAmber } from "@/constants/theme";
+import { space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useChatStream } from "@/hooks/chat/useChatStream";
 import { useMessageSearch } from "@/hooks/shared/useMessageSearch";
@@ -34,7 +36,7 @@ import {
   buildChatDisplayItems,
   type ChatDisplayItem,
 } from "@/lib/buildChatDisplayItems";
-import { MAX_CHAT_MESSAGE_IMAGES } from "@/constants/chatPhotos.constants";
+import { dedupeChatMessagesById } from "@/utils/formatting/dedupeChatMessagesById";
 import {
   uploadChatImagesAndSend,
   uploadPendingChatImageKeys,
@@ -221,6 +223,24 @@ export default function ChatScreen() {
       // Pem response likely means tasks changed — refresh counts
       fetchCounts();
     },
+    onUserMessage: (msg) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, { ...msg, _clientStatus: "sent" as const }];
+      });
+    },
+    onIntegrationNotice: (payload) => {
+      if (payload.kind !== "google_calendar") return;
+      const title =
+        typeof payload.title === "string" && payload.title.trim().length > 0
+          ? payload.title.trim()
+          : "Calendar";
+      const body =
+        typeof payload.body === "string" && payload.body.trim().length > 0
+          ? payload.body.trim()
+          : CHAT_CALENDAR_INTEGRATION_FALLBACK_BODY;
+      Alert.alert(title, body);
+    },
     onStatus: (messageId, text) => {
       setStatusMap((prev) => ({ ...prev, [messageId]: text }));
     },
@@ -263,10 +283,12 @@ export default function ChatScreen() {
         content: text,
       });
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId
-            ? { ...res.message, _clientStatus: "sent" as const }
-            : m,
+        dedupeChatMessagesById(
+          prev.map((m) =>
+            m.id === tempId
+              ? { ...res.message, _clientStatus: "sent" as const }
+              : m,
+          ),
         ),
       );
       setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));
@@ -324,16 +346,18 @@ export default function ChatScreen() {
         });
         const serverId = res.message.id;
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tempId
-              ? {
-                  ...res.message,
-                  _localUri: localUris.length === 1 ? localUris[0] : undefined,
-                  _pendingLocalUris:
-                    localUris.length > 1 ? localUris : undefined,
-                  _clientStatus: "sent" as const,
-                }
-              : m,
+          dedupeChatMessagesById(
+            prev.map((m) =>
+              m.id === tempId
+                ? {
+                    ...res.message,
+                    _localUri: localUris.length === 1 ? localUris[0] : undefined,
+                    _pendingLocalUris:
+                      localUris.length > 1 ? localUris : undefined,
+                    _clientStatus: "sent" as const,
+                  }
+                : m,
+            ),
           ),
         );
         setStatusMap((prev) => ({ ...prev, [serverId]: "Thinking..." }));
@@ -546,16 +570,18 @@ export default function ChatScreen() {
           imageKeys?.length ? { image_keys: imageKeys } : undefined,
         );
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tempId
-              ? {
-                  ...res.message,
-                  voice_url: audioUri,
-                  _localUri: audioUri,
-                  _clientStatus: "sent" as const,
-                  _pendingImageUris: undefined,
-                }
-              : m,
+          dedupeChatMessagesById(
+            prev.map((m) =>
+              m.id === tempId
+                ? {
+                    ...res.message,
+                    voice_url: audioUri,
+                    _localUri: audioUri,
+                    _clientStatus: "sent" as const,
+                    _pendingImageUris: undefined,
+                  }
+                : m,
+            ),
           ),
         );
         setStatusMap((prev) => ({ ...prev, [res.message.id]: "Thinking..." }));

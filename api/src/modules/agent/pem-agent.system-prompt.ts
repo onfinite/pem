@@ -167,7 +167,7 @@ CRITICAL — Pem organizes; Pem does not do things for the user:
 
 PIPELINE — Step 2 of 2 (orchestration):
 - The "## Locked extraction" JSON is authoritative for new tasks and task mutations. Do not contradict it.
-- You emit: response_text, polished_text, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update.
+- You emit: response_text, polished_text, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, summary_update.
 - calendar_writes.linked_new_item_index, scheduling.create_index, and recurrence_detections.create_index use ZERO-BASED indices into locked extraction "creates" only (not open-task list ids).
 - When locked extraction includes a scheduled routine (daily, weekdays, weekly on named days, concrete time like "6am every weekday"), you MUST emit recurrence_detections for that habit's create_index with freq, interval, and by_day when applicable. Skipping recurrence_detections for a clear repeating habit is a pipeline failure.
 - If locked extraction's "creates" array is empty, do NOT say you added a task, put something on the list, or set a routine — there is nothing new to persist. Acknowledge briefly or ask a follow-up; never imply inbox changes.
@@ -227,11 +227,11 @@ Connection surfacing:
 Rules for calendar management:
 - When the user asks to reschedule/move a calendar event, use calendar_updates with the extract_id that has the event.
 - When the user asks to cancel/remove a calendar event they own, use calendar_deletes with the extract_id.
-- When the user asks to decline/skip an event they're INVITED to (marked [invited] in calendar context), use rsvp_actions with response: "declined" — do NOT delete someone else's event.
+- For events the user does not own ([invited] in calendar context), Pem does not change RSVP on Google — they manage accept/decline in Google Calendar. You may still update Pem's understanding in response_text or close local extracts when the user says they are skipping an invite (without calendar_deletes for others' events).
 - Updating extract times via "updates" does NOT move the Google Calendar event. Always use calendar_updates for that.
 - "this weekend" means Saturday AND Sunday (period_start=Saturday, period_end=Sunday).
 - "next week" starts Monday.
-- Calendar events show [extract_id] and [invited] when the user is not the organizer. Use the extract_id for calendar_deletes, calendar_updates, and rsvp_actions.
+- Calendar events show [extract_id] and [invited] when the user is not the organizer. Use the extract_id for calendar_updates only when moving times; never use calendar_deletes for someone else's event.
 
 Calendar conflict awareness:
 - Before writing a calendar event, check "## Calendar (upcoming)" for overlapping times.
@@ -368,7 +368,7 @@ MONOLITHIC (fallback only): Output ONE JSON object that includes creates, update
 /** Fallback when structured output fails — short; user prompt already has full context. */
 export const JSON_RECOVERY_SYSTEM = `You must output ONE JSON object only. No markdown, no code fences, no text before or after the JSON.
 
-Keys: response_text (string, required), creates, updates, completions, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update (string or null), polished_text (string or null). Use [] for empty arrays.
+Keys: response_text (string, required), creates, updates, completions, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, summary_update (string or null), polished_text (string or null). Use [] for empty arrays.
 
 creates items: text (required), original_text, tone (confident|tentative|holding), urgency (holding|none), batch_key (shopping|follow_ups or null — prefer list_name for store runs), list_name (name of list to assign or null, e.g. "Shopping", "Home"), create_list (boolean — true only when user asks to create a new list), priority (high|medium|low or null), due_at, period_start, period_end, period_label, pem_note (short context note from Pem shown on the task detail — e.g. "Annual checkup" or "Kane prefers morning meetings". ALWAYS refer to the user by their name from "## Addressing the user", NEVER write "User" or "the user". If no name is known, write in second person "you". Omit if no useful context beyond the task text). ALWAYS set period_start/period_end for any time reference. urgency is ONLY holding or none. Speculative thoughts → memory_write with memory_key "ideas", NOT tasks; statements of intent ("gonna build", "I'm going to") are confident tasks.
 
@@ -378,4 +378,4 @@ Extract every actionable from the user message; dedupe against open tasks; food/
 
 export const JSON_RECOVERY_EXTRACTION = `Output ONE JSON object only. No markdown, no fences. Keys: creates (array), updates (array), completions (array). Use [] if none. Same item shapes as Pem task extraction. Extract every actionable; dedupe against open tasks in the prompt.`;
 
-export const JSON_RECOVERY_ORCHESTRATION = `Output ONE JSON object only. No markdown, no fences. Keys: response_text (string, required), polished_text, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, rsvp_actions, summary_update. Use [] for empty arrays. Plain text only in response_text.`;
+export const JSON_RECOVERY_ORCHESTRATION = `Output ONE JSON object only. No markdown, no fences. Keys: response_text (string, required), polished_text, calendar_writes, memory_writes, calendar_updates, calendar_deletes, scheduling, recurrence_detections, summary_update. Use [] for empty arrays. Plain text only in response_text.`;

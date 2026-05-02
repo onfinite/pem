@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Res,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import type { Queue } from 'bullmq';
@@ -82,6 +83,16 @@ export class CalendarController {
     @CurrentUser() user: UserRow,
     @Query('appRedirect') appRedirect?: string,
   ) {
+    const missing = this.googleCal.getMissingGoogleCalendarOAuthEnvVars();
+    if (missing.length > 0) {
+      const hint =
+        missing.length === 1
+          ? 'Add it to the API environment.'
+          : 'Add them to the API environment.';
+      throw new ServiceUnavailableException(
+        `Google Calendar OAuth is missing: ${missing.join(', ')}. ${hint}`,
+      );
+    }
     const url = this.googleCal.getAuthUrl(user.id, appRedirect);
     return { url };
   }
@@ -115,6 +126,30 @@ export class CalendarController {
     try {
       const tokens = await this.googleCal.exchangeCode(code);
       const conn = await this.connections.upsertGoogle(userId, tokens);
+
+      void this.calendarQueue
+        .add(
+          'sync',
+          { connectionId: conn.id },
+          {
+            jobId: `cal-sync-${conn.id}-oauth-${Date.now()}`,
+            removeOnComplete: true,
+            removeOnFail: 50,
+            attempts: 2,
+            backoff: { type: 'exponential', delay: 2000 },
+          },
+        )
+        .catch((err) => {
+          this.log.warn(
+            logWithContext('Post-OAuth calendar sync enqueue failed', {
+              userId,
+              connectionId: conn.id,
+              scope: 'calendar_oauth',
+              err: err instanceof Error ? err.message : 'unknown',
+            }),
+          );
+        });
+
       void this.sync.setupWatch(conn.id).catch((err) => {
         this.log.warn(
           logWithContext('Watch setup after OAuth failed', {

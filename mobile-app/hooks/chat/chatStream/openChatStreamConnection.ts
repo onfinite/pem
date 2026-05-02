@@ -42,6 +42,8 @@ export function openChatStreamConnection(opts: {
     };
 
     es.addEventListener("pem_message", handler);
+    es.addEventListener("user_message", handler);
+    es.addEventListener("integration_notice", handler);
     es.addEventListener("status", handler);
     es.addEventListener("message_updated", handler);
     es.addEventListener("pem_token", handler);

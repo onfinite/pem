@@ -29,6 +29,7 @@ import type { MessageImageAsset, UserRow } from '@/database/schemas/index';
 import { BriefCronService } from '@/modules/briefs/brief-cron.service';
 import { ChatImageDedupService } from '@/modules/media/photo/chat-image-dedup.service';
 import { ChatMessageSignedMediaService } from '@/modules/media/chat-message-signed-media.service';
+import { ChatEventsService } from '@/modules/messaging/chat-events.service';
 import { ChatMessagesForClientService } from '@/modules/messaging/chat-messages-for-client.service';
 import { ChatService } from '@/modules/messages/chat.service';
 import {
@@ -56,6 +57,7 @@ import {
 export class ChatController {
   constructor(
     private readonly chat: ChatService,
+    private readonly chatEvents: ChatEventsService,
     private readonly chatImageDedup: ChatImageDedupService,
     private readonly stream: ChatStreamService,
     private readonly summarize: SummarizeTranscriptService,
@@ -66,6 +68,14 @@ export class ChatController {
     private readonly messagesForClient: ChatMessagesForClientService,
     @InjectQueue('chat') private readonly chatQueue: Queue,
   ) {}
+
+  /** So other devices / tabs with an open SSE stream stay in sync with new user rows. */
+  private async publishUserMessageSse(
+    userId: string,
+    message: ReturnType<ChatService['serializeMessage']>,
+  ): Promise<void> {
+    await this.chatEvents.publish(userId, 'user_message', { message });
+  }
 
   @Post('messages')
   @HttpCode(200)
@@ -79,12 +89,14 @@ export class ChatController {
     @Query('idempotency_key') idempotencyKeyQuery?: string,
   ) {
     if (audio?.buffer) {
-      return this.voiceUpload.acceptRecordedAudio(
+      const voiceResult = await this.voiceUpload.acceptRecordedAudio(
         user,
         audio,
         body,
         idempotencyKeyQuery,
       );
+      await this.publishUserMessageSse(user.id, voiceResult.message);
+      return voiceResult;
     }
 
     const dto = plainToInstance(SendMessageDto, body);
@@ -107,6 +119,7 @@ export class ChatController {
       if (existing) {
         const serialized = this.chat.serializeMessage(existing);
         await this.signedMedia.hydrateForClient(serialized, existing);
+        await this.publishUserMessageSse(user.id, serialized);
         return {
           message: serialized,
           status: 'received' as const,
@@ -142,6 +155,7 @@ export class ChatController {
       );
       const serialized = this.chat.serializeMessage(msg);
       await this.signedMedia.hydrateForClient(serialized, msg);
+      await this.publishUserMessageSse(user.id, serialized);
       return {
         message: serialized,
         status: 'received' as const,
@@ -189,6 +203,7 @@ export class ChatController {
 
     const serialized = this.chat.serializeMessage(msg);
     await this.signedMedia.hydrateForClient(serialized, msg);
+    await this.publishUserMessageSse(user.id, serialized);
     return {
       message: serialized,
       status: 'received' as const,

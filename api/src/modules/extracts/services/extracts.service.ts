@@ -447,26 +447,6 @@ export class ExtractsService {
               }),
             ),
           );
-      } else {
-        this.calendarSync
-          .rsvpOnGoogle(
-            row.calendarConnectionId,
-            row.externalEventId,
-            'declined',
-          )
-          .catch((e) =>
-            this.log.warn(
-              logWithContext('Calendar RSVP decline on close failed', {
-                scope: 'extracts.calendar',
-                userId,
-                extractId: id,
-                calendarConnectionId: row.calendarConnectionId ?? undefined,
-                externalEventId: row.externalEventId ?? undefined,
-                phase: 'rsvpDeclineOnClose',
-                detail: e instanceof Error ? e.message : 'unknown',
-              }),
-            ),
-          );
       }
     }
 
@@ -497,68 +477,6 @@ export class ExtractsService {
       after: this.extractStateSnapshot(u),
       audit,
     });
-
-    if (row.externalEventId && row.calendarConnectionId && !row.isOrganizer) {
-      this.calendarSync
-        .rsvpOnGoogle(row.calendarConnectionId, row.externalEventId, 'accepted')
-        .catch((e) =>
-          this.log.warn(
-            logWithContext('Calendar RSVP accept on unclose failed', {
-              scope: 'extracts.calendar',
-              userId,
-              extractId: id,
-              calendarConnectionId: row.calendarConnectionId ?? undefined,
-              externalEventId: row.externalEventId ?? undefined,
-              phase: 'rsvpAcceptOnUnclose',
-              detail: e instanceof Error ? e.message : 'unknown',
-            }),
-          ),
-        );
-    }
-
-    return u;
-  }
-
-  async rsvp(
-    userId: string,
-    id: string,
-    response: 'accepted' | 'declined' | 'tentative',
-  ): Promise<ExtractRow> {
-    const row = await this.findForUser(userId, id);
-    if (!row) throw new NotFoundException('Extract not found');
-
-    const now = new Date();
-    const [u] = await this.db
-      .update(extractsTable)
-      .set({ rsvpStatus: response, updatedAt: now })
-      .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)))
-      .returning();
-    if (!u) throw new NotFoundException('Extract not found');
-
-    if (row.externalEventId && row.calendarConnectionId) {
-      this.calendarSync
-        .rsvpOnGoogle(row.calendarConnectionId, row.externalEventId, response)
-        .catch((e) =>
-          this.log.warn(
-            logWithContext('Calendar RSVP failed', {
-              scope: 'extracts.calendar',
-              userId,
-              extractId: id,
-              calendarConnectionId: row.calendarConnectionId ?? undefined,
-              externalEventId: row.externalEventId ?? undefined,
-              rsvp: response,
-              detail: e instanceof Error ? e.message : 'unknown',
-            }),
-          ),
-        );
-    }
-
-    if (response === 'declined') {
-      await this.db
-        .update(extractsTable)
-        .set({ status: 'closed', closedAt: now, updatedAt: now })
-        .where(and(eq(extractsTable.id, id), eq(extractsTable.userId, userId)));
-    }
 
     return u;
   }

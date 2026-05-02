@@ -328,26 +328,11 @@ export class ChatOrchestratorService {
             userRow?.summary ?? null,
             linkPipelineResult?.promptSection ?? null,
           );
-        const mergedQuestionMeta =
-          linkPipelineResult?.rows.length && answerMeta
-            ? {
-                ...answerMeta,
-                link_previews: linkPreviewsSerializedFromRows(
-                  linkPipelineResult.rows,
-                ),
-              }
-            : linkPipelineResult?.rows.length
-              ? {
-                  link_previews: linkPreviewsSerializedFromRows(
-                    linkPipelineResult.rows,
-                  ),
-                }
-              : answerMeta;
         const pemMsg = await this.savePemResponse(
           userId,
           messageId,
           answerText,
-          mergedQuestionMeta,
+          answerMeta ?? undefined,
         );
 
         const userUrlNorm = new Set(urlOccurrences.map((o) => o.normalized));
@@ -597,11 +582,6 @@ export class ChatOrchestratorService {
         meta.calendar_deleted = agentOutput.calendar_deletes.length;
       if (photoRecallMeta?.photo_recall?.length) {
         meta.photo_recall = photoRecallMeta.photo_recall;
-      }
-      if (linkPipelineResult?.rows.length) {
-        meta.link_previews = linkPreviewsSerializedFromRows(
-          linkPipelineResult.rows,
-        );
       }
       const metadata = Object.keys(meta).length > 0 ? meta : undefined;
 
@@ -1386,55 +1366,6 @@ export class ChatOrchestratorService {
           updatedAt: new Date(),
         })
         .where(eq(extractsTable.id, row.id));
-    }
-
-    // Apply RSVP actions — update local DB and sync to Google Calendar
-    for (const rsvp of output.rsvp_actions) {
-      try {
-        await this.db
-          .update(extractsTable)
-          .set({
-            rsvpStatus: rsvp.response,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(extractsTable.id, rsvp.extract_id),
-              eq(extractsTable.userId, userId),
-            ),
-          );
-
-        const row = await this.extracts.findForUser(userId, rsvp.extract_id);
-        if (row?.externalEventId && row.calendarConnectionId) {
-          await this.calendarSync
-            .rsvpOnGoogle(
-              row.calendarConnectionId,
-              row.externalEventId,
-              rsvp.response,
-            )
-            .catch((e) =>
-              this.log.warn(
-                logWithContext('Google RSVP sync failed', {
-                  userId,
-                  messageId,
-                  extractId: rsvp.extract_id,
-                  scope: 'chat_orchestrator',
-                  err: e instanceof Error ? e.message : 'unknown',
-                }),
-              ),
-            );
-        }
-      } catch (e) {
-        this.log.warn(
-          logWithContext('RSVP action failed', {
-            userId,
-            messageId,
-            extractId: rsvp.extract_id,
-            scope: 'chat_orchestrator',
-            err: e instanceof Error ? e.message : 'unknown',
-          }),
-        );
-      }
     }
 
     // Memory writes — skip entries with empty notes; collect lines for summary when model omits summary_update

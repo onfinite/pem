@@ -1,5 +1,8 @@
 import type { ApiMessage } from "@/services/api/pemApi";
-import type { ChatStreamCallbacks } from "@/hooks/chat/chatStream/chatStream.types";
+import type {
+  ChatIntegrationNoticePayload,
+  ChatStreamCallbacks,
+} from "@/hooks/chat/chatStream/chatStream.types";
 
 export function dispatchChatSseEvent(
   event: { data?: string | null; type?: string },
@@ -13,6 +16,13 @@ export function dispatchChatSseEvent(
 
     if (eventType === "pem_message" && data.message) {
       callbacks.onPemMessage?.(data.message as ApiMessage);
+    } else if (eventType === "user_message" && data.message) {
+      callbacks.onUserMessage?.(data.message as ApiMessage);
+    } else if (
+      eventType === "integration_notice" &&
+      typeof data.kind === "string"
+    ) {
+      callbacks.onIntegrationNotice?.(data as ChatIntegrationNoticePayload);
     } else if (eventType === "status") {
       callbacks.onStatus?.(data.messageId as string, data.text as string);
     } else if (eventType === "message_updated") {

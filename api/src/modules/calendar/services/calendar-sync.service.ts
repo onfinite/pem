@@ -10,9 +10,13 @@ import {
   contactsTable,
   extractsTable,
   logsTable,
-  messagesTable,
   type CalendarConnectionRow,
 } from '@/database/schemas/index';
+import {
+  CALENDAR_SSE_RECONNECT_BODY,
+  CALENDAR_SSE_RECONNECT_TITLE,
+} from '@/modules/calendar/constants/calendar-integration.constants';
+import { isGoogleInvalidGrantError } from '@/modules/calendar/helpers/is-google-invalid-grant';
 import { ChatEventsService } from '@/modules/messaging/chat-events.service';
 import { CalendarConnectionService } from '@/modules/calendar/services/calendar-connection.service';
 import {
@@ -25,6 +29,7 @@ import { logWithContext } from '@/core/utils/format-log-context';
 export class CalendarSyncService {
   private readonly log = new Logger(CalendarSyncService.name);
   private readonly contactSyncWarned = new Set<string>();
+  private readonly invalidGrantNoticeSent = new Set<string>();
   private readonly lastContactSync = new Map<string, number>();
   private static readonly CONTACT_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -35,6 +40,42 @@ export class CalendarSyncService {
     private readonly google: GoogleCalendarService,
     private readonly chatEvents: ChatEventsService,
   ) {}
+
+  /**
+   * Marks the connection broken and notifies any open chat SSE clients (so the user is not
+   * left guessing when calendar writes or sync fail with revoked tokens).
+   */
+  async revokeGoogleAccessAndNotify(
+    userId: string,
+    connectionId: string,
+    err: unknown,
+  ): Promise<void> {
+    if (this.invalidGrantNoticeSent.has(connectionId)) return;
+
+    const msg = err instanceof Error ? err.message : 'Google auth failed';
+    await this.db
+      .update(calendarConnectionsTable)
+      .set({
+        connectionStatus: 'disconnected',
+        lastError: msg.slice(0, 500),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(calendarConnectionsTable.id, connectionId),
+          eq(calendarConnectionsTable.userId, userId),
+        ),
+      );
+
+    this.invalidGrantNoticeSent.add(connectionId);
+
+    await this.chatEvents.publish(userId, 'integration_notice', {
+      kind: 'google_calendar',
+      title: CALENDAR_SSE_RECONNECT_TITLE,
+      body: CALENDAR_SSE_RECONNECT_BODY,
+      connection_id: connectionId,
+    });
+  }
 
   async syncAllForUser(userId: string): Promise<{ synced: boolean }> {
     const conns = await this.connections.listForUser(userId);
@@ -63,7 +104,7 @@ export class CalendarSyncService {
     if (!webhookUrl) {
       this.log.debug(
         logWithContext(
-          'GOOGLE_CALENDAR_WEBHOOK_URL not set, skipping watch setup',
+          'GOOGLE_CALENDAR_WEBHOOK_URL not set — skipping Google push watch only; calendar sync still runs on cron and after OAuth',
           { scope: 'calendar_watch' },
         ),
       );
@@ -169,7 +210,7 @@ export class CalendarSyncService {
       }
 
       for (const event of result.events) {
-        const upsertResult = await this.upsertCalendarExtract(conn, event);
+        await this.upsertCalendarExtract(conn, event);
         for (const att of event.attendees) {
           if (att.self || !att.email) continue;
           await this.upsertContact(
@@ -177,23 +218,6 @@ export class CalendarSyncService {
             att.email,
             att.name,
             event.start,
-          );
-        }
-        if (upsertResult.isNewInvite && upsertResult.extractId) {
-          await this.sendInviteNotification(
-            conn.userId,
-            upsertResult.extractId,
-            event,
-          ).catch((e) =>
-            this.log.warn(
-              logWithContext('Invite notification failed', {
-                userId: conn.userId,
-                connectionId,
-                extractId: upsertResult.extractId ?? '',
-                scope: 'calendar_sync',
-                err: e instanceof Error ? e.message : String(e),
-              }),
-            ),
           );
         }
       }
@@ -211,6 +235,8 @@ export class CalendarSyncService {
           updatedAt: new Date(),
         })
         .where(eq(calendarConnectionsTable.id, connectionId));
+
+      this.invalidGrantNoticeSent.delete(connectionId);
 
       await this.logCalendar(conn.userId, connectionId, 'sync_done', {
         eventCount: result.events.length,
@@ -238,6 +264,13 @@ export class CalendarSyncService {
                 }),
               );
             }
+            if (isGoogleInvalidGrantError(e)) {
+              void this.revokeGoogleAccessAndNotify(
+                conn.userId,
+                connectionId,
+                e,
+              );
+            }
           });
       }
     } catch (err) {
@@ -248,7 +281,7 @@ export class CalendarSyncService {
           ? (err as { code: number }).code
           : 0;
 
-      if (code === 401 || code === 403) {
+      if (code === 401 || code === 403 || isGoogleInvalidGrantError(err)) {
         this.log.warn(
           logWithContext('OAuth failure, marking disconnected', {
             userId: conn.userId,
@@ -258,14 +291,24 @@ export class CalendarSyncService {
             err: msg,
           }),
         );
-        await this.db
-          .update(calendarConnectionsTable)
-          .set({
-            connectionStatus: 'disconnected',
-            lastError: msg,
-            updatedAt: new Date(),
-          })
-          .where(eq(calendarConnectionsTable.id, connectionId));
+        if (isGoogleInvalidGrantError(err)) {
+          void this.revokeGoogleAccessAndNotify(conn.userId, connectionId, err);
+        } else {
+          await this.db
+            .update(calendarConnectionsTable)
+            .set({
+              connectionStatus: 'disconnected',
+              lastError: msg,
+              updatedAt: new Date(),
+            })
+            .where(eq(calendarConnectionsTable.id, connectionId));
+          void this.chatEvents.publish(conn.userId, 'integration_notice', {
+            kind: 'google_calendar',
+            title: CALENDAR_SSE_RECONNECT_TITLE,
+            body: CALENDAR_SSE_RECONNECT_BODY,
+            connection_id: connectionId,
+          });
+        }
       } else {
         await this.db
           .update(calendarConnectionsTable)
@@ -388,38 +431,6 @@ export class CalendarSyncService {
     }
   }
 
-  /** Update RSVP status on a Google Calendar event. */
-  async rsvpOnGoogle(
-    connectionId: string,
-    externalEventId: string,
-    response: 'accepted' | 'declined' | 'tentative',
-  ): Promise<void> {
-    const conn = await this.connections.findById(connectionId);
-    if (!conn || conn.provider !== 'google') return;
-    if (!conn.googleAccessToken || !conn.googleRefreshToken) return;
-
-    const result = await this.google.rsvpEvent(
-      conn.googleAccessToken,
-      conn.googleRefreshToken,
-      externalEventId,
-      response,
-    );
-
-    if (result.newAccessToken) {
-      await this.connections.updateGoogleTokens(
-        conn.id,
-        result.newAccessToken,
-        new Date(Date.now() + 3600_000),
-      );
-    }
-
-    await this.logCalendarOp(conn.userId, 'calendar_rsvp', {
-      connectionId,
-      externalEventId,
-      response,
-    });
-  }
-
   /** Write a new event to the user's primary Google Calendar. */
   async writeToGoogleCalendar(
     userId: string,
@@ -439,29 +450,36 @@ export class CalendarSyncService {
     if (!primary || primary.provider !== 'google') return null;
     if (!primary.googleAccessToken || !primary.googleRefreshToken) return null;
 
-    const result = await this.google.createEvent(
-      primary.googleAccessToken,
-      primary.googleRefreshToken,
-      event,
-    );
-
-    if (result.newAccessToken) {
-      await this.connections.updateGoogleTokens(
-        primary.id,
-        result.newAccessToken,
-        new Date(Date.now() + 3600_000),
+    try {
+      const result = await this.google.createEvent(
+        primary.googleAccessToken,
+        primary.googleRefreshToken,
+        event,
       );
+
+      if (result.newAccessToken) {
+        await this.connections.updateGoogleTokens(
+          primary.id,
+          result.newAccessToken,
+          new Date(Date.now() + 3600_000),
+        );
+      }
+
+      await this.logCalendarOp(userId, 'calendar_event_written', {
+        summary: event.summary,
+        start: event.start.toISOString(),
+        end: event.end.toISOString(),
+        eventId: result.eventId,
+        connectionId: primary.id,
+      });
+
+      return { eventId: result.eventId, connectionId: primary.id };
+    } catch (err) {
+      if (isGoogleInvalidGrantError(err)) {
+        void this.revokeGoogleAccessAndNotify(userId, primary.id, err);
+      }
+      throw err;
     }
-
-    await this.logCalendarOp(userId, 'calendar_event_written', {
-      summary: event.summary,
-      start: event.start.toISOString(),
-      end: event.end.toISOString(),
-      eventId: result.eventId,
-      connectionId: primary.id,
-    });
-
-    return { eventId: result.eventId, connectionId: primary.id };
   }
 
   async updateGoogleCalendarEvent(
@@ -642,10 +660,7 @@ export class CalendarSyncService {
   private async upsertCalendarExtract(
     conn: CalendarConnectionRow,
     event: GoogleEvent,
-  ): Promise<{
-    isNewInvite: boolean;
-    extractId: string | null;
-  }> {
+  ): Promise<void> {
     if (event.status === 'cancelled') {
       const cancelled = await this.db
         .update(extractsTable)
@@ -672,7 +687,7 @@ export class CalendarSyncService {
           },
         );
       }
-      return { isNewInvite: false, extractId: null };
+      return;
     }
 
     const [existing] = await this.db
@@ -730,120 +745,48 @@ export class CalendarSyncService {
           event_end_at: event.end.toISOString(),
         },
       );
-      return { isNewInvite: false, extractId: existing.id };
-    } else {
-      const [inserted] = await this.db
-        .insert(extractsTable)
-        .values({
-          userId: conn.userId,
-          source: 'calendar',
-          extractText: event.summary ?? 'Calendar event',
-          originalText: event.summary ?? '',
-          status: isPast ? 'closed' : 'inbox',
-          tone: 'confident',
-          urgency: 'none',
-          periodStart: event.start,
-          periodEnd: event.end,
-          periodLabel: this.periodLabelForEvent(event.start),
-          externalEventId: event.id,
-          calendarConnectionId: conn.id,
-          isOrganizer: event.isOrganizer ?? false,
-          rsvpStatus: event.selfRsvpStatus ?? null,
-          eventStartAt: event.start,
-          eventEndAt: event.end,
-          eventLocation: event.location,
-          pemNote: event.description?.trim() || null,
-          closedAt: isPast ? now : null,
-          updatedAt: now,
-        })
-        .returning({ id: extractsTable.id });
-      if (inserted) {
-        await this.logCalendarExtract(
-          conn.userId,
-          conn.id,
-          inserted.id,
-          'calendar_sync_event_created',
-          {
-            external_event_id: event.id,
-            summary: event.summary ?? null,
-            is_past: isPast,
-            event_start_at: event.start.toISOString(),
-            event_end_at: event.end.toISOString(),
-          },
-        );
-      }
-
-      const isNewInvite = !isPast && !event.isOrganizer && !!inserted;
-      return { isNewInvite, extractId: inserted?.id ?? null };
-    }
-  }
-
-  private async sendInviteNotification(
-    userId: string,
-    extractId: string,
-    event: GoogleEvent,
-  ): Promise<void> {
-    const organizer = event.organizerName || event.organizerEmail || 'Someone';
-    const time = event.start.toLocaleString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-    const parts = [
-      `${organizer} invited you to "${event.summary}" on ${time}.`,
-    ];
-    if (event.location) parts.push(`Location: ${event.location}`);
-    if (event.description) {
-      const desc =
-        event.description.length > 200
-          ? event.description.slice(0, 200) + '...'
-          : event.description;
-      parts.push(desc);
+      return;
     }
 
-    const content = parts.join('\n');
-    const [msg] = await this.db
-      .insert(messagesTable)
+    const [inserted] = await this.db
+      .insert(extractsTable)
       .values({
-        userId,
-        role: 'pem',
-        kind: 'text',
-        content,
-        processingStatus: 'done',
-        metadata: {
-          type: 'calendar_invite',
-          extract_id: extractId,
-          event_summary: event.summary,
-          event_start: event.start.toISOString(),
-          event_end: event.end.toISOString(),
-          event_location: event.location,
-          organizer_name: event.organizerName,
-          organizer_email: event.organizerEmail,
-          self_rsvp_status: event.selfRsvpStatus,
-        },
+        userId: conn.userId,
+        source: 'calendar',
+        extractText: event.summary ?? 'Calendar event',
+        originalText: event.summary ?? '',
+        status: isPast ? 'closed' : 'inbox',
+        tone: 'confident',
+        urgency: 'none',
+        periodStart: event.start,
+        periodEnd: event.end,
+        periodLabel: this.periodLabelForEvent(event.start),
+        externalEventId: event.id,
+        calendarConnectionId: conn.id,
+        isOrganizer: event.isOrganizer ?? false,
+        rsvpStatus: event.selfRsvpStatus ?? null,
+        eventStartAt: event.start,
+        eventEndAt: event.end,
+        eventLocation: event.location,
+        pemNote: event.description?.trim() || null,
+        closedAt: isPast ? now : null,
+        updatedAt: now,
       })
-      .returning();
-
-    if (msg) {
-      await this.chatEvents.publish(userId, 'pem_message', {
-        message: {
-          id: msg.id,
-          role: msg.role,
-          kind: msg.kind,
-          content: msg.content,
-          voice_url: null,
-          transcript: null,
-          triage_category: null,
-          processing_status: msg.processingStatus,
-          polished_text: null,
-          summary: null,
-          parent_message_id: null,
-          metadata: msg.metadata,
-          created_at: msg.createdAt.toISOString(),
+      .returning({ id: extractsTable.id });
+    if (inserted) {
+      await this.logCalendarExtract(
+        conn.userId,
+        conn.id,
+        inserted.id,
+        'calendar_sync_event_created',
+        {
+          external_event_id: event.id,
+          summary: event.summary ?? null,
+          is_past: isPast,
+          event_start_at: event.start.toISOString(),
+          event_end_at: event.end.toISOString(),
         },
-      });
+      );
     }
   }
 
