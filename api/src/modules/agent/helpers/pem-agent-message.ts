@@ -17,7 +17,13 @@ export function truncateForPrompt(content: string): string {
   );
 }
 
-/** Programmatic gate (Anthropic): re-check when model returns no work but text looks actionable. */
+/**
+ * Programmatic gate: re-run extraction / monolithic fallback when the model
+ * returned no creates/updates/completions but the text plausibly describes work.
+ *
+ * Do **not** treat “long message” alone as actionable — long recall questions and
+ * normal chat exceed 60 chars and would spam retries + monolithic path.
+ */
 export function messageLikelyContainsTasks(content: string): boolean {
   const t = content.trim();
   if (t.length < 10) return false;
@@ -30,7 +36,6 @@ export function messageLikelyContainsTasks(content: string): boolean {
       return true;
     }
   }
-  if (t.length > 60) return true;
   return /\b(need|must|have to|should|don't forget|dont forget|remind|pick up|pickup|grab|buy|call|email|text|schedule|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|errands|groceries|shopping|appointment|meeting|deadline|worried|concern|miss|missing|afraid|scared|prioritize|important|urgent|focus|stuff to do|things to do)\b/i.test(
     t,
   );

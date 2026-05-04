@@ -17,6 +17,7 @@ import {
   CALENDAR_SSE_RECONNECT_TITLE,
 } from '@/modules/calendar/constants/calendar-integration.constants';
 import { isGoogleInvalidGrantError } from '@/modules/calendar/helpers/is-google-invalid-grant';
+import { sanitizeGoogleEventLocation } from '@/modules/calendar/helpers/sanitize-google-event-location';
 import { ChatEventsService } from '@/modules/messaging/chat-events.service';
 import { CalendarConnectionService } from '@/modules/calendar/services/calendar-connection.service';
 import {
@@ -690,6 +691,8 @@ export class CalendarSyncService {
       return;
     }
 
+    const normalizedSummary = (event.summary ?? '').trim().toLowerCase();
+
     const [existing] = await this.db
       .select({ id: extractsTable.id })
       .from(extractsTable)
@@ -703,7 +706,7 @@ export class CalendarSyncService {
             ),
             and(eq(extractsTable.externalEventId, event.id)),
             and(
-              eq(extractsTable.extractText, event.summary ?? ''),
+              sql`lower(trim(${extractsTable.extractText})) = ${normalizedSummary}`,
               eq(extractsTable.eventStartAt, event.start),
             ),
           ),
@@ -718,10 +721,14 @@ export class CalendarSyncService {
       await this.db
         .update(extractsTable)
         .set({
+          source: 'calendar',
           extractText: event.summary ?? 'Calendar event',
           eventStartAt: event.start,
           eventEndAt: event.end,
-          eventLocation: event.location,
+          periodStart: event.start,
+          periodEnd: event.end,
+          periodLabel: this.periodLabelForEvent(event.start),
+          eventLocation: sanitizeGoogleEventLocation(event.location),
           externalEventId: event.id,
           calendarConnectionId: conn.id,
           isOrganizer: event.isOrganizer ?? false,
@@ -767,7 +774,7 @@ export class CalendarSyncService {
         rsvpStatus: event.selfRsvpStatus ?? null,
         eventStartAt: event.start,
         eventEndAt: event.end,
-        eventLocation: event.location,
+        eventLocation: sanitizeGoogleEventLocation(event.location),
         pemNote: event.description?.trim() || null,
         closedAt: isPast ? now : null,
         updatedAt: now,

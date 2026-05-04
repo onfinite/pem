@@ -115,16 +115,18 @@ function urlAlreadyReferenced(url: string, haystack: string): boolean {
   }
 }
 
-/** Appends `Link: …` lines for URLs not already present in task text / note / fragment. */
+/**
+ * Appends `Link: …` lines to pem_note for URLs from the user message.
+ * Only dedupes against existing pem_note — original_text often repeats the same URLs from
+ * the chat line, which would incorrectly suppress the note the task drawer shows.
+ */
 export function mergeMessageLinksIntoExtractPemNote(
   item: ExtractAction,
   urls: string[],
 ): ExtractAction {
   if (!urls.length) return item;
-  const haystack = [item.text, item.pem_note, item.original_text]
-    .filter(Boolean)
-    .join('\n');
-  const missing = urls.filter((u) => !urlAlreadyReferenced(u, haystack));
+  const noteHaystack = item.pem_note?.trim() ?? '';
+  const missing = urls.filter((u) => !urlAlreadyReferenced(u, noteHaystack));
   if (!missing.length) return item;
   const block = missing.map((u) => `Link: ${u}`).join('\n');
   const prev = item.pem_note?.trim();

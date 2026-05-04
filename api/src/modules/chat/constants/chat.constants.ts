@@ -4,6 +4,9 @@ export const RAG_MIN_SIMILARITY = 0.68;
 /** Floor for image-only recall; weak matches often look “related” but are wrong (e.g. random screenshots). */
 export const RAG_IMAGE_RECALL_MIN_SIMILARITY = 0.6;
 
+/** Second-pass image recall when the user clearly asked for past photos but the strict floor returned nothing. */
+export const RAG_IMAGE_RECALL_MIN_SIMILARITY_RELAXED = 0.5;
+
 /**
  * After sorting image hits by similarity, drop hits farther than this below the **best** score.
  * Stops a strong match (e.g. kid card) from being paired with a loose also-ran (e.g. todo list).
@@ -15,6 +18,18 @@ export const RAG_IMAGE_RECALL_TOP_K = 12;
 
 /** Max vector hits to fetch and consider after threshold filter. */
 export const RAG_TOP_K = 15;
+
+/**
+ * When strict chat RAG returns fewer than this many rows, merge a second semantic
+ * pass at RAG_ENRICHMENT_MIN_SIMILARITY so recall does not depend on exact phrasing.
+ */
+export const RAG_ENRICHMENT_MERGE_TRIGGER_MAX = 6;
+
+/** Looser cosine floor for the optional second text-RAG pass (merged, deduped). */
+export const RAG_ENRICHMENT_MIN_SIMILARITY = 0.58;
+
+/** Row cap for the enrichment pass. */
+export const RAG_ENRICHMENT_TOP_K = 22;
 
 /**
  * When the user's message implies a calendar window (yesterday, last month, April 12…),
@@ -61,3 +76,6 @@ export const PHOTO_RECALL_STRIP_MAX_ITEMS = 6;
 
 /** Max past image message ids the photo-recall intent model may return. */
 export const PHOTO_RECALL_MAX_MESSAGE_IDS = 10;
+
+/** User image rows considered for the photo-recall classifier (too low = older photos never shown). */
+export const PHOTO_RECALL_CANDIDATE_LIMIT = 36;

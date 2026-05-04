@@ -427,27 +427,24 @@ export class ExtractsService {
       row.externalEventId &&
       row.calendarConnectionId
     ) {
-      const isOwnEvent = row.isOrganizer || row.source !== 'calendar';
-      if (isOwnEvent) {
-        this.calendarSync
-          .deleteFromGoogleCalendar(
-            row.calendarConnectionId,
-            row.externalEventId,
-          )
-          .catch((e) =>
-            this.log.warn(
-              logWithContext('Calendar delete on close failed', {
-                scope: 'extracts.calendar',
-                userId,
-                extractId: id,
-                calendarConnectionId: row.calendarConnectionId ?? undefined,
-                externalEventId: row.externalEventId ?? undefined,
-                phase: 'deleteOnClose',
-                detail: e instanceof Error ? e.message : 'unknown',
-              }),
-            ),
-          );
-      }
+      // Remove from the user's Google Calendar whenever this row is linked to an
+      // event (organizer delete, or attendee removing from their calendar). If
+      // Google returns 403/404, deleteFromGoogleCalendar logs and we still close in Pem.
+      this.calendarSync
+        .deleteFromGoogleCalendar(row.calendarConnectionId, row.externalEventId)
+        .catch((e) =>
+          this.log.warn(
+            logWithContext('Calendar delete on close failed', {
+              scope: 'extracts.calendar',
+              userId,
+              extractId: id,
+              calendarConnectionId: row.calendarConnectionId ?? undefined,
+              externalEventId: row.externalEventId ?? undefined,
+              phase: 'deleteOnClose',
+              detail: e instanceof Error ? e.message : 'unknown',
+            }),
+          ),
+        );
     }
 
     return u;
@@ -625,6 +622,50 @@ export class ExtractsService {
     }
     if (patch.period_label !== undefined) upd.periodLabel = patch.period_label;
 
+    /** Task modal usually sends `due_at`; period_* is used for presets like Weekend. */
+    let calendarPush: { start: Date; end: Date } | null = null;
+    if (isCalendarEvent && touchesSchedule && row.isOrganizer) {
+      if (upd.periodStart && upd.periodEnd) {
+        calendarPush = {
+          start: upd.periodStart,
+          end: upd.periodEnd,
+        };
+      } else if (
+        patch.due_at !== undefined &&
+        patch.due_at !== null &&
+        row.eventStartAt &&
+        row.eventEndAt &&
+        !(upd.periodStart && upd.periodEnd)
+      ) {
+        const due = new Date(patch.due_at);
+        if (!Number.isNaN(due.getTime())) {
+          const zone = await this.getUserTimezone(userId);
+          const oldStart = DateTime.fromJSDate(row.eventStartAt, {
+            zone: 'utc',
+          }).setZone(zone);
+          const targetDay = DateTime.fromJSDate(due, { zone: 'utc' }).setZone(
+            zone,
+          );
+          const newStartLx = targetDay.startOf('day').set({
+            hour: oldStart.hour,
+            minute: oldStart.minute,
+            second: oldStart.second,
+            millisecond: oldStart.millisecond,
+          });
+          const durMs = row.eventEndAt.getTime() - row.eventStartAt.getTime();
+          const newEndLx = newStartLx.plus({
+            milliseconds: Math.max(durMs, 60_000),
+          });
+          calendarPush = {
+            start: newStartLx.toUTC().toJSDate(),
+            end: newEndLx.toUTC().toJSDate(),
+          };
+          upd.eventStartAt = calendarPush.start;
+          upd.eventEndAt = calendarPush.end;
+        }
+      }
+    }
+
     const [u] = await this.db
       .update(extractsTable)
       .set(upd)
@@ -632,17 +673,16 @@ export class ExtractsService {
       .returning();
     if (!u) throw new NotFoundException('Extract not found');
 
-    if (isCalendarEvent && touchesSchedule && row.isOrganizer) {
-      const calUpdates: { start?: Date; end?: Date } = {};
-      if (upd.periodStart) calUpdates.start = upd.periodStart;
-      if (upd.periodEnd) calUpdates.end = upd.periodEnd;
-      if (row.calendarConnectionId && row.externalEventId) {
-        await this.calendarSync.updateGoogleCalendarEvent(
-          row.calendarConnectionId,
-          row.externalEventId,
-          calUpdates,
-        );
-      }
+    if (
+      calendarPush &&
+      row.calendarConnectionId &&
+      row.externalEventId?.trim()
+    ) {
+      await this.calendarSync.updateGoogleCalendarEvent(
+        row.calendarConnectionId,
+        row.externalEventId.trim(),
+        { start: calendarPush.start, end: calendarPush.end },
+      );
     }
 
     await this.logUserChange({

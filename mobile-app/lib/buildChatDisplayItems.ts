@@ -2,13 +2,9 @@ import type { ClientMessage } from "@/lib/chatScreenClientMessage.types";
 
 export type ChatDisplayItem =
   | { type: "message"; message: ClientMessage }
-  | { type: "date"; date: string }
-  | { type: "typing" };
+  | { type: "date"; date: string };
 
-export function buildChatDisplayItems(
-  messages: ClientMessage[],
-  statusMap: Record<string, string>,
-): ChatDisplayItem[] {
+export function buildChatDisplayItems(messages: ClientMessage[]): ChatDisplayItem[] {
   const displayItems: ChatDisplayItem[] = [];
   const seenIds = new Set<string>();
   const deduped: ClientMessage[] = [];
@@ -16,11 +12,6 @@ export function buildChatDisplayItems(
     if (seenIds.has(msg.id)) continue;
     seenIds.add(msg.id);
     deduped.push(msg);
-  }
-
-  const pemIsTyping = Object.keys(statusMap).length > 0;
-  if (pemIsTyping) {
-    displayItems.push({ type: "typing" });
   }
 
   for (let i = deduped.length - 1; i >= 0; i--) {

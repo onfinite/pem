@@ -10,8 +10,10 @@ import {
   type SimilaritySearchOpts,
 } from '@/modules/memory/embeddings.service';
 import {
+  PHOTO_RECALL_CANDIDATE_LIMIT,
   PHOTO_RECALL_STRIP_SCORE_GAP,
   RAG_IMAGE_RECALL_MIN_SIMILARITY,
+  RAG_IMAGE_RECALL_MIN_SIMILARITY_RELAXED,
   RAG_IMAGE_RECALL_TOP_K,
 } from '@/modules/chat/constants/chat.constants';
 import { visionLineForHumans } from '@/modules/media/photo/helpers/photo-vision-stored';
@@ -19,8 +21,11 @@ import {
   PHOTO_RECALL_MAX_MESSAGE_IDS,
   dedupeImageRecallHitsByMessage,
   pruneImageRecallHitsByTopScoreGap,
-  resolvePhotoRecallMessageIdsFromRagOnly,
 } from '@/modules/media/photo/helpers/resolve-photo-recall-message-ids';
+import {
+  isLikelyPastImageRecallRequest,
+  wantsImplicitPastMediaContext,
+} from '@/modules/media/photo/helpers/photo-recall-follow-up';
 import { shouldSkipPhotoRecallStrip } from '@/modules/media/photo/helpers/photo-recall-strip-guard';
 import { logWithContext } from '@/core/utils/format-log-context';
 import {
@@ -28,7 +33,6 @@ import {
   type PhotoRecallIntentOutput,
 } from '@/modules/media/photo/chat-photo-recall-intent-llm.service';
 
-const CANDIDATE_LIMIT = 12;
 const VISION_SNIP = 260;
 const CAPTION_SNIP = 100;
 
@@ -97,42 +101,76 @@ export class ChatPhotoRecallIntentService {
           err: e instanceof Error ? e.message : 'unknown',
         }),
       );
+      if (
+        !isLikelyPastImageRecallRequest(stripGuardAndClassifierText) &&
+        !wantsImplicitPastMediaContext(stripGuardAndClassifierText)
+      ) {
+        return { attachStrip: false, messageIds: [] };
+      }
+    }
+
+    const implicitPastMedia = wantsImplicitPastMediaContext(
+      stripGuardAndClassifierText,
+    );
+
+    const allowStrip =
+      intent?.attachRelevantPastPhotos === true ||
+      isLikelyPastImageRecallRequest(stripGuardAndClassifierText);
+
+    if (!allowStrip && !implicitPastMedia) {
       return { attachStrip: false, messageIds: [] };
     }
 
-    if (!intent?.attachRelevantPastPhotos) {
-      return { attachStrip: false, messageIds: [] };
-    }
-
-    const ordered = (intent.orderedMessageIds ?? []).filter((id: string) =>
+    const ordered = (intent?.orderedMessageIds ?? []).filter((id: string) =>
       allowed.has(id),
     );
 
     const searchText =
-      intent.embeddingSearchHint?.trim() ||
-      (params.vectorQueryText ?? params.userText).trim();
+      intent?.attachRelevantPastPhotos === true &&
+      intent.embeddingSearchHint?.trim()
+        ? intent.embeddingSearchHint.trim()
+        : (params.vectorQueryText ?? params.userText).trim();
 
-    const rawImageHits = await this.embeddings.similaritySearchImageMessages(
+    let rawImageHits = await this.embeddings.similaritySearchImageMessages(
       params.userId,
       searchText,
       RAG_IMAGE_RECALL_TOP_K,
       RAG_IMAGE_RECALL_MIN_SIMILARITY,
       params.vectorSearchOpts,
     );
-    const vectorPrunedIds = pruneImageRecallHitsByTopScoreGap(
-      dedupeImageRecallHitsByMessage(rawImageHits),
+    let deduped = dedupeImageRecallHitsByMessage(rawImageHits);
+    let vectorPrunedIds = pruneImageRecallHitsByTopScoreGap(
+      deduped,
       PHOTO_RECALL_STRIP_SCORE_GAP,
     );
+    if (
+      vectorPrunedIds.length === 0 &&
+      (isLikelyPastImageRecallRequest(stripGuardAndClassifierText) ||
+        implicitPastMedia)
+    ) {
+      rawImageHits = await this.embeddings.similaritySearchImageMessages(
+        params.userId,
+        searchText,
+        RAG_IMAGE_RECALL_TOP_K,
+        RAG_IMAGE_RECALL_MIN_SIMILARITY_RELAXED,
+        params.vectorSearchOpts,
+      );
+      deduped = dedupeImageRecallHitsByMessage(rawImageHits);
+      vectorPrunedIds = pruneImageRecallHitsByTopScoreGap(
+        deduped,
+        PHOTO_RECALL_STRIP_SCORE_GAP,
+      );
+    }
 
     if (ordered.length > 0) {
       const prunedSet = new Set(vectorPrunedIds);
-      const refined = ordered.filter(
-        (id: string, i: number) => i === 0 || prunedSet.has(id),
-      );
-      return {
-        attachStrip: true,
-        messageIds: refined.slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS),
-      };
+      const refined = ordered.filter((id: string) => prunedSet.has(id));
+      if (refined.length > 0) {
+        return {
+          attachStrip: true,
+          messageIds: refined.slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS),
+        };
+      }
     }
 
     if (vectorPrunedIds.length > 0) {
@@ -142,15 +180,7 @@ export class ChatPhotoRecallIntentService {
       };
     }
 
-    const ragOnly = await resolvePhotoRecallMessageIdsFromRagOnly(
-      this.db,
-      params.userId,
-      params.ragMessageIds,
-    );
-    return {
-      attachStrip: ragOnly.length > 0,
-      messageIds: ragOnly,
-    };
+    return { attachStrip: false, messageIds: [] };
   }
 
   private async loadCandidates(
@@ -175,14 +205,14 @@ export class ChatPhotoRecallIntentService {
         ),
       )
       .orderBy(sql`${messagesTable.createdAt} DESC`)
-      .limit(CANDIDATE_LIMIT * 2);
+      .limit(PHOTO_RECALL_CANDIDATE_LIMIT * 2);
 
     const withAssets = rows.filter(
       (r) =>
         (r.imageKeys?.length ?? 0) > 0 && (r.visionSummary ?? '').trim().length,
     );
 
-    return withAssets.slice(0, CANDIDATE_LIMIT).map((r) => ({
+    return withAssets.slice(0, PHOTO_RECALL_CANDIDATE_LIMIT).map((r) => ({
       id: r.id,
       caption: (r.content ?? '').trim().slice(0, CAPTION_SNIP),
       vision: visionLineForHumans(r.visionSummary ?? '').slice(0, VISION_SNIP),

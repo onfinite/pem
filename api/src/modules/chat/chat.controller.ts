@@ -67,7 +67,7 @@ export class ChatController {
     private readonly voiceUpload: ChatVoiceUploadService,
     private readonly messagesForClient: ChatMessagesForClientService,
     @InjectQueue('chat') private readonly chatQueue: Queue,
-  ) {}
+  ) { }
 
   /** So other devices / tabs with an open SSE stream stay in sync with new user rows. */
   private async publishUserMessageSse(
@@ -78,7 +78,6 @@ export class ChatController {
   }
 
   @Post('messages')
-  @HttpCode(200)
   @UseInterceptors(
     FileInterceptor('audio', { limits: { fileSize: 25 * 1024 * 1024 } }),
   )
@@ -104,6 +103,7 @@ export class ChatController {
       whitelist: true,
       forbidNonWhitelisted: false,
     });
+
     if (errors.length > 0) {
       const msg = errors
         .flatMap((e) => (e.constraints ? Object.values(e.constraints) : []))

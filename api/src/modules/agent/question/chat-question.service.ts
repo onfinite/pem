@@ -13,7 +13,6 @@ import {
 import { formatChatRecallStamp } from '@/modules/agent/helpers/format-chat-recall-stamp';
 import {
   asksAboutCompletedTasks,
-  buildRecallEmbeddingAugmentation,
   detectQuestionTemporalRange,
   wantsAllTimeCompletedTasks,
 } from '@/modules/agent/question/helpers/chat-question-temporal';
@@ -32,10 +31,18 @@ import { orderedMessageIdsFromRecallItems } from '@/modules/media/photo/helpers/
 import { buildSavedLinksRecallPromptSection } from '@/modules/agent/question/helpers/saved-links-recall-for-ask';
 import {
   ASK_DONE_EXTRACTS_CAP,
-  RAG_MIN_SIMILARITY,
-  RAG_TOP_K,
   DONE_EXTRACTS_LOOKBACK_DAYS,
+  RAG_ENRICHMENT_MERGE_TRIGGER_MAX,
+  RAG_ENRICHMENT_MIN_SIMILARITY,
+  RAG_ENRICHMENT_TOP_K,
 } from '@/modules/chat/constants/chat.constants';
+import {
+  buildAgentRagSearchParams,
+  isBroadTopicRecallQuery,
+  isLooseRecallQuery,
+  mergeRagHitsByMessageId,
+  RAG_MIN_SIMILARITY_BROAD_TOPIC_RECALL_FALLBACK,
+} from '@/modules/chat/helpers/chat-rag-recall-params';
 import { logWithContext } from '@/core/utils/format-log-context';
 import { ChatQuestionLlmService } from '@/modules/agent/question/chat-question-llm.service';
 
@@ -106,9 +113,6 @@ export class ChatQuestionService {
       } else if (!allTimeDone) {
         closedWhereParts.push(gte(extractsTable.closedAt, closedSince));
       }
-      const ragVectorQuery = temporalRange
-        ? `${question}\n\n${buildRecallEmbeddingAugmentation(temporalRange)}`
-        : question;
       const ragSimilarityOpts = temporalRange
         ? {
             temporalBoost: {
@@ -118,49 +122,85 @@ export class ChatQuestionService {
           }
         : undefined;
 
-      const [allOpen, buckets, ragHits, memorySection, recentMsgs, closedRows] =
-        await Promise.all([
-          this.db
-            .select()
-            .from(extractsTable)
-            .where(
-              and(
-                eq(extractsTable.userId, userId),
-                inArray(extractsTable.status, ['inbox', 'snoozed']),
-              ),
-            )
-            .orderBy(desc(extractsTable.createdAt))
-            .limit(100),
-          this.extracts.getAskOpenTimelineBuckets(userId),
-          this.embeddings.similaritySearch(
-            userId,
-            ragVectorQuery,
-            RAG_TOP_K,
-            RAG_MIN_SIMILARITY,
-            ragSimilarityOpts,
-          ),
-          this.profile.buildMemoryPromptSection(userId),
-          this.db
-            .select({
-              id: messagesTable.id,
-              role: messagesTable.role,
-              kind: messagesTable.kind,
-              content: messagesTable.content,
-              transcript: messagesTable.transcript,
-              visionSummary: messagesTable.visionSummary,
-              createdAt: messagesTable.createdAt,
-            })
-            .from(messagesTable)
-            .where(eq(messagesTable.userId, userId))
-            .orderBy(sql`${messagesTable.createdAt} DESC`)
-            .limit(ChatQuestionService.questionRecentMessagesLimit),
-          this.db
-            .select()
-            .from(extractsTable)
-            .where(and(...closedWhereParts))
-            .orderBy(desc(extractsTable.closedAt))
-            .limit(ASK_DONE_EXTRACTS_CAP),
-        ]);
+      const ragUsesLooseRecallFloor =
+        isBroadTopicRecallQuery(question) || isLooseRecallQuery(question);
+
+      const ragSearch = buildAgentRagSearchParams(question, temporalRange);
+      const ragVectorQuery = ragSearch.vectorQuery;
+
+      const [
+        allOpen,
+        buckets,
+        ragHitsInitial,
+        memorySection,
+        recentMsgs,
+        closedRows,
+      ] = await Promise.all([
+        this.db
+          .select()
+          .from(extractsTable)
+          .where(
+            and(
+              eq(extractsTable.userId, userId),
+              inArray(extractsTable.status, ['inbox', 'snoozed']),
+            ),
+          )
+          .orderBy(desc(extractsTable.createdAt))
+          .limit(100),
+        this.extracts.getAskOpenTimelineBuckets(userId),
+        this.embeddings.similaritySearch(
+          userId,
+          ragSearch.vectorQuery,
+          ragSearch.topK,
+          ragSearch.minSimilarity,
+          ragSimilarityOpts,
+        ),
+        this.profile.buildMemoryPromptSection(userId),
+        this.db
+          .select({
+            id: messagesTable.id,
+            role: messagesTable.role,
+            kind: messagesTable.kind,
+            content: messagesTable.content,
+            transcript: messagesTable.transcript,
+            visionSummary: messagesTable.visionSummary,
+            createdAt: messagesTable.createdAt,
+          })
+          .from(messagesTable)
+          .where(eq(messagesTable.userId, userId))
+          .orderBy(sql`${messagesTable.createdAt} DESC`)
+          .limit(ChatQuestionService.questionRecentMessagesLimit),
+        this.db
+          .select()
+          .from(extractsTable)
+          .where(and(...closedWhereParts))
+          .orderBy(desc(extractsTable.closedAt))
+          .limit(ASK_DONE_EXTRACTS_CAP),
+      ]);
+
+      let ragHits = ragHitsInitial;
+      if (
+        ragHits.length < RAG_ENRICHMENT_MERGE_TRIGGER_MAX &&
+        !ragUsesLooseRecallFloor
+      ) {
+        const enrich = await this.embeddings.similaritySearch(
+          userId,
+          ragSearch.vectorQuery,
+          RAG_ENRICHMENT_TOP_K,
+          RAG_ENRICHMENT_MIN_SIMILARITY,
+          ragSimilarityOpts,
+        );
+        ragHits = mergeRagHitsByMessageId(ragHits, enrich);
+      }
+      if (ragHits.length === 0 && ragUsesLooseRecallFloor) {
+        ragHits = await this.embeddings.similaritySearch(
+          userId,
+          ragSearch.vectorQuery,
+          Math.max(ragSearch.topK, 32),
+          RAG_MIN_SIMILARITY_BROAD_TOPIC_RECALL_FALLBACK,
+          ragSimilarityOpts,
+        );
+      }
 
       const allOpenBlock = this.formatAllOpen(allOpen);
       const timelineBlock = this.formatBuckets(buckets);

@@ -2,6 +2,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import type { ApiExtract } from "@/services/api/pemApi";
 import { openNativeMapsForPlace } from "@/services/links/placeLinks";
 import { formatExtractRecurrence } from "@/utils/formatting/formatExtractRecurrence";
+import { displayableEventLocation } from "@/utils/guards/displayableEventLocation";
 import { Clock, ExternalLink, MapPin } from "lucide-react-native";
 import { useCallback, useMemo } from "react";
 import { Pressable, View, Text } from "react-native";
@@ -79,15 +80,20 @@ export function TaskItemMeta({
       ? `${item.duration_minutes} min`
       : null;
 
+  const locationLine = useMemo(
+    () => displayableEventLocation(item.event_location),
+    [item.event_location],
+  );
+
   const handleLocationPress = useCallback(() => {
-    if (!item.event_location) return;
+    if (!locationLine) return;
     void openNativeMapsForPlace({
-      name: item.event_location,
-      address: item.event_location,
+      name: locationLine,
+      address: locationLine,
       lat: 0,
       lng: 0,
     });
-  }, [item.event_location]);
+  }, [locationLine]);
 
   const recurrenceLabel = useMemo(() => {
     if (item.recurrence_rule) return formatExtractRecurrence(item.recurrence_rule);
@@ -133,7 +139,7 @@ export function TaskItemMeta({
           {item.is_deadline ? " · Deadline" : ""}
         </Text>
       )}
-      {item.event_location && (
+      {locationLine && (
         <Pressable
           onPress={handleLocationPress}
           style={({ pressed }) => [
@@ -141,14 +147,14 @@ export function TaskItemMeta({
             pressed && { opacity: 0.7 },
           ]}
           accessibilityRole="link"
-          accessibilityLabel={`Open ${item.event_location} in Maps`}
+          accessibilityLabel={`Open ${locationLine} in Maps`}
         >
           <MapPin size={11} color={colors.textTertiary} />
           <Text
             style={[itemStyles.metaText, { color: colors.textTertiary }]}
             numberOfLines={1}
           >
-            {item.event_location}
+            {locationLine}
           </Text>
           <ExternalLink size={9} color={colors.textTertiary} />
         </Pressable>

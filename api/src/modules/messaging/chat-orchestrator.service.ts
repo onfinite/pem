@@ -40,6 +40,7 @@ import { PhotoVisionService } from '@/modules/media/photo/photo-vision.service';
 import { buildPhotoRecallMetadata } from '@/modules/media/photo/helpers/build-photo-recall-metadata';
 import { buildPhotoRecallPromptSection } from '@/modules/media/photo/helpers/build-photo-recall-prompt-section';
 import { orderedMessageIdsFromRecallItems } from '@/modules/media/photo/helpers/resolve-photo-recall-message-ids';
+import { needsPhotoRecallConversationTail } from '@/modules/media/photo/helpers/photo-recall-follow-up';
 import { ChatPhotoRecallIntentService } from '@/modules/media/photo/chat-photo-recall-intent.service';
 import { ImageReferenceOnlyReplyService } from '@/modules/media/photo/image-reference-only-reply.service';
 import { PhotoAttachmentIntentService } from '@/modules/media/photo/photo-attachment-intent.service';
@@ -52,13 +53,18 @@ import {
 import {
   AGENT_RECENT_MESSAGES_LIMIT,
   DONE_EXTRACTS_LOOKBACK_DAYS,
-  RAG_MIN_SIMILARITY,
-  RAG_TOP_K,
+  RAG_ENRICHMENT_MERGE_TRIGGER_MAX,
+  RAG_ENRICHMENT_MIN_SIMILARITY,
+  RAG_ENRICHMENT_TOP_K,
 } from '@/modules/chat/constants/chat.constants';
 import {
-  buildRecallEmbeddingAugmentation,
-  detectQuestionTemporalRange,
-} from '@/modules/agent/question/helpers/chat-question-temporal';
+  buildAgentRagSearchParams,
+  isBroadTopicRecallQuery,
+  isLooseRecallQuery,
+  mergeRagHitsByMessageId,
+  RAG_MIN_SIMILARITY_BROAD_TOPIC_RECALL_FALLBACK,
+} from '@/modules/chat/helpers/chat-rag-recall-params';
+import { detectQuestionTemporalRange } from '@/modules/agent/question/helpers/chat-question-temporal';
 import { shouldEscalateTrivialForPhotoFollowup } from '@/modules/media/photo/helpers/photo-offer-followup';
 import { normalizeDedupeTaskKey } from '@/core/utils/filter-deduped-creates';
 import {
@@ -397,9 +403,6 @@ export class ChatOrchestratorService {
         new Date(),
         ctx.tz,
       );
-      const ragVectorQuery = temporalRange
-        ? `${content}\n\n${buildRecallEmbeddingAugmentation(temporalRange)}`
-        : content;
       const ragSimilarityOpts = temporalRange
         ? {
             temporalBoost: {
@@ -409,14 +412,43 @@ export class ChatOrchestratorService {
           }
         : undefined;
 
-      const ragResults = await this.embeddings.similaritySearch(
+      const ragUsesLooseRecallFloor =
+        isBroadTopicRecallQuery(content) || isLooseRecallQuery(content);
+
+      const ragSearch = buildAgentRagSearchParams(content, temporalRange);
+      let ragResults = await this.embeddings.similaritySearch(
         userId,
-        ragVectorQuery,
-        RAG_TOP_K,
-        RAG_MIN_SIMILARITY,
+        ragSearch.vectorQuery,
+        ragSearch.topK,
+        ragSearch.minSimilarity,
         ragSimilarityOpts,
       );
+      if (
+        ragResults.length < RAG_ENRICHMENT_MERGE_TRIGGER_MAX &&
+        !ragUsesLooseRecallFloor
+      ) {
+        const enrich = await this.embeddings.similaritySearch(
+          userId,
+          ragSearch.vectorQuery,
+          RAG_ENRICHMENT_TOP_K,
+          RAG_ENRICHMENT_MIN_SIMILARITY,
+          ragSimilarityOpts,
+        );
+        ragResults = mergeRagHitsByMessageId(ragResults, enrich);
+      }
+      if (ragResults.length === 0 && ragUsesLooseRecallFloor) {
+        ragResults = await this.embeddings.similaritySearch(
+          userId,
+          ragSearch.vectorQuery,
+          Math.max(ragSearch.topK, 32),
+          RAG_MIN_SIMILARITY_BROAD_TOPIC_RECALL_FALLBACK,
+          ragSimilarityOpts,
+        );
+      }
+      const ragVectorQuery = ragSearch.vectorQuery;
       const ragContext = ragResults.map((r) => r.content).join('\n');
+
+      const recentMsgs = await this.getRecentMessages(userId);
 
       const photoRecallClassifierText =
         msg.kind === 'image' || (msg.kind === 'voice' && hasUserImages)
@@ -427,14 +459,36 @@ export class ChatOrchestratorService {
               .trim()
           : '';
 
+      let photoClassifierForIntent =
+        photoRecallClassifierText.length > 0
+          ? photoRecallClassifierText
+          : undefined;
+      if (
+        !photoClassifierForIntent &&
+        needsPhotoRecallConversationTail(content)
+      ) {
+        const tail = await this.recentChatTailForPhotoRecall(
+          userId,
+          messageId,
+          12,
+        );
+        if (tail)
+          photoClassifierForIntent = `${content.trim()}\n\nRecent chat:\n${tail}`;
+      }
+
+      const photoVectorQuery =
+        photoClassifierForIntent && photoRecallClassifierText.length === 0
+          ? [photoClassifierForIntent, ragVectorQuery].join('\n\n').trim()
+          : ragVectorQuery;
+
       const { attachStrip, messageIds: photoRecallMessageIds } =
         await this.photoRecallIntent.resolveStripAndMessageIds({
           userId,
           userText: content,
-          ...(photoRecallClassifierText
-            ? { classifierUserText: photoRecallClassifierText }
+          ...(photoClassifierForIntent
+            ? { classifierUserText: photoClassifierForIntent }
             : {}),
-          vectorQueryText: ragVectorQuery,
+          vectorQueryText: photoVectorQuery,
           ragMessageIds: ragResults.map((r) => r.messageId),
           excludeMessageId: messageId,
           vectorSearchOpts: ragSimilarityOpts,
@@ -465,8 +519,6 @@ export class ChatOrchestratorService {
               ctx.tz,
             )
           : undefined;
-
-      const recentMsgs = await this.getRecentMessages(userId);
 
       await this.publishStatus(userId, messageId, 'Working on it...');
 
@@ -501,12 +553,6 @@ export class ChatOrchestratorService {
         );
       }
 
-      const slowStatusTimer = setTimeout(() => {
-        this.publishStatus(userId, messageId, 'Organizing your tasks...').catch(
-          () => {},
-        );
-      }, 5_000);
-
       const wordCount = content.split(/\s+/).length;
       const isLongVoiceMemo = msg.kind === 'voice' && wordCount > 500;
 
@@ -533,8 +579,6 @@ export class ChatOrchestratorService {
         dedupeActiveTaskKeys: [...ctx.activeTaskKeys],
         dedupeClosedTaskKeys: [...ctx.closedKeys],
       });
-
-      clearTimeout(slowStatusTimer);
 
       const agentOutput = clampAgentOutput(agentOutputRaw);
 
@@ -886,6 +930,33 @@ export class ChatOrchestratorService {
     }));
   }
 
+  /** Prior turns for "bring up the photo" so image search can resolve the topic from context. */
+  private async recentChatTailForPhotoRecall(
+    userId: string,
+    excludeMessageId: string,
+    limit: number,
+  ): Promise<string> {
+    const rows = await this.db
+      .select()
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.userId, userId),
+          ne(messagesTable.id, excludeMessageId),
+        ),
+      )
+      .orderBy(desc(messagesTable.createdAt))
+      .limit(limit);
+
+    const chronological = rows.reverse();
+    const lines: string[] = [];
+    for (const m of chronological) {
+      const prefix = m.role === 'user' ? 'User' : 'Pem';
+      lines.push(`${prefix}: ${this.lineForRecentMessage(m)}`);
+    }
+    return lines.join('\n').slice(0, 4500);
+  }
+
   private lineForRecentMessage(
     m: (typeof messagesTable)['$inferSelect'],
   ): string {
@@ -1099,6 +1170,52 @@ export class ChatOrchestratorService {
             eq(extractsTable.userId, userId),
           ),
         );
+
+      const eventTimesTouched =
+        upd.patch.event_start_at !== undefined ||
+        upd.patch.event_end_at !== undefined;
+      if (
+        eventTimesTouched &&
+        row.externalEventId?.trim() &&
+        row.calendarConnectionId &&
+        row.isOrganizer
+      ) {
+        const coalesceEventDate = (v: unknown): Date | null => {
+          if (v == null) return null;
+          if (v instanceof Date) return v;
+          if (typeof v === 'string' || typeof v === 'number') {
+            const d = new Date(v);
+            return Number.isNaN(d.getTime()) ? null : d;
+          }
+          return null;
+        };
+        const nextStart =
+          coalesceEventDate(patch.eventStartAt) ??
+          coalesceEventDate(row.eventStartAt);
+        const nextEnd =
+          coalesceEventDate(patch.eventEndAt) ??
+          coalesceEventDate(row.eventEndAt);
+        if (nextStart && nextEnd) {
+          try {
+            await this.calendarSync.updateGoogleCalendarEvent(
+              row.calendarConnectionId,
+              row.externalEventId.trim(),
+              { start: nextStart, end: nextEnd },
+            );
+          } catch (e) {
+            this.log.warn(
+              logWithContext('Calendar sync after agent update failed', {
+                userId,
+                messageId,
+                extractId: upd.extract_id,
+                scope: 'chat_orchestrator',
+                err: e instanceof Error ? e.message : 'unknown',
+              }),
+            );
+          }
+        }
+      }
+
       await this.logEntry({
         userId,
         type: 'extract',
@@ -1115,9 +1232,17 @@ export class ChatOrchestratorService {
       const row = await this.extracts.findForUser(userId, cmd.extract_id);
       if (!row || row.status === 'closed') continue;
       if (cmd.command === 'close') {
-        await this.extracts.markClosed(userId, cmd.extract_id, {
-          initiatedBy: 'agent',
-        });
+        const skipCalendarOnCloseInvitee = Boolean(
+          row.externalEventId?.trim() &&
+          row.calendarConnectionId &&
+          !row.isOrganizer,
+        );
+        await this.extracts.markClosed(
+          userId,
+          cmd.extract_id,
+          { initiatedBy: 'agent' },
+          { skipCalendarEffects: skipCalendarOnCloseInvitee },
+        );
       } else if (cmd.command === 'reopen') {
         await this.extracts.unclose(userId, cmd.extract_id, {
           initiatedBy: 'agent',

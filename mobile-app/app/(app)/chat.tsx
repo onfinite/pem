@@ -78,6 +78,8 @@ export default function ChatScreen() {
 
   const [messages, setMessages] = useState<ClientMessage[]>([]);
   const [statusMap, setStatusMap] = useState<Record<string, string>>({});
+  const messagesRef = useRef<ClientMessage[]>([]);
+  messagesRef.current = messages;
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -217,7 +219,8 @@ export default function ChatScreen() {
       });
       setStatusMap((prev) => {
         const next = { ...prev };
-        if (msg.parent_message_id) delete next[msg.parent_message_id];
+        const parentId = msg.parent_message_id;
+        if (parentId) delete next[parentId];
         return next;
       });
       // Pem response likely means tasks changed — refresh counts
@@ -242,6 +245,13 @@ export default function ChatScreen() {
       Alert.alert(title, body);
     },
     onStatus: (messageId, text) => {
+      const hasPemReply = messagesRef.current.some(
+        (m) =>
+          m.role === "pem" &&
+          m.parent_message_id != null &&
+          m.parent_message_id === messageId,
+      );
+      if (hasPemReply) return;
       setStatusMap((prev) => ({ ...prev, [messageId]: text }));
     },
     onMessageUpdated: (messageId, field, value) => {
@@ -626,14 +636,12 @@ export default function ChatScreen() {
     ]).start();
   }, [copyChipOpacity]);
 
-  const displayItems = useMemo(
-    () => buildChatDisplayItems(messages, statusMap),
-    [messages, statusMap],
-  );
+  const displayItems = useMemo(() => buildChatDisplayItems(messages), [messages]);
+
+  const isPemTyping = Object.keys(statusMap).length > 0;
 
   const renderItem = ({ item }: { item: ChatDisplayItem }) => {
     if (item.type === "date") return <ChatDateHeader date={item.date} />;
-    if (item.type === "typing") return <ChatStatusBubble />;
     return (
       <ChatBubble
         message={item.message}
@@ -645,10 +653,9 @@ export default function ChatScreen() {
     );
   };
 
-  const keyExtractor = (item: ChatDisplayItem, index: number) => {
+  const keyExtractor = (item: ChatDisplayItem) => {
     if (item.type === "message") return item.message.id;
-    if (item.type === "date") return `date-${item.date}`;
-    return "typing-indicator";
+    return `date-${item.date}`;
   };
 
   const scrollToMessage = useCallback(
@@ -853,6 +860,15 @@ export default function ChatScreen() {
               ) : null
             }
           />
+        )}
+
+        {isPemTyping && (
+          <View
+            style={{ backgroundColor: colors.pageBackground }}
+            pointerEvents="none"
+          >
+            <ChatStatusBubble />
+          </View>
         )}
 
         <View

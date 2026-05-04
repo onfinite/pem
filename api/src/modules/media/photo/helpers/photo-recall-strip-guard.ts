@@ -64,5 +64,6 @@ export function shouldSkipPhotoRecallStrip(userText: string): boolean {
   ) {
     return true;
   }
+
   return false;
 }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { google, type calendar_v3 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 
+import { sanitizeGoogleEventLocation } from '@/modules/calendar/helpers/sanitize-google-event-location';
 import {
   signGoogleOAuthState,
   verifyGoogleOAuthState,
@@ -368,7 +369,7 @@ export class GoogleCalendarService {
               e.start!.dateTime ??
               e.start!.date!,
           ),
-          location: e.location ?? null,
+          location: sanitizeGoogleEventLocation(e.location),
           description: e.description ?? null,
           status: e.status ?? 'confirmed',
           attendees: (e.attendees ?? []).map((a) => ({
