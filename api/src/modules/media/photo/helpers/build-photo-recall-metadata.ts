@@ -1,10 +1,11 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import type { DrizzleDb } from '@/database/database.module';
 import { PHOTO_RECALL_STRIP_MAX_ITEMS } from '@/modules/chat/constants/chat.constants';
 import { visionSectionsForKeys } from '@/modules/media/photo/helpers/photo-vision-multi-sections';
 import { visionLineForHumans } from '@/modules/media/photo/helpers/photo-vision-stored';
 import { messagesTable, type MessageRow } from '@/database/schemas/index';
+import { isPhotoRecallEligibleMessage } from '@/modules/media/photo/helpers/photo-recall-eligibility';
 import { StorageService } from '@/modules/storage/storage.service';
 
 const URL_TTL_SEC = 3600;
@@ -35,12 +36,29 @@ export async function buildPhotoRecallMetadata(
       and(
         eq(messagesTable.userId, userId),
         inArray(messagesTable.id, uniqueIds),
-        eq(messagesTable.kind, 'image'),
+        eq(messagesTable.role, 'user'),
+        isNotNull(messagesTable.visionSummary),
+        sql`btrim(${messagesTable.visionSummary}) <> ''`,
+        or(
+          and(
+            eq(messagesTable.kind, 'image'),
+            sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+          ),
+          and(
+            eq(messagesTable.kind, 'voice'),
+            sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+          ),
+        ),
       ),
     );
 
-  const withKeys = rows.filter(
-    (m) => m.imageKeys?.length && m.visionSummary?.trim(),
+  const withKeys = rows.filter((m) =>
+    isPhotoRecallEligibleMessage({
+      role: m.role,
+      kind: m.kind,
+      imageKeys: m.imageKeys,
+      visionSummary: m.visionSummary,
+    }),
   ) as MessageRow[];
   if (!withKeys.length) return undefined;
 

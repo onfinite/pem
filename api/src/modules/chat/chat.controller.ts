@@ -67,7 +67,7 @@ export class ChatController {
     private readonly voiceUpload: ChatVoiceUploadService,
     private readonly messagesForClient: ChatMessagesForClientService,
     @InjectQueue('chat') private readonly chatQueue: Queue,
-  ) { }
+  ) {}
 
   /** So other devices / tabs with an open SSE stream stay in sync with new user rows. */
   private async publishUserMessageSse(

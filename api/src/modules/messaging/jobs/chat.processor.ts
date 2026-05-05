@@ -7,6 +7,7 @@ import { DRIZZLE } from '@/database/database.constants';
 import type { DrizzleDb } from '@/database/database.module';
 import { messagesTable } from '@/database/schemas/index';
 import { BATCH_WINDOW_MS } from '@/modules/chat/constants/chat.constants';
+import { messageHasImageKeys } from '@/modules/media/photo/helpers/photo-recall-eligibility';
 import { ChatOrchestratorService } from '@/modules/messaging/chat-orchestrator.service';
 import { logWithContext } from '@/core/utils/format-log-context';
 
@@ -85,6 +86,9 @@ export class ChatProcessor extends WorkerHost {
    * batch window, merge their content into this message so the orchestrator
    * processes them as a single unit. Merged messages are marked `done` so their
    * own jobs become no-ops.
+   *
+   * Skips merging when the primary or any peer is an image message or carries
+   * `image_keys` — text-only merge would drop media and skip vision on peers.
    */
   private async mergeRapidMessages(
     messageId: string,
@@ -92,9 +96,24 @@ export class ChatProcessor extends WorkerHost {
   ): Promise<void> {
     const windowStart = new Date(Date.now() - BATCH_WINDOW_MS);
 
+    const [primaryRow] = await this.db
+      .select({
+        kind: messagesTable.kind,
+        imageKeys: messagesTable.imageKeys,
+        content: messagesTable.content,
+        transcript: messagesTable.transcript,
+      })
+      .from(messagesTable)
+      .where(eq(messagesTable.id, messageId))
+      .limit(1);
+
+    if (!primaryRow) return;
+
     const peers = await this.db
       .select({
         id: messagesTable.id,
+        kind: messagesTable.kind,
+        imageKeys: messagesTable.imageKeys,
         content: messagesTable.content,
         transcript: messagesTable.transcript,
       })
@@ -112,16 +131,16 @@ export class ChatProcessor extends WorkerHost {
 
     if (peers.length === 0) return;
 
-    const [primary] = await this.db
-      .select({
-        content: messagesTable.content,
-        transcript: messagesTable.transcript,
-      })
-      .from(messagesTable)
-      .where(eq(messagesTable.id, messageId))
-      .limit(1);
+    const primaryHasMedia =
+      primaryRow.kind === 'image' || messageHasImageKeys(primaryRow.imageKeys);
+    const peerHasMedia = peers.some(
+      (p) => p.kind === 'image' || messageHasImageKeys(p.imageKeys),
+    );
+    if (primaryHasMedia || peerHasMedia) {
+      return;
+    }
 
-    if (!primary) return;
+    const primary = primaryRow;
 
     const parts = [
       primary.transcript ?? primary.content ?? '',

@@ -8,6 +8,7 @@ import { DRIZZLE } from '@/database/database.constants';
 import type { DrizzleDb } from '@/database/database.module';
 import { messageEmbeddingsTable } from '@/database/schemas/index';
 import { logWithContext } from '@/core/utils/format-log-context';
+import { truncateForEmbeddingIndex } from '@/modules/memory/helpers/truncate-for-embedding-index';
 import {
   RAG_IMAGE_RECALL_MIN_SIMILARITY,
   RAG_IMAGE_RECALL_TOP_K,
@@ -16,6 +17,7 @@ import {
   RAG_TEMPORAL_WINDOW_BOOST,
   RAG_TOP_K,
 } from '@/modules/chat/constants/chat.constants';
+import { sqlPhotoRecallEligibleMessageAliasM } from '@/modules/media/photo/helpers/photo-recall-eligibility';
 
 export type SimilaritySearchOpts = {
   temporalBoost?: { start: Date; end: Date };
@@ -117,35 +119,55 @@ export class EmbeddingsService {
       return;
     }
 
-    const embeddingText = `[${createdAt.toISOString()}] ${role}: ${trimmed}`;
+    const body = truncateForEmbeddingIndex(trimmed);
+    const embeddingText = `[${createdAt.toISOString()}] ${role}: ${body}`;
 
-    try {
-      const embedding = await this.embedTextWithOpenAI({
-        apiKey,
-        text: embeddingText,
-      });
-
-      await this.db
-        .insert(messageEmbeddingsTable)
-        .values({
-          messageId,
-          userId,
-          content: embeddingText,
-          embedding,
-        })
-        .onConflictDoNothing({
-          target: messageEmbeddingsTable.messageId,
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const embedding = await this.embedTextWithOpenAI({
+          apiKey,
+          text: embeddingText,
         });
-    } catch (e) {
-      this.log.error(
-        logWithContext('Embedding failed', {
-          messageId,
-          userId,
-          err: e instanceof Error ? e.message : String(e),
-          scope: 'embedding',
-        }),
-      );
+
+        await this.db
+          .insert(messageEmbeddingsTable)
+          .values({
+            messageId,
+            userId,
+            content: embeddingText,
+            embedding,
+          })
+          .onConflictDoNothing({
+            target: messageEmbeddingsTable.messageId,
+          });
+        return;
+      } catch (e) {
+        lastErr = e;
+        this.log.warn(
+          logWithContext('Embedding attempt failed', {
+            messageId,
+            userId,
+            role,
+            scope: 'embedding',
+            attempt,
+            embeddingTextLength: embeddingText.length,
+            err: e instanceof Error ? e.message : String(e),
+          }),
+        );
+      }
     }
+
+    this.log.error(
+      logWithContext('Embedding failed after retry', {
+        messageId,
+        userId,
+        role,
+        scope: 'embedding',
+        embeddingTextLength: embeddingText.length,
+        err: lastErr instanceof Error ? lastErr.message : String(lastErr),
+      }),
+    );
   }
 
   async similaritySearch(
@@ -238,7 +260,7 @@ export class EmbeddingsService {
       FROM message_embeddings me
       INNER JOIN messages m ON m.id = me.message_id AND m.user_id = me.user_id
       WHERE me.user_id = ${userId}
-        AND m.kind = 'image'
+        AND ${sqlPhotoRecallEligibleMessageAliasM}
         AND (1 - (me.embedding <=> ${vectorStr}::vector)) >= ${minSimilarity}
       ORDER BY boosted_sim DESC
       LIMIT ${fetchCap}

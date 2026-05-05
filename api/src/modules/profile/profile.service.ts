@@ -10,6 +10,7 @@ import {
   ProfileRepository,
 } from '@/modules/profile/profile.repository';
 import { formatTimedForAgent } from '@/modules/profile/profile-timed';
+import { MEMORY_PROMPT_SECTION_MAX_CHARS } from '@/modules/chat/constants/chat.constants';
 
 @Injectable()
 export class ProfileService {
@@ -89,9 +90,13 @@ export class ProfileService {
       const text = ProfileService.noteForContext(r.note).trim();
       lines.push(`- (${r.memoryKey}) ${text} (as of ${when})`);
     }
-    return `What I know about this user:\n${lines.join('\n')}
+    const body = `What I know about this user:\n${lines.join('\n')}
 
 Use this when interpreting the dump, matching open tasks, and choosing tone or timing. When the user adds or updates something durable, output it in memory_writes — don't skip small facts; they compound.`;
+    if (body.length <= MEMORY_PROMPT_SECTION_MAX_CHARS) return body;
+    return `${body.slice(0, MEMORY_PROMPT_SECTION_MAX_CHARS)}…
+
+(Additional memory facts omitted for prompt size — prioritize what appears above.)`;
   }
 
   async remember(userId: string, key: string): Promise<string | null> {

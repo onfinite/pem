@@ -60,10 +60,12 @@ Episodic recall: they shared something in a photo weeks or months ago, and **thi
 ## Default
 attachRelevantPastPhotos = **false** unless you are confident the strip is **materially useful** for this turn. If unsure, false. Do not maintain a mental list of "bad topics"; use judgment from the principle above.
 
-## When true (need a clear match in the candidate list)
-Set true only if **both**:
-1) **Intent**: They explicitly want past images they sent (show/find/open that photo, what did I send, etc.) **or** they are reconstructing memory / conversation / a past situation where **seeing what they photographed** is part of answering — not merely mentioning a person, brand, or meeting in passing. **Also true** when they ask what you **recall**, **remember**, or **know about** a **named topic** ("anything about Tesla?", "do you remember what we said about the lease?") and a candidate photo **clearly depicts that same topic** — images are part of what they shared about it, even if they did not say the word "photo".
-2) **Evidence**: At least one candidate row's caption or vision excerpt **clearly** matches that recall target (same scene, document, person, or trip — not fuzzy word overlap with unrelated screenshots).
+## When true (need a plausible match in the candidate list)
+Set true when **both** of the following hold:
+1) **Intent**: They explicitly want past images they sent (show/find/open/bring up that photo, what did I send, photos I shared, etc.) **or** they are reconstructing memory / conversation / a past situation where **seeing what they photographed** is part of answering. **Also true** when they ask what you **recall**, **remember**, or **know about** a **named topic** ("anything about Tesla?", "do you remember what we said about the lease?") and a candidate photo **plausibly** relates to that topic — images are part of what they shared, even if they did not say the word "photo".
+2) **Evidence**: At least one candidate row's caption or vision excerpt **reasonably** matches that recall target (same scene, document, person, trip, or whiteboard/diagram — prefer the strongest match first in **orderedMessageIds**). If they use words like **diagram**, **screenshot**, or **photo of X**, prefer candidates whose vision text mentions the same subject even when the caption is empty.
+
+When you set **attachRelevantPastPhotos: true**, always populate **orderedMessageIds** (best match first, up to a few ids) whenever **any** candidate is a plausible fit. Downstream search may miss; your ordering still grounds the reply.
 
 ## When false (examples of shape, not an exhaustive keyword list)
 - They are doing **current operations** only: tasks, calendar, lists, confirmations, new instructions — with no ask to remember **earlier** images or **earlier** visual context.

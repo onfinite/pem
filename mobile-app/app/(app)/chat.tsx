@@ -14,6 +14,8 @@ import { pemAmber } from "@/constants/theme";
 import { space } from "@/constants/typography";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useChatStream } from "@/hooks/chat/useChatStream";
+import { useChatPendingImagesDraft } from "@/hooks/chat/useChatPendingImagesDraft";
+import { useChatScreenKeyboardOffset } from "@/hooks/chat/useChatScreenKeyboardOffset";
 import { useMessageSearch } from "@/hooks/shared/useMessageSearch";
 import { pemImpactLight } from "@/lib/pemHaptics";
 import {
@@ -41,14 +43,7 @@ import {
   uploadChatImagesAndSend,
   uploadPendingChatImageKeys,
 } from "@/services/media/uploadChatImage";
-import {
-  pendingImagesFromPickerAssets,
-  type PendingChatImage,
-} from "@/services/media/pendingChatImagesFromPicker";
-import {
-  loadPendingImagesDraft,
-  savePendingImagesDraft,
-} from "@/services/media/pendingChatImagesDraft";
+import { pendingImagesFromPickerAssets } from "@/services/media/pendingChatImagesFromPicker";
 import { setChatScreenFocused } from "@/services/push/chatPushPresence";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect } from "@react-navigation/native";
@@ -60,7 +55,6 @@ import {
   Alert,
   Animated,
   FlatList,
-  Keyboard,
   Linking,
   Platform,
   StyleSheet,
@@ -84,11 +78,7 @@ export default function ChatScreen() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [briefData, setBriefData] = useState<BriefResponse | null>(null);
-  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [isImageSourceSheetVisible, setImageSourceSheetVisible] = useState(false);
-  /** After first auth-aware draft load — avoids overwriting disk before hydrate. */
-  const [pendingImagesHydrated, setPendingImagesHydrated] = useState(false);
-  const pendingImageUris = pendingImages.map((p) => p.uri);
   const headerSummary = buildHeaderSummary(briefData);
   const drawerRef = useRef<TaskDrawerHandle>(null);
   const search = useMessageSearch(getToken);
@@ -100,52 +90,12 @@ export default function ChatScreen() {
     }, []),
   );
 
-  const kbHeight = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const onShow = Keyboard.addListener(showEvent, (e) => {
-      Animated.timing(kbHeight, {
-        toValue: e.endCoordinates.height - insets.bottom,
-        duration: 120,
-        useNativeDriver: false,
-      }).start();
-    });
-    const onHide = Keyboard.addListener(hideEvent, () => {
-      Animated.timing(kbHeight, {
-        toValue: 0,
-        duration: 100,
-        useNativeDriver: false,
-      }).start();
-    });
-    return () => { onShow.remove(); onHide.remove(); };
-  }, [kbHeight, insets.bottom]);
-
-  useEffect(() => {
-    if (!isAuthLoaded) return;
-    if (!userId) {
-      setPendingImages([]);
-      setPendingImagesHydrated(true);
-      return;
-    }
-    setPendingImages([]);
-    setPendingImagesHydrated(false);
-    let cancelled = false;
-    void (async () => {
-      const restored = await loadPendingImagesDraft(userId);
-      if (cancelled) return;
-      setPendingImages(restored);
-      setPendingImagesHydrated(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthLoaded, userId]);
-
-  useEffect(() => {
-    if (!isAuthLoaded || !userId || !pendingImagesHydrated) return;
-    void savePendingImagesDraft(userId, pendingImages);
-  }, [isAuthLoaded, userId, pendingImages, pendingImagesHydrated]);
+  const kbHeight = useChatScreenKeyboardOffset(insets.bottom);
+  const { pendingImages, setPendingImages } = useChatPendingImagesDraft(
+    isAuthLoaded,
+    userId,
+  );
+  const pendingImageUris = pendingImages.map((p) => p.uri);
 
   const countsTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const fetchCounts = useCallback(() => {
@@ -423,7 +373,7 @@ export default function ChatScreen() {
       }
       await handleSendText(trimmed);
     },
-    [pendingImages, handleSendText, handleSendImage],
+    [pendingImages, handleSendText, handleSendImage, setPendingImages],
   );
 
   const handlePickImageFromLibrary = useCallback(async () => {
@@ -466,7 +416,7 @@ export default function ChatScreen() {
     setPendingImages((prev) =>
       [...prev, ...additions].slice(0, MAX_CHAT_MESSAGE_IMAGES),
     );
-  }, [pendingImages]);
+  }, [pendingImages, setPendingImages]);
 
   const handleTakePhoto = useCallback(async () => {
     const remainingSlots = MAX_CHAT_MESSAGE_IMAGES - pendingImages.length;
@@ -515,7 +465,7 @@ export default function ChatScreen() {
     setPendingImages((prev) =>
       [...prev, ...additions].slice(0, MAX_CHAT_MESSAGE_IMAGES),
     );
-  }, [pendingImages]);
+  }, [pendingImages, setPendingImages]);
 
   const handleAttachImagePress = useCallback(() => {
     if (Platform.OS === "web") {
@@ -609,7 +559,7 @@ export default function ChatScreen() {
         );
       }
     },
-    [pendingImages],
+    [pendingImages, setPendingImages],
   );
 
   const handleLoadMore = useCallback(() => {
@@ -795,11 +745,11 @@ export default function ChatScreen() {
 
   const handleRemovePendingImageAt = useCallback((index: number) => {
     setPendingImages((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  }, [setPendingImages]);
 
   const handleClearPendingImages = useCallback(() => {
     setPendingImages([]);
-  }, []);
+  }, [setPendingImages]);
 
   return (
     <>

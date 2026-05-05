@@ -13,5 +13,9 @@ export function visionSectionsForKeys(
     s.replace(/^\[Photo \d+\/\d+\]\s*\n?/, '').trim(),
   );
   if (stripped.length === keyCount) return stripped;
-  return Array.from({ length: keyCount }, (_, i) => stripped[i] ?? visionFull);
+  return Array.from({ length: keyCount }, (_, i) => {
+    const part = stripped[i]?.trim();
+    if (part) return stripped[i];
+    return `[Photo ${i + 1}/${keyCount}] (Vision unavailable — could not align this frame.)`;
+  });
 }

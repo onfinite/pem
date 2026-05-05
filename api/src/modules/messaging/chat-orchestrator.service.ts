@@ -46,24 +46,16 @@ import { ImageReferenceOnlyReplyService } from '@/modules/media/photo/image-refe
 import { PhotoAttachmentIntentService } from '@/modules/media/photo/photo-attachment-intent.service';
 import { ChatLinkPipelineService } from '@/modules/media/links/chat-link-pipeline.service';
 import { linkPreviewsSerializedFromRows } from '@/modules/media/links/helpers/chat-link-client-preview.helpers';
-import {
-  extractUrlOccurrencesFromText,
-  extractUrlOccurrencesFromTexts,
-} from '@/core/utils/extract-urls-from-text';
+import { extractUrlOccurrencesFromText } from '@/core/utils/extract-urls-from-text';
 import {
   AGENT_RECENT_MESSAGES_LIMIT,
   DONE_EXTRACTS_LOOKBACK_DAYS,
-  RAG_ENRICHMENT_MERGE_TRIGGER_MAX,
-  RAG_ENRICHMENT_MIN_SIMILARITY,
-  RAG_ENRICHMENT_TOP_K,
 } from '@/modules/chat/constants/chat.constants';
 import {
-  buildAgentRagSearchParams,
-  isBroadTopicRecallQuery,
-  isLooseRecallQuery,
-  mergeRagHitsByMessageId,
-  RAG_MIN_SIMILARITY_BROAD_TOPIC_RECALL_FALLBACK,
-} from '@/modules/chat/helpers/chat-rag-recall-params';
+  buildUrlSourceForLinkExtraction,
+  buildUserFacingTextForTriage,
+} from '@/modules/messaging/helpers/chat-pipeline-user-text';
+import { runNeedsAgentRagSearch } from '@/modules/messaging/helpers/chat-orchestrator-rag-search';
 import { detectQuestionTemporalRange } from '@/modules/agent/question/helpers/chat-question-temporal';
 import { shouldEscalateTrivialForPhotoFollowup } from '@/modules/media/photo/helpers/photo-offer-followup';
 import { normalizeDedupeTaskKey } from '@/core/utils/filter-deduped-creates';
@@ -77,6 +69,9 @@ import {
 import { logWithContext } from '@/core/utils/format-log-context';
 import { ChatService } from '@/modules/messages/chat.service';
 import { TranscriptionService } from '@/modules/media/voice/transcription.service';
+import { RecallQueryPlannerLlmService } from '@/modules/agent/question/helpers/recall-query-planner-llm.service';
+import { buildTemporalMessagesRecallBlock } from '@/modules/agent/question/helpers/build-temporal-messages-recall-block';
+import { buildSavedLinksRecallPromptSection } from '@/modules/agent/question/helpers/saved-links-recall-for-ask';
 
 @Injectable()
 export class ChatOrchestratorService {
@@ -104,6 +99,7 @@ export class ChatOrchestratorService {
     private readonly orchestratorLlm: OrchestratorLlmService,
     private readonly chat: ChatService,
     private readonly transcription: TranscriptionService,
+    private readonly recallPlanner: RecallQueryPlannerLlmService,
   ) {}
 
   async processMessage(
@@ -159,6 +155,8 @@ export class ChatOrchestratorService {
       await this.publishStatus(userId, messageId, 'Processing...');
 
       let content = msg.content ?? '';
+      const captionForRecall = (msg.content ?? '').trim();
+      let transcriptForRecall = (msg.transcript ?? '').trim();
 
       const voiceKey = (msg.audioKey ?? msg.voiceUrl)?.trim() ?? '';
       const canTranscribeInWorker =
@@ -195,12 +193,16 @@ export class ChatOrchestratorService {
           value: transcriptText,
         });
         content = transcriptText;
+        transcriptForRecall = transcriptText.trim();
       } else if (msg.transcript?.trim()) {
         content = msg.transcript;
+        transcriptForRecall = msg.transcript.trim();
       }
 
       const hasUserImages =
         (msg.imageKeys ?? []).filter((a) => a.key).length > 0;
+
+      const textBeforeVisionInjected = content;
 
       if (msg.kind === 'image') {
         content = await this.resolveImagePipelineContent(msg, userId);
@@ -217,8 +219,29 @@ export class ChatOrchestratorService {
         return;
       }
 
+      const userFacingText = buildUserFacingTextForTriage({
+        kind: msg.kind,
+        hasUserImages,
+        fallbackFullText: textBeforeVisionInjected,
+        caption: captionForRecall,
+        transcript: transcriptForRecall,
+      });
+
+      const triageModerationInput =
+        userFacingText.trim().length > 0
+          ? userFacingText
+          : content.trim().slice(0, 4_000);
+
+      const urlSourceForLinks = buildUrlSourceForLinkExtraction({
+        kind: msg.kind,
+        hasUserImages,
+        fallbackFullText: textBeforeVisionInjected,
+        caption: captionForRecall,
+        transcript: transcriptForRecall,
+      });
+
       // Content moderation — fast, free via OpenAI moderation endpoint
-      const isFlagged = await this.checkModeration(content);
+      const isFlagged = await this.checkModeration(triageModerationInput);
       if (isFlagged) {
         await this.savePemResponse(
           userId,
@@ -229,14 +252,7 @@ export class ChatOrchestratorService {
         return;
       }
 
-      const urlOccurrences =
-        msg.kind === 'image' || (msg.kind === 'voice' && hasUserImages)
-          ? extractUrlOccurrencesFromTexts(
-              content,
-              msg.content ?? '',
-              msg.transcript ?? '',
-            )
-          : extractUrlOccurrencesFromText(content);
+      const urlOccurrences = extractUrlOccurrencesFromText(urlSourceForLinks);
 
       if (msg.kind === 'image' || (msg.kind === 'voice' && hasUserImages)) {
         const runInboxExtraction =
@@ -282,11 +298,11 @@ export class ChatOrchestratorService {
         messageId,
         'Understanding your message...',
       );
-      const categoryRaw = await this.triage.classify(content);
+      const categoryRaw = await this.triage.classify(triageModerationInput);
       // Habits / commitments ("I must run every day…") must run the task pipeline, not Ask-only.
       const category =
         categoryRaw === 'question_only' &&
-        /\b(i\s+must|i\s+have\s+to)\b/i.test(content.trim())
+        /\b(i\s+must|i\s+have\s+to)\b/i.test(triageModerationInput.trim())
           ? 'needs_agent'
           : categoryRaw;
 
@@ -299,11 +315,16 @@ export class ChatOrchestratorService {
         const recentForOffer = (await this.getRecentMessages(userId)).map(
           (m) => ({ role: m.role, content: m.content }),
         );
-        if (!shouldEscalateTrivialForPhotoFollowup(content, recentForOffer)) {
+        if (
+          !shouldEscalateTrivialForPhotoFollowup(
+            triageModerationInput,
+            recentForOffer,
+          )
+        ) {
           await this.savePemResponse(
             userId,
             messageId,
-            this.trivialResponse(content),
+            this.trivialResponse(triageModerationInput),
           );
           this.queueUserMessageEmbedding(msg, content);
           this.tryLightweightMemoryExtraction(userId, messageId, content);
@@ -312,7 +333,9 @@ export class ChatOrchestratorService {
       }
 
       if (category === 'off_topic') {
-        const redirect = await this.generateOffTopicRedirect(content);
+        const redirect = await this.generateOffTopicRedirect(
+          triageModerationInput,
+        );
         await this.savePemResponse(userId, messageId, redirect);
         this.queueUserMessageEmbedding(msg, content);
         this.tryLightweightMemoryExtraction(userId, messageId, content);
@@ -412,41 +435,38 @@ export class ChatOrchestratorService {
           }
         : undefined;
 
-      const ragUsesLooseRecallFloor =
-        isBroadTopicRecallQuery(content) || isLooseRecallQuery(content);
-
-      const ragSearch = buildAgentRagSearchParams(content, temporalRange);
-      let ragResults = await this.embeddings.similaritySearch(
-        userId,
-        ragSearch.vectorQuery,
-        ragSearch.topK,
-        ragSearch.minSimilarity,
-        ragSimilarityOpts,
-      );
+      let recallPlan: Awaited<
+        ReturnType<RecallQueryPlannerLlmService['plan']>
+      > = null;
+      if (this.recallPlanner.shouldPlan(triageModerationInput)) {
+        recallPlan = await this.recallPlanner.plan(triageModerationInput);
+      }
+      let ragQueryText = content;
       if (
-        ragResults.length < RAG_ENRICHMENT_MERGE_TRIGGER_MAX &&
-        !ragUsesLooseRecallFloor
+        recallPlan &&
+        (recallPlan.recall_kind === 'episodic_topic' ||
+          recallPlan.recall_kind === 'mixed')
       ) {
-        const enrich = await this.embeddings.similaritySearch(
-          userId,
-          ragSearch.vectorQuery,
-          RAG_ENRICHMENT_TOP_K,
-          RAG_ENRICHMENT_MIN_SIMILARITY,
-          ragSimilarityOpts,
-        );
-        ragResults = mergeRagHitsByMessageId(ragResults, enrich);
+        const q = recallPlan.embedding_search_text?.trim();
+        if (q) ragQueryText = q;
       }
-      if (ragResults.length === 0 && ragUsesLooseRecallFloor) {
-        ragResults = await this.embeddings.similaritySearch(
+
+      const { ragResults, ragVectorQuery, ragContext } =
+        await runNeedsAgentRagSearch(this.embeddings, {
           userId,
-          ragSearch.vectorQuery,
-          Math.max(ragSearch.topK, 32),
-          RAG_MIN_SIMILARITY_BROAD_TOPIC_RECALL_FALLBACK,
+          ragQueryText,
+          temporalRange,
           ragSimilarityOpts,
-        );
-      }
-      const ragVectorQuery = ragSearch.vectorQuery;
-      const ragContext = ragResults.map((r) => r.content).join('\n');
+        });
+
+      this.log.log(
+        logWithContext('rag_retrieval', {
+          userId,
+          messageId,
+          scope: 'chat_orchestrator',
+          ragHitCount: ragResults.length,
+        }),
+      );
 
       const recentMsgs = await this.getRecentMessages(userId);
 
@@ -481,10 +501,16 @@ export class ChatOrchestratorService {
           ? [photoClassifierForIntent, ragVectorQuery].join('\n\n').trim()
           : ragVectorQuery;
 
+      const photoRecallUserText =
+        recallPlan?.wants_past_photos &&
+        recallPlan.embedding_search_text?.trim()
+          ? `${recallPlan.embedding_search_text.trim()}\n\n${content}`
+          : content;
+
       const { attachStrip, messageIds: photoRecallMessageIds } =
         await this.photoRecallIntent.resolveStripAndMessageIds({
           userId,
-          userText: content,
+          userText: photoRecallUserText,
           ...(photoClassifierForIntent
             ? { classifierUserText: photoClassifierForIntent }
             : {}),
@@ -504,6 +530,16 @@ export class ChatOrchestratorService {
       } else {
         photoRecallMeta = undefined;
       }
+
+      this.log.log(
+        logWithContext('photo_recall_strip', {
+          userId,
+          messageId,
+          scope: 'chat_orchestrator',
+          attachStrip,
+          imageRagCandidateCount: photoRecallMessageIds.length,
+        }),
+      );
 
       const idsForPhotoRecallPrompt = photoRecallMeta?.photo_recall?.length
         ? orderedMessageIdsFromRecallItems(photoRecallMeta.photo_recall)
@@ -553,6 +589,24 @@ export class ChatOrchestratorService {
         );
       }
 
+      let temporalRecallBlock: string | null = null;
+      if (temporalRange?.label) {
+        temporalRecallBlock = await buildTemporalMessagesRecallBlock(
+          this.db,
+          userId,
+          temporalRange,
+          new Date(),
+          ctx.tz,
+        );
+      }
+      const savedLinksRecallSection = await buildSavedLinksRecallPromptSection(
+        this.db,
+        userId,
+        content,
+        new Date(),
+        ctx.tz ?? null,
+      );
+
       const wordCount = content.split(/\s+/).length;
       const isLongVoiceMemo = msg.kind === 'voice' && wordCount > 500;
 
@@ -565,6 +619,8 @@ export class ChatOrchestratorService {
         memorySection: ctx.memorySection,
         recentMessages: recentMsgs,
         ragContext,
+        temporalRecallBlock,
+        savedLinksRecallSection,
         photoRecallContext: photoRecallPromptBlock,
         linkContext: linkPipelineResult?.promptSection,
         userName: ctx.userName,
@@ -1011,6 +1067,12 @@ export class ChatOrchestratorService {
               `[Photo ${i + 1}/${imageAssets.length}]\n${analyzed.flatSummary}`,
             );
           }
+        }
+        while (sections.length < imageAssets.length) {
+          const idx = sections.length;
+          sections.push(
+            `[Photo ${idx + 1}/${imageAssets.length}]\n(Vision unavailable — this frame could not be read.)`,
+          );
         }
         visionFlat = sections.join('\n\n---\n\n');
         if (visionFlat) {

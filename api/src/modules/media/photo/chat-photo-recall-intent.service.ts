@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '@/database/database.constants';
 import type { DrizzleDb } from '@/database/database.module';
@@ -11,11 +11,14 @@ import {
 } from '@/modules/memory/embeddings.service';
 import {
   PHOTO_RECALL_CANDIDATE_LIMIT,
+  PHOTO_RECALL_CLASSIFIER_MAX_CANDIDATES,
   PHOTO_RECALL_STRIP_SCORE_GAP,
+  PHOTO_RECALL_VECTOR_CANDIDATE_EXTRA,
   RAG_IMAGE_RECALL_MIN_SIMILARITY,
   RAG_IMAGE_RECALL_MIN_SIMILARITY_RELAXED,
   RAG_IMAGE_RECALL_TOP_K,
 } from '@/modules/chat/constants/chat.constants';
+import { isPhotoRecallEligibleMessage } from '@/modules/media/photo/helpers/photo-recall-eligibility';
 import { visionLineForHumans } from '@/modules/media/photo/helpers/photo-vision-stored';
 import {
   PHOTO_RECALL_MAX_MESSAGE_IDS,
@@ -23,7 +26,9 @@ import {
   pruneImageRecallHitsByTopScoreGap,
 } from '@/modules/media/photo/helpers/resolve-photo-recall-message-ids';
 import {
+  isExplicitPastPhotoRequest,
   isLikelyPastImageRecallRequest,
+  isUndirectedPastPhotosAsk,
   wantsImplicitPastMediaContext,
 } from '@/modules/media/photo/helpers/photo-recall-follow-up';
 import { shouldSkipPhotoRecallStrip } from '@/modules/media/photo/helpers/photo-recall-strip-guard';
@@ -81,17 +86,22 @@ export class ChatPhotoRecallIntentService {
     const candidates = await this.loadCandidates(
       params.userId,
       params.excludeMessageId,
+      stripGuardAndClassifierText,
     );
     if (!candidates.length) {
       return { attachStrip: false, messageIds: [] };
     }
 
     const allowed = new Set(candidates.map((c) => c.id));
+    const classifierCandidates = candidates.slice(
+      0,
+      PHOTO_RECALL_CLASSIFIER_MAX_CANDIDATES,
+    );
     let intent: PhotoRecallIntentOutput | null = null;
     try {
       intent = await this.runClassifier(
         stripGuardAndClassifierText,
-        candidates,
+        classifierCandidates,
       );
     } catch (e) {
       this.log.warn(
@@ -171,6 +181,13 @@ export class ChatPhotoRecallIntentService {
           messageIds: refined.slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS),
         };
       }
+      const orderedAllowed = ordered.filter((id: string) => allowed.has(id));
+      if (orderedAllowed.length > 0) {
+        return {
+          attachStrip: true,
+          messageIds: orderedAllowed.slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS),
+        };
+      }
     }
 
     if (vectorPrunedIds.length > 0) {
@@ -180,39 +197,144 @@ export class ChatPhotoRecallIntentService {
       };
     }
 
+    if (
+      candidates.length > 0 &&
+      (implicitPastMedia ||
+        isUndirectedPastPhotosAsk(stripGuardAndClassifierText))
+    ) {
+      return {
+        attachStrip: true,
+        messageIds: candidates
+          .slice(0, PHOTO_RECALL_MAX_MESSAGE_IDS)
+          .map((c) => c.id),
+      };
+    }
+
+    if (
+      candidates.length > 0 &&
+      vectorPrunedIds.length === 0 &&
+      isExplicitPastPhotoRequest(stripGuardAndClassifierText) &&
+      !isUndirectedPastPhotosAsk(stripGuardAndClassifierText)
+    ) {
+      return {
+        attachStrip: true,
+        messageIds: [candidates[0].id],
+      };
+    }
+
     return { attachStrip: false, messageIds: [] };
   }
 
   private async loadCandidates(
     userId: string,
-    excludeMessageId?: string,
+    excludeMessageId: string | undefined,
+    vectorHint: string,
   ): Promise<{ id: string; caption: string; vision: string }[]> {
     const rows = await this.db
       .select({
         id: messagesTable.id,
+        role: messagesTable.role,
+        kind: messagesTable.kind,
         content: messagesTable.content,
         visionSummary: messagesTable.visionSummary,
         imageKeys: messagesTable.imageKeys,
+        createdAt: messagesTable.createdAt,
       })
       .from(messagesTable)
       .where(
         and(
           eq(messagesTable.userId, userId),
           eq(messagesTable.role, 'user'),
-          eq(messagesTable.kind, 'image'),
           isNotNull(messagesTable.visionSummary),
+          sql`btrim(${messagesTable.visionSummary}) <> ''`,
+          or(
+            and(
+              eq(messagesTable.kind, 'image'),
+              sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+            ),
+            and(
+              eq(messagesTable.kind, 'voice'),
+              sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+            ),
+          ),
           ...(excludeMessageId ? [ne(messagesTable.id, excludeMessageId)] : []),
         ),
       )
       .orderBy(sql`${messagesTable.createdAt} DESC`)
       .limit(PHOTO_RECALL_CANDIDATE_LIMIT * 2);
 
-    const withAssets = rows.filter(
-      (r) =>
-        (r.imageKeys?.length ?? 0) > 0 && (r.visionSummary ?? '').trim().length,
+    const withAssets = rows.filter((r) =>
+      isPhotoRecallEligibleMessage({
+        role: r.role,
+        kind: r.kind,
+        imageKeys: r.imageKeys,
+        visionSummary: r.visionSummary,
+      }),
     );
 
-    return withAssets.slice(0, PHOTO_RECALL_CANDIDATE_LIMIT).map((r) => ({
+    const timeOrdered = withAssets.slice(0, PHOTO_RECALL_CANDIDATE_LIMIT * 2);
+    const byId = new Map(timeOrdered.map((r) => [r.id, r]));
+
+    const hint = vectorHint.trim() || 'recent chat photos';
+    try {
+      const hits = await this.embeddings.similaritySearchImageMessages(
+        userId,
+        hint,
+        PHOTO_RECALL_VECTOR_CANDIDATE_EXTRA + 4,
+        RAG_IMAGE_RECALL_MIN_SIMILARITY_RELAXED,
+      );
+      const extraIds = hits
+        .map((h) => h.messageId)
+        .filter((id) => id !== excludeMessageId && !byId.has(id))
+        .slice(0, PHOTO_RECALL_VECTOR_CANDIDATE_EXTRA);
+
+      if (extraIds.length > 0) {
+        const extraRows = await this.db
+          .select({
+            id: messagesTable.id,
+            role: messagesTable.role,
+            kind: messagesTable.kind,
+            content: messagesTable.content,
+            visionSummary: messagesTable.visionSummary,
+            imageKeys: messagesTable.imageKeys,
+            createdAt: messagesTable.createdAt,
+          })
+          .from(messagesTable)
+          .where(
+            and(
+              eq(messagesTable.userId, userId),
+              inArray(messagesTable.id, extraIds),
+            ),
+          );
+
+        for (const r of extraRows) {
+          if (
+            isPhotoRecallEligibleMessage({
+              role: r.role,
+              kind: r.kind,
+              imageKeys: r.imageKeys,
+              visionSummary: r.visionSummary,
+            })
+          ) {
+            byId.set(r.id, r);
+          }
+        }
+      }
+    } catch (e) {
+      this.log.warn(
+        logWithContext('Photo recall vector candidates failed', {
+          userId,
+          scope: 'photo_recall_intent',
+          err: e instanceof Error ? e.message : 'unknown',
+        }),
+      );
+    }
+
+    const merged = [...byId.values()].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
+
+    return merged.slice(0, PHOTO_RECALL_CANDIDATE_LIMIT).map((r) => ({
       id: r.id,
       caption: (r.content ?? '').trim().slice(0, CAPTION_SNIP),
       vision: visionLineForHumans(r.visionSummary ?? '').slice(0, VISION_SNIP),

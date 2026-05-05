@@ -45,6 +45,8 @@ import {
 } from '@/modules/chat/helpers/chat-rag-recall-params';
 import { logWithContext } from '@/core/utils/format-log-context';
 import { ChatQuestionLlmService } from '@/modules/agent/question/chat-question-llm.service';
+import { RecallQueryPlannerLlmService } from '@/modules/agent/question/helpers/recall-query-planner-llm.service';
+import { buildTemporalMessagesRecallBlock } from '@/modules/agent/question/helpers/build-temporal-messages-recall-block';
 
 @Injectable()
 export class ChatQuestionService {
@@ -64,6 +66,7 @@ export class ChatQuestionService {
     private readonly storage: StorageService,
     private readonly photoRecallIntent: ChatPhotoRecallIntentService,
     private readonly questionLlm: ChatQuestionLlmService,
+    private readonly recallPlanner: RecallQueryPlannerLlmService,
   ) {}
 
   async answer(
@@ -122,10 +125,27 @@ export class ChatQuestionService {
           }
         : undefined;
 
-      const ragUsesLooseRecallFloor =
-        isBroadTopicRecallQuery(question) || isLooseRecallQuery(question);
+      let recallPlan: Awaited<
+        ReturnType<RecallQueryPlannerLlmService['plan']>
+      > = null;
+      if (this.recallPlanner.shouldPlan(question)) {
+        recallPlan = await this.recallPlanner.plan(question);
+      }
+      let ragQueryText = question;
+      if (
+        recallPlan &&
+        (recallPlan.recall_kind === 'episodic_topic' ||
+          recallPlan.recall_kind === 'mixed')
+      ) {
+        const q = recallPlan.embedding_search_text?.trim();
+        if (q) ragQueryText = q;
+      }
 
-      const ragSearch = buildAgentRagSearchParams(question, temporalRange);
+      const ragUsesLooseRecallFloor =
+        isBroadTopicRecallQuery(ragQueryText) ||
+        isLooseRecallQuery(ragQueryText);
+
+      const ragSearch = buildAgentRagSearchParams(ragQueryText, temporalRange);
       const ragVectorQuery = ragSearch.vectorQuery;
 
       const [
@@ -205,10 +225,16 @@ export class ChatQuestionService {
       const allOpenBlock = this.formatAllOpen(allOpen);
       const timelineBlock = this.formatBuckets(buckets);
 
+      const photoRecallUserText =
+        recallPlan?.wants_past_photos &&
+        recallPlan.embedding_search_text?.trim()
+          ? `${recallPlan.embedding_search_text.trim()}\n\n${question}`
+          : question;
+
       const { attachStrip, messageIds: photoRecallMessageIds } =
         await this.photoRecallIntent.resolveStripAndMessageIds({
           userId,
-          userText: question,
+          userText: photoRecallUserText,
           vectorQueryText: ragVectorQuery,
           ragMessageIds: ragHits.map((h) => h.messageId),
           vectorSearchOpts: ragSimilarityOpts,
@@ -290,47 +316,16 @@ export class ChatQuestionService {
           : '';
 
       let temporalBlock = '';
-      if (temporalRange && temporalRange.label) {
+      if (temporalRange?.label) {
         try {
-          const historicalMsgs = await this.db
-            .select({
-              role: messagesTable.role,
-              kind: messagesTable.kind,
-              content: messagesTable.content,
-              transcript: messagesTable.transcript,
-              visionSummary: messagesTable.visionSummary,
-              createdAt: messagesTable.createdAt,
-            })
-            .from(messagesTable)
-            .where(
-              and(
-                eq(messagesTable.userId, userId),
-                gte(messagesTable.createdAt, temporalRange.start),
-                lte(messagesTable.createdAt, temporalRange.end),
-              ),
-            )
-            .orderBy(desc(messagesTable.createdAt))
-            .limit(30);
-
-          if (historicalMsgs.length > 0) {
-            temporalBlock = `Messages from ${temporalRange.label} (${historicalMsgs.length} found):\n${historicalMsgs
-              .map((m) => {
-                const text = this.lineForQuestionRecent({
-                  role: m.role,
-                  kind: m.kind,
-                  content: m.content,
-                  transcript: m.transcript,
-                  visionSummary: m.visionSummary,
-                });
-                const stamp = formatChatRecallStamp(
-                  m.createdAt,
-                  now,
-                  userTimeZone,
-                );
-                return `- [${stamp}] ${m.role}: ${text.slice(0, 1200)}`;
-              })
-              .join('\n')}`;
-          }
+          const block = await buildTemporalMessagesRecallBlock(
+            this.db,
+            userId,
+            temporalRange,
+            now,
+            userTimeZone,
+          );
+          if (block) temporalBlock = block;
         } catch (e) {
           this.log.warn(
             logWithContext('Ask temporal query block failed', {

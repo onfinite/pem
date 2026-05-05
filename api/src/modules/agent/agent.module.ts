@@ -9,6 +9,7 @@ import { ProfileModule } from '@/modules/profile/profile.module';
 import { StorageModule } from '@/modules/storage/storage.module';
 import { ChatQuestionLlmService } from '@/modules/agent/question/chat-question-llm.service';
 import { ChatQuestionService } from '@/modules/agent/question/chat-question.service';
+import { RecallQueryPlannerLlmService } from '@/modules/agent/question/helpers/recall-query-planner-llm.service';
 import { OrchestratorLlmService } from '@/modules/agent/orchestrator-llm.service';
 import { PemAgentLlmService } from '@/modules/agent/pem-agent-llm.service';
 import { PemAgentService } from '@/modules/agent/pem-agent.service';
@@ -29,12 +30,14 @@ import { PemAgentService } from '@/modules/agent/pem-agent.service';
     OrchestratorLlmService,
     ChatQuestionLlmService,
     ChatQuestionService,
+    RecallQueryPlannerLlmService,
   ],
   exports: [
     PemAgentService,
     OrchestratorLlmService,
     ChatQuestionService,
     PemAgentLlmService,
+    RecallQueryPlannerLlmService,
   ],
 })
 export class AgentModule {}

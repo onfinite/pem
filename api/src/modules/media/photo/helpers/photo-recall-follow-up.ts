@@ -68,6 +68,30 @@ export function isLikelyPastImageRecallRequest(userText: string): boolean {
 const IMPLICIT_MEDIA_LIST_NOISE =
   /\b(shopping|groceries|my\s+list|to-?do|inbox|tasks?)\b/i;
 
+const TOPIC_ANCHOR_SKIP_BROAD_PHOTO_FALLBACK =
+  /\b(diagram|flowchart|chart|map|screenshot|receipt|invoice|doc(ument)?|sketch|slide|deck|flyer|whiteboard)\b/i;
+
+/**
+ * User wants “my past photos” without a strong visual topic (diagram, named doc, etc.).
+ * Used when image-vector search returns nothing — we still show recent eligible thumbnails.
+ */
+export function isUndirectedPastPhotosAsk(userText: string): boolean {
+  const t = userText.trim();
+  if (t.length > 220) return false;
+  if (!/\b(photo|photos|picture|pictures|pics?|images?)\b/i.test(t)) {
+    return false;
+  }
+  if (TOPIC_ANCHOR_SKIP_BROAD_PHOTO_FALLBACK.test(t)) return false;
+  return (
+    /\bbring\s+up\s+photos?\b/i.test(t) ||
+    /\bshow\s+(me\s+)?(my\s+)?(photos?|pics?)\b/i.test(t) ||
+    /\b(any|some)\s+(photos?|pics?|images?)\b/i.test(t) ||
+    /\bphotos?\s+that\s+i\s+shared\b/i.test(t) ||
+    /\b(photos?|pics?)\s+i\s+shared\b/i.test(t) ||
+    /\b(shared|sent|posted)\s+.+\b(photo|photos|pics?|images?)\b/i.test(t)
+  );
+}
+
 export function wantsImplicitPastMediaContext(userText: string): boolean {
   const t = userText.trim();
   if (t.length < 12 || t.length > 400) return false;

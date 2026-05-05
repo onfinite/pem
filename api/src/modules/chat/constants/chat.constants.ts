@@ -79,3 +79,18 @@ export const PHOTO_RECALL_MAX_MESSAGE_IDS = 10;
 
 /** User image rows considered for the photo-recall classifier (too low = older photos never shown). */
 export const PHOTO_RECALL_CANDIDATE_LIMIT = 36;
+
+/** Max rows sent to the photo-recall intent LLM (subset of recent ∪ vector union). */
+export const PHOTO_RECALL_CLASSIFIER_MAX_CANDIDATES = 28;
+
+/** Extra past photo message ids merged from vector search for the recall classifier. */
+export const PHOTO_RECALL_VECTOR_CANDIDATE_EXTRA = 12;
+
+/** Caption + transcript (or plain user line) passed to triage / moderation — not vision-injected agent blobs. */
+export const USER_FACING_TRIAGE_MAX_CHARS = 4_000;
+
+/** Max chars for `message_embeddings.content` text before embed (head+tail if longer). */
+export const EMBEDDING_INDEX_TEXT_MAX_CHARS = 12_000;
+
+/** Max chars for the memory_facts block injected into agent / Ask prompts. */
+export const MEMORY_PROMPT_SECTION_MAX_CHARS = 6_000;

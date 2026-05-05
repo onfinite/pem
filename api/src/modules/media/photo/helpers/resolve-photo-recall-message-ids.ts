@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import type { DrizzleDb } from '@/database/database.module';
 import { messagesTable } from '@/database/schemas/index';
@@ -87,8 +87,19 @@ export async function resolvePhotoRecallMessageIdsFromRagOnly(
     .where(
       and(
         eq(messagesTable.userId, userId),
-        eq(messagesTable.kind, 'image'),
+        eq(messagesTable.role, 'user'),
         isNotNull(messagesTable.visionSummary),
+        sql`btrim(${messagesTable.visionSummary}) <> ''`,
+        or(
+          and(
+            eq(messagesTable.kind, 'image'),
+            sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+          ),
+          and(
+            eq(messagesTable.kind, 'voice'),
+            sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+          ),
+        ),
         inArray(messagesTable.id, ragMessageIds),
       ),
     )

@@ -1,10 +1,11 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import type { DrizzleDb } from '@/database/database.module';
 import { formatChatRecallStamp } from '@/modules/agent/helpers/format-chat-recall-stamp';
 import { visionSectionsForKeys } from '@/modules/media/photo/helpers/photo-vision-multi-sections';
 import { visionLineForHumans } from '@/modules/media/photo/helpers/photo-vision-stored';
 import { messagesTable } from '@/database/schemas/index';
+import { isPhotoRecallEligibleMessage } from '@/modules/media/photo/helpers/photo-recall-eligibility';
 import { PHOTO_RECALL_MAX_MESSAGE_IDS } from '@/modules/media/photo/helpers/resolve-photo-recall-message-ids';
 
 const MAX_CAPTION_CHARS = 1_200;
@@ -30,6 +31,8 @@ export async function buildPhotoRecallPromptSection(
   const rows = await db
     .select({
       id: messagesTable.id,
+      role: messagesTable.role,
+      kind: messagesTable.kind,
       content: messagesTable.content,
       visionSummary: messagesTable.visionSummary,
       createdAt: messagesTable.createdAt,
@@ -40,11 +43,30 @@ export async function buildPhotoRecallPromptSection(
       and(
         eq(messagesTable.userId, userId),
         inArray(messagesTable.id, ids),
-        eq(messagesTable.kind, 'image'),
+        eq(messagesTable.role, 'user'),
+        isNotNull(messagesTable.visionSummary),
+        sql`btrim(${messagesTable.visionSummary}) <> ''`,
+        or(
+          and(
+            eq(messagesTable.kind, 'image'),
+            sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+          ),
+          and(
+            eq(messagesTable.kind, 'voice'),
+            sql`coalesce(jsonb_array_length(coalesce(${messagesTable.imageKeys}, '[]'::jsonb)), 0) > 0`,
+          ),
+        ),
       ),
     );
 
-  const withVision = rows.filter((r) => (r.visionSummary ?? '').trim().length);
+  const withVision = rows.filter((r) =>
+    isPhotoRecallEligibleMessage({
+      role: r.role,
+      kind: r.kind,
+      imageKeys: r.imageKeys,
+      visionSummary: r.visionSummary,
+    }),
+  );
   if (!withVision.length) return undefined;
 
   const orderMap = new Map(ids.map((id, i) => [id, i]));

@@ -108,6 +108,8 @@ export class PemAgentLlmService {
     memorySection: string;
     recentMessages: { role: string; content: string; created_at: string }[];
     ragContext: string;
+    temporalRecallBlock?: string | null;
+    savedLinksRecallSection?: string | null;
     /** Captions + vision for the "From your photos" strip — same as Ask prompt injection. */
     photoRecallContext?: string;
     userName: string | null;
@@ -294,6 +296,8 @@ export class PemAgentLlmService {
     memorySection: string;
     recentMessages: { role: string; content: string; created_at: string }[];
     ragContext: string;
+    temporalRecallBlock?: string | null;
+    savedLinksRecallSection?: string | null;
     /** Captions + vision for the "From your photos" strip — same as Ask prompt injection. */
     photoRecallContext?: string;
     userName: string | null;
@@ -400,7 +404,7 @@ ${params.memorySection || '(none yet)'}
 ## Recent conversation
 ${recentSection || '(start of conversation)'}
 
-${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentClosedSection ? `## Recently closed (off their list — do not recreate the same item unless they clearly want it back)\n${params.recentClosedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.photoRecallContext ? `## Recalled chat photos (same thumbnails the app may show)\n${params.photoRecallContext}\n\n## Recalled photos vs open tasks\nWhen they ask what is on a shopping, grocery, Costco, or errand list, compare open tasks (especially batch_key shopping or errands) to the recalled photo captions and detail. If something they clearly intended to buy appears in those photos but is missing from open tasks, mention it once in plain language (not on your list yet). Never invent grocery items; only obvious gaps from the photo or caption.\n\n` : ''}${params.linkContext ? `${params.linkContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}${params.isLongVoiceMemo ? `## Note: This is a long voice memo (500+ words). Keep response to 3 sentences max. polished_text should be a 2-3 sentence summary, not a cleaned transcript.\n\n` : ''}## User message
+${params.userActivityLine ? `## Activity\n${params.userActivityLine}\n\n` : ''}${params.todayCalendarSection ? `## Today (timed items on your list)\n${params.todayCalendarSection}\n\n` : ''}${params.recentClosedSection ? `## Recently closed (off their list — do not recreate the same item unless they clearly want it back)\n${params.recentClosedSection}\n\n` : ''}${params.ragContext ? `## Related past context (vector memory)\n${params.ragContext}\n\n` : ''}${params.temporalRecallBlock ? `${params.temporalRecallBlock}\n\n` : ''}${params.photoRecallContext ? `## Recalled chat photos (same thumbnails the app may show)\n${params.photoRecallContext}\n\n## Recalled photos vs open tasks\nWhen they ask what is on a shopping, grocery, Costco, or errand list, compare open tasks (especially batch_key shopping or errands) to the recalled photo captions and detail. If something they clearly intended to buy appears in those photos but is missing from open tasks, mention it once in plain language (not on your list yet). Never invent grocery items; only obvious gaps from the photo or caption.\n\n` : ''}${params.savedLinksRecallSection ? `${params.savedLinksRecallSection}\n\n` : ''}${params.linkContext ? `${params.linkContext}\n\n` : ''}${params.schedulingContext ? `## Free time slots\n${params.schedulingContext}\n\n` : ''}${params.userPreferences ? `## Scheduling preferences\n${params.userPreferences}\n\n` : ''}${params.isLongVoiceMemo ? `## Note: This is a long voice memo (500+ words). Keep response to 3 sentences max. polished_text should be a 2-3 sentence summary, not a cleaned transcript.\n\n` : ''}## User message
 "${truncateForPrompt(params.messageContent)}"`;
   }
 
