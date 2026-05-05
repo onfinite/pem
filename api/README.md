@@ -68,7 +68,7 @@ Before inviting beta testers:
 2. **`GET /health`** on the deployed base URL → `{ "status": "ok" }`.
 3. **Clerk** production JWKS + JWT issuer + webhook secret match the deployed Clerk project; mobile **`EXPO_PUBLIC_API_URL`** points at this API.
 4. **`ALLOWED_ORIGINS`** includes the app’s HTTPS (or Expo) origins — bootstrap fails if empty/wrong.
-5. **Redis** URL for BullMQ + SSE pub/sub matches the worker and API hosts.
+5. **Redis** for BullMQ + SSE pub/sub: set **`REDIS_URL`** to a TCP URL (`redis://` / `rediss://`), **or** set **`UPSTASH_REDIS_REST_URL`** + **`UPSTASH_REDIS_REST_TOKEN`** so the API derives a `rediss://` URL from the REST hostname (same Upstash DB). Optional **`UpstashRestRedisService`** exposes `@upstash/redis` for REST-native use. If the derived TCP URL fails in your region, paste the explicit connect string from the Upstash dashboard as **`REDIS_URL`**.
 6. **Push:** physical device + dev client or store build (not Expo Go); `PATCH /users/me/push-token` succeeds; send a chat message and confirm **`chat_reply`** and, after Pem creates tasks, **`inbox_updated`** pushes (new extracts path).
 
 ## Scripts

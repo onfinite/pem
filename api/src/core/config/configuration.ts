@@ -1,3 +1,5 @@
+import { buildRedisTcpUrlFromUpstashRest } from '@/core/redis/build-redis-tcp-url';
+
 export type AppConfig = {
   env: string;
   port: number;
@@ -13,7 +15,10 @@ export type AppConfig = {
     model: string;
     agentModel: string;
   };
+  /** TCP URL for BullMQ + ioredis (SSE pub/sub). From REDIS_URL or derived from Upstash REST. */
   redisUrl: string | undefined;
+  /** Upstash REST credentials for `@upstash/redis` when both env vars are set. */
+  upstash: { restUrl: string; restToken: string } | undefined;
   googleCalendar: {
     clientId: string | undefined;
     clientSecret: string | undefined;
@@ -41,6 +46,18 @@ export default (): AppConfig => {
     throw new Error('OPENAI_API_KEY is required in production');
   }
 
+  const redisUrlExplicit = process.env.REDIS_URL?.trim();
+  const redisUrlDerived = buildRedisTcpUrlFromUpstashRest(
+    process.env.UPSTASH_REDIS_REST_URL,
+    process.env.UPSTASH_REDIS_REST_TOKEN,
+  );
+  const redisUrl = redisUrlExplicit || redisUrlDerived;
+
+  const restUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const restToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  const upstash =
+    restUrl && restToken ? { restUrl, restToken } : undefined;
+
   return {
     env,
     port: Number.parseInt(process.env.PORT ?? '8000', 10),
@@ -56,7 +73,8 @@ export default (): AppConfig => {
       model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
       agentModel: process.env.OPENAI_AGENT_MODEL ?? 'gpt-4o',
     },
-    redisUrl: process.env.REDIS_URL,
+    redisUrl,
+    upstash,
     googleCalendar: {
       clientId: process.env.GOOGLE_CALENDAR_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,

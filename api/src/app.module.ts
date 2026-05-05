@@ -6,6 +6,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import configuration from '@/core/config/configuration';
+import { RedisCoreModule } from '@/core/redis/redis-core.module';
 import { DatabaseModule } from '@/database/database.module';
 import { CalendarModule } from '@/modules/calendar/calendar.module';
 import { ChatModule } from '@/modules/chat/chat.module';
@@ -23,6 +24,7 @@ const isDev = (process.env.ENV ?? process.env.NODE_ENV ?? 'dev') === 'dev';
       isGlobal: true,
       load: [configuration],
     }),
+    RedisCoreModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
@@ -36,7 +38,7 @@ const isDev = (process.env.ENV ?? process.env.NODE_ENV ?? 'dev') === 'dev';
         const url = config.get<string>('redisUrl');
         if (!url) {
           throw new Error(
-            'REDIS_URL is required (BullMQ). Set it in .env for the worker queue.',
+            'Redis is required for BullMQ and chat SSE. Set REDIS_URL (e.g. redis://127.0.0.1:6379), or UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN (a rediss:// URL is derived for the same database).',
           );
         }
         return {
