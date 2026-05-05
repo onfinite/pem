@@ -125,6 +125,8 @@ export default function PushNotificationRegistrar() {
 
     function openFromNotification(notification: Notifications.Notification) {
       const kind = kindFromNotification(notification);
+      // App hub is `/chat` today (signed-in index also redirects there). `inbox_updated`
+      // still uses its own payload kind so the client can branch later if `/inbox` exists.
       if (
         kind === "inbox_updated" ||
         kind === CHAT_REPLY_KIND ||

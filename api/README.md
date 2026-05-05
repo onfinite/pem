@@ -58,6 +58,19 @@ The **`pg` SSL warning** during migrate is from the driver; optional: set `sslmo
 
 Dev shortcut without migration files: `npm run db:push` (schema push; not for production workflows).
 
+## Beta / production smoke (no Sentry in repo)
+
+Observability is **logs only** (host stdout + Nest `Logger` / `logWithContext`). There is **no** `@sentry` SDK wired; keep `SENTRY_*` out of deploy checklists until you add one.
+
+Before inviting beta testers:
+
+1. **`npm run db:migrate`** on the target Postgres (`DATABASE_URL` in env).
+2. **`GET /health`** on the deployed base URL → `{ "status": "ok" }`.
+3. **Clerk** production JWKS + JWT issuer + webhook secret match the deployed Clerk project; mobile **`EXPO_PUBLIC_API_URL`** points at this API.
+4. **`ALLOWED_ORIGINS`** includes the app’s HTTPS (or Expo) origins — bootstrap fails if empty/wrong.
+5. **Redis** URL for BullMQ + SSE pub/sub matches the worker and API hosts.
+6. **Push:** physical device + dev client or store build (not Expo Go); `PATCH /users/me/push-token` succeeds; send a chat message and confirm **`chat_reply`** and, after Pem creates tasks, **`inbox_updated`** pushes (new extracts path).
+
 ## Scripts
 
 | Command | Purpose |

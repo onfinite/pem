@@ -666,6 +666,19 @@ export class ChatOrchestratorService {
         messageLinkDisplayUrls,
       );
 
+      if (agentOutput.creates.length > 0) {
+        void this.push.notifyInboxUpdated(userId).catch((e) =>
+          this.log.warn(
+            logWithContext('inbox_updated push failed', {
+              userId,
+              messageId,
+              scope: 'chat_orchestrator',
+              err: e instanceof Error ? e.message : String(e),
+            }),
+          ),
+        );
+      }
+
       // Build metadata for the response message
       const meta: Record<string, unknown> = {};
       if (agentOutput.creates.length)

@@ -11,12 +11,16 @@ import {
   type RecurrenceRule,
 } from '@/database/schemas/index';
 import { logWithContext } from '@/core/utils/format-log-context';
+import { PushService } from '@/modules/push/push.service';
 
 @Injectable()
 export class RecurrenceCronService {
   private readonly log = new Logger(RecurrenceCronService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly push: PushService,
+  ) {}
 
   /** Daily at 2 AM: close missed open instances, then generate the next 7 days. */
   @Cron('0 2 * * *')
@@ -33,6 +37,7 @@ export class RecurrenceCronService {
       );
 
     let created = 0;
+    const usersWithNewInstances = new Set<string>();
 
     for (const parent of parents) {
       const rule = parent.recurrenceRule as RecurrenceRule;
@@ -112,6 +117,7 @@ export class RecurrenceCronService {
           updatedAt: new Date(),
         });
         created++;
+        usersWithNewInstances.add(parent.userId);
       }
     }
 
@@ -122,6 +128,17 @@ export class RecurrenceCronService {
           created,
         }),
       );
+      for (const uid of usersWithNewInstances) {
+        void this.push.notifyInboxUpdated(uid).catch((e) =>
+          this.log.warn(
+            logWithContext('inbox_updated push failed', {
+              userId: uid,
+              scope: 'cron.recurrence',
+              err: e instanceof Error ? e.message : String(e),
+            }),
+          ),
+        );
+      }
     }
   }
 

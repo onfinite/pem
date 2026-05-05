@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { MessagingModule } from '@/modules/messaging/messaging.module';
+import { PushModule } from '@/modules/push/push.module';
 import { DatabaseModule } from '@/database/database.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { CalendarController } from '@/modules/calendar/calendar.controller';
@@ -15,6 +16,7 @@ import { GoogleCalendarService } from '@/modules/calendar/services/google-calend
   imports: [
     forwardRef(() => MessagingModule),
     DatabaseModule,
+    PushModule,
     UsersModule,
     BullModule.registerQueue({ name: 'calendar-sync' }),
   ],

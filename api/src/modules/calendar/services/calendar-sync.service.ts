@@ -19,6 +19,7 @@ import {
 import { isGoogleInvalidGrantError } from '@/modules/calendar/helpers/is-google-invalid-grant';
 import { sanitizeGoogleEventLocation } from '@/modules/calendar/helpers/sanitize-google-event-location';
 import { ChatEventsService } from '@/modules/messaging/chat-events.service';
+import { PushService } from '@/modules/push/push.service';
 import { CalendarConnectionService } from '@/modules/calendar/services/calendar-connection.service';
 import {
   GoogleCalendarService,
@@ -40,6 +41,7 @@ export class CalendarSyncService {
     private readonly connections: CalendarConnectionService,
     private readonly google: GoogleCalendarService,
     private readonly chatEvents: ChatEventsService,
+    private readonly push: PushService,
   ) {}
 
   /**
@@ -794,6 +796,17 @@ export class CalendarSyncService {
           event_end_at: event.end.toISOString(),
         },
       );
+      if (!isPast) {
+        void this.push.notifyInboxUpdated(conn.userId).catch((e) =>
+          this.log.warn(
+            logWithContext('inbox_updated push failed', {
+              userId: conn.userId,
+              scope: 'calendar_sync',
+              err: e instanceof Error ? e.message : String(e),
+            }),
+          ),
+        );
+      }
     }
   }
 
