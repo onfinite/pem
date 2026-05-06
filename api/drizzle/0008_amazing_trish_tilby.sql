@@ -1,1 +1,0 @@
-DROP TABLE "follow_ups" CASCADE;
