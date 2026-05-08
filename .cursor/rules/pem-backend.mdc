@@ -29,7 +29,7 @@ globs: api/**
 6. **Respond** — save Pem response message, publish via SSE, push notification
 7. **Embed** chat lines into pgvector (background): **user** messages after successful handling; **Pem** replies when saved. **Idempotent** per `message_id` (unique index). Stored text is `[ISO] user:|pem: …` for RAG clarity.
 
-**Redis:** **`REDIS_URL`** (TCP) for BullMQ + `ChatEventsService` pub/sub; if unset, **`UPSTASH_REDIS_REST_URL`** + **`UPSTASH_REDIS_REST_TOKEN`** derive a `rediss://` URL from the REST host. **`RedisCoreModule`** / **`UpstashRestRedisService`** exposes **`@upstash/redis`** when those REST vars are set. Details: **`api/README.md`** (beta checklist).
+**Redis:** **`REDIS_URL`** (TCP) for BullMQ + `ChatEventsService` pub/sub — same variable locally and in production (e.g. Railway Redis). Details: **`api/README.md`** (beta checklist).
 
 **SSE:** `GET /chat/stream` — `X-Accel-Buffering: no`, **heartbeat** every **30s** (type `heartbeat`), events: `status`, `pem_message`, `message_updated`, `processing_failed` (final job failure). Redis pub/sub via `ChatEventsService` (`chat-events:{userId}`).
 
