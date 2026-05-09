@@ -1,5 +1,6 @@
 import SocialSignInButtons from "@/components/auth/SocialSignInButtons";
 import ScreenScroll from "@/components/layout/ScreenScroll";
+import PemLoadingIndicator from "@/components/ui/PemLoadingIndicator";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { space } from "@/constants/typography";
@@ -36,7 +37,13 @@ export default function WelcomeScreen() {
     Animated.parallel(animations).start();
   }, [anims]);
 
-  if (!isLoaded) return null;
+  if (!isLoaded) {
+    return (
+      <View style={styles.loadingFill}>
+        <PemLoadingIndicator placement="pageCenter" />
+      </View>
+    );
+  }
   if (isSignedIn) return <Redirect href="/chat" />;
 
   return (
@@ -94,6 +101,9 @@ export default function WelcomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingFill: {
+    flex: 1,
+  },
   scrollInner: {
     flexGrow: 1,
     justifyContent: "center",

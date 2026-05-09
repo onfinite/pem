@@ -1,17 +1,20 @@
+import { ClerkStuckRecovery } from "@/components/auth/ClerkStuckRecovery";
 import SplashScreenView from "@/components/views/SplashScreenView";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
+import { CLERK_CLIENT_JWT_STORAGE_KEY } from "@/constants/clerkStorage";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { pemFontSources } from "@/constants/fonts";
 import { MAX_APP_CONTENT_WIDTH } from "@/constants/layout";
 import { pemAmber } from "@/constants/theme";
-import { ClerkProvider } from "@clerk/expo";
-import { tokenCache } from "@clerk/expo/token-cache";
+import { ClerkProvider, getClerkInstance } from "@clerk/expo";
+import { alignClerkStorageWithPublishableKey } from "@/services/auth/alignClerkStorageWithPublishableKey";
+import { pemClerkTokenCache } from "@/services/auth/pemClerkTokenCache";
 import { useFonts } from "expo-font";
 import { Slot } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
@@ -102,9 +105,65 @@ function RootLayoutInner() {
 }
 
 export default function RootLayout() {
+  const [clerkStorageSynced, setClerkStorageSynced] = useState(false);
+  const [clerkMountKey, setClerkMountKey] = useState(0);
+  const stuckRecoveryCount = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        await alignClerkStorageWithPublishableKey(publishableKey);
+      } finally {
+        if (!cancelled) setClerkStorageSynced(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleClerkStuck = useCallback(() => {
+    stuckRecoveryCount.current += 1;
+    if (stuckRecoveryCount.current > 2) return;
+    void (async () => {
+      if (typeof pemClerkTokenCache?.clearToken === "function") {
+        await pemClerkTokenCache.clearToken(CLERK_CLIENT_JWT_STORAGE_KEY);
+      }
+      try {
+        const clerk = getClerkInstance({
+          publishableKey,
+          tokenCache: pemClerkTokenCache,
+        });
+        const reload = (
+          clerk as { __internal_reloadInitialResources?: () => Promise<void> }
+        ).__internal_reloadInitialResources;
+        if (typeof reload === "function") {
+          await reload();
+        }
+      } catch {
+        // Clerk may not be constructible yet; remount still nudges native bootstrap.
+      }
+      setClerkMountKey((k) => k + 1);
+    })();
+  }, []);
+
+  if (!clerkStorageSynced) {
+    return (
+      <ErrorBoundary>
+        <View style={styles.clerkBootstrapRoot} />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
-      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+      <ClerkProvider
+        key={clerkMountKey}
+        publishableKey={publishableKey}
+        tokenCache={pemClerkTokenCache}
+      >
+        <ClerkStuckRecovery onStuck={handleClerkStuck} />
         <ThemeProvider>
           <SafeAreaProvider initialMetrics={initialWindowMetrics ?? undefined}>
             <GestureHandlerRootView style={styles.gestureRoot}>
@@ -118,6 +177,10 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  clerkBootstrapRoot: {
+    flex: 1,
+    backgroundColor: pemAmber,
+  },
   gestureRoot: {
     flex: 1,
   },

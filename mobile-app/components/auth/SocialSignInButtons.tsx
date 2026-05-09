@@ -1,89 +1,32 @@
+import GoogleGLogo from "@/components/auth/GoogleGLogo";
 import PemText from "@/components/ui/PemText";
 import { useTheme } from "@/contexts/ThemeContext";
 import { fontFamily, fontSize, lh, lineHeight, radii, space } from "@/constants/typography";
-import { useSSO } from "@clerk/expo";
+import { useClerkSocialSso } from "@/hooks/auth/useClerkSocialSso";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useRouter } from "expo-router";
-import GoogleGLogo from "@/components/auth/GoogleGLogo";
-import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
-
-type LoadingId = "google" | "apple" | null;
 
 /**
  * Clerk SSO (Google + Apple). Requires `expo-auth-session` + `expo-web-browser`
- * and Google / Apple enabled in the Clerk dashboard.
+ * and Google / Apple enabled in the Clerk dashboard (same instance as the publishable key).
  */
 export default function SocialSignInButtons() {
   const { colors } = useTheme();
-  const { startSSOFlow } = useSSO();
-  const router = useRouter();
-  const [loading, setLoading] = useState<LoadingId>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const finish = useCallback(
-    async (result: {
-      createdSessionId: string | null;
-      setActive?: (args: { session: string }) => Promise<void>;
-      authSessionResult: { type: string } | null;
-    }) => {
-      const { createdSessionId, setActive, authSessionResult } = result;
-
-      if (
-        authSessionResult?.type === "cancel" ||
-        authSessionResult?.type === "dismiss"
-      ) {
-        return;
-      }
-
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
-        router.replace("/chat");
-        return;
-      }
-
-      if (!createdSessionId) {
-        setMessage("Sign-in did not complete. Try again.");
-      }
-    },
-    [router],
-  );
-
-  const onGoogle = useCallback(async () => {
-    setMessage(null);
-    setLoading("google");
-    try {
-      const result = await startSSOFlow({ strategy: "oauth_google" });
-      await finish(result);
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Google sign-in failed.");
-    } finally {
-      setLoading(null);
-    }
-  }, [finish, startSSOFlow]);
-
-  const onApple = useCallback(async () => {
-    setMessage(null);
-    setLoading("apple");
-    try {
-      const result = await startSSOFlow({ strategy: "oauth_apple" });
-      await finish(result);
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Apple sign-in failed.");
-    } finally {
-      setLoading(null);
-    }
-  }, [finish, startSSOFlow]);
-
-  const busy = loading !== null;
+  const { onGoogle, onApple, message, loading, busy, clerkOAuthReady, disableAuth } =
+    useClerkSocialSso();
 
   return (
     <View style={styles.wrap}>
+      {!clerkOAuthReady ? (
+        <PemText variant="caption" style={[styles.preparing, { color: colors.textTertiary }]}>
+          Preparing sign-in…
+        </PemText>
+      ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Continue with Google"
         onPress={onGoogle}
-        disabled={busy}
+        disabled={disableAuth}
         style={({ pressed }) => [
           styles.btn,
           {
@@ -91,7 +34,7 @@ export default function SocialSignInButtons() {
             borderWidth: 1,
             borderColor: colors.border,
           },
-          pressed && !busy && styles.pressed,
+          pressed && !disableAuth && styles.pressed,
           busy && loading !== "google" && styles.dimmed,
         ]}
       >
@@ -111,11 +54,11 @@ export default function SocialSignInButtons() {
         accessibilityRole="button"
         accessibilityLabel="Continue with Apple"
         onPress={onApple}
-        disabled={busy}
+        disabled={disableAuth}
         style={({ pressed }) => [
           styles.btn,
           styles.apple,
-          pressed && !busy && styles.pressed,
+          pressed && !disableAuth && styles.pressed,
           busy && loading !== "apple" && styles.dimmed,
         ]}
       >
@@ -143,6 +86,10 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 320,
     gap: space[3],
+  },
+  preparing: {
+    textAlign: "center",
+    marginBottom: space[1],
   },
   btn: {
     minHeight: 52,

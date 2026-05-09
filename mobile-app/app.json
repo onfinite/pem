@@ -19,13 +19,14 @@
           "NSAllowsLocalNetworking": true
         }
       },
-      "bundleIdentifier": "com.anonymous.pem"
+      "bundleIdentifier": "com.heypem.pem"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "@clerk/expo",
       "expo-dev-client",
       "expo-router",
       [
