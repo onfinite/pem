@@ -2,11 +2,14 @@
   "expo": {
     "name": "Pem",
     "slug": "pem",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/pem-icon-1024-transparent.png",
     "scheme": "pem",
-    "platforms": ["ios", "web"],
+    "platforms": [
+      "ios",
+      "web"
+    ],
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
@@ -17,9 +20,11 @@
         "NSCameraUsageDescription": "Pem uses the camera so you can snap a photo and attach it to chat.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.heypem.pem"
+      "bundleIdentifier": "com.heypem.pem",
+      "buildNumber": "2"
     },
     "web": {
       "output": "static",
@@ -54,6 +59,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "bd6ffeae-3b17-4676-993d-a905440a6b03"
+      },
+      "router": {}
     }
   }
 }
