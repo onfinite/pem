@@ -16,7 +16,11 @@ export function useClerkSocialSso() {
   const [loading, setLoading] = useState<"google" | "apple" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const redirectUrl = useMemo(
-    () => AuthSession.makeRedirectUri({ path: "sso-callback" }),
+    () =>
+      AuthSession.makeRedirectUri({
+        scheme: "pem",
+        path: "sso-callback",
+      }),
     [],
   );
 
