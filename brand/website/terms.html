@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — Pem</title>
+  <meta name="description" content="Terms of Service for Pem, your AI brain for voice, photos, and text.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,300;0,9..144,400;1,9..144,200;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --cream: #faf8f4;
+      --cream-dark: #111110;
+      --border: #e8e2d8;
+      --border-dark: #2a2826;
+      --text: #1c1a16;
+      --text-dark: #eae7e2;
+      --text2: #6b6560;
+      --text2-dark: #9a938c;
+      --muted: #b8b0a4;
+      --muted-dark: #5a5450;
+      --amber: #e8763a;
+      --amber-dark: #c45e22;
+      --card: #ffffff;
+      --card-dark: #1c1b19;
+    }
+
+    body {
+      background: var(--cream);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 400;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.6;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body { background: var(--cream-dark); color: var(--text-dark); }
+      nav { border-color: var(--border-dark); }
+      nav a { color: var(--text-dark); }
+      .content { border-color: var(--border-dark); background: var(--card-dark); }
+      footer { border-color: var(--border-dark); }
+      h2, h3 { color: var(--text-dark); }
+      p, li { color: var(--text2-dark); }
+    }
+
+    /* ─── Nav ─── */
+    nav {
+      border-bottom: 1px solid var(--border);
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-logo {
+      font-family: 'Fraunces', serif;
+      font-weight: 300;
+      font-size: 22px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .nav-logo em { font-style: italic; color: var(--amber); }
+    .nav-sep { color: var(--muted); font-size: 13px; }
+    .nav-page { font-size: 13px; color: var(--text2); }
+
+    /* ─── Main content ─── */
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 60px 40px 100px;
+    }
+
+    .page-header {
+      margin-bottom: 48px;
+    }
+    .kicker {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      color: var(--amber);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-family: 'Fraunces', serif;
+      font-weight: 200;
+      font-size: clamp(28px, 3.5vw, 42px);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+    .effective-date {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .content {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+    }
+
+    h2 {
+      font-family: 'Fraunces', serif;
+      font-weight: 300;
+      font-size: 20px;
+      color: var(--text);
+      margin: 36px 0 12px;
+    }
+    h2:first-child { margin-top: 0; }
+
+    h3 {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text);
+      margin: 20px 0 8px;
+    }
+
+    p {
+      font-size: 15px;
+      color: var(--text2);
+      line-height: 1.7;
+      margin-bottom: 14px;
+    }
+    p:last-child { margin-bottom: 0; }
+
+    ul, ol {
+      padding-left: 20px;
+      margin-bottom: 14px;
+    }
+    li {
+      font-size: 15px;
+      color: var(--text2);
+      line-height: 1.7;
+      margin-bottom: 6px;
+    }
+
+    a { color: var(--amber); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 32px 0;
+    }
+
+    /* ─── Footer ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    footer a { color: var(--amber); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    .footer-links { display: flex; gap: 24px; }
+
+    @media (max-width: 680px) {
+      nav { padding: 16px 20px; }
+      main { padding: 40px 20px 80px; }
+      .content { padding: 24px 20px; }
+      footer { flex-direction: column; gap: 12px; text-align: center; padding: 24px 20px; }
+      .footer-links { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html" class="nav-logo">P<em>em</em></a>
+  <span class="nav-sep">/</span>
+  <span class="nav-page">Terms of Service</span>
+</nav>
+
+<main>
+  <div class="page-header">
+    <div class="kicker">Legal</div>
+    <h1>Terms of Service</h1>
+    <p class="effective-date">Effective date: May 17, 2026</p>
+  </div>
+
+  <div class="content">
+    <p>These Terms of Service ("Terms") govern your access to and use of the Pem mobile application and related services (collectively, the "Service") operated by Pem ("we," "us," or "our"). By creating an account or using the Service you agree to these Terms.</p>
+
+    <h2>1. The Service</h2>
+    <p>Pem is a personal productivity application that lets you capture thoughts, voice memos, photos, and text. The Service processes your inputs to extract actionable items, organize them by category and timing, and surface what matters to you through an inbox. Pem organizes — you execute. The Service does not autonomously send messages, make purchases, or take binding actions on your behalf.</p>
+
+    <h2>2. Eligibility</h2>
+    <p>You must be at least 13 years old (or the minimum age required by law in your jurisdiction) to use the Service. By using the Service, you represent that you meet this requirement. If you are under 18, you represent that a parent or legal guardian has reviewed and agreed to these Terms on your behalf.</p>
+
+    <h2>3. Accounts</h2>
+    <p>You may sign in using a third-party identity provider (currently Google and Apple). You are responsible for maintaining the security of your account and for all activity that occurs under it. Notify us immediately at <a href="mailto:hello@heypem.com">hello@heypem.com</a> if you suspect unauthorized access.</p>
+
+    <h2>4. Your Content</h2>
+    <h3>Ownership</h3>
+    <p>You retain ownership of all text, voice recordings, photos, and other content you submit to the Service ("Your Content"). By using the Service you grant us a limited, non-exclusive license to process Your Content solely for the purpose of providing the Service to you.</p>
+
+    <h3>Responsibility</h3>
+    <p>You are responsible for Your Content. You agree not to submit content that is unlawful, harmful, threatening, abusive, defamatory, or that infringes any third-party rights.</p>
+
+    <h3>Deletion</h3>
+    <p>You may delete Your Content or your account at any time. Upon account deletion, Your Content will be removed from our active systems within a reasonable period, subject to applicable legal retention obligations.</p>
+
+    <h2>5. Acceptable Use</h2>
+    <p>You agree not to:</p>
+    <ul>
+      <li>Use the Service for any unlawful purpose or in violation of any regulations.</li>
+      <li>Attempt to gain unauthorized access to any part of the Service or its related systems.</li>
+      <li>Reverse engineer, decompile, or attempt to extract the source code of the Service.</li>
+      <li>Use the Service to transmit spam, malware, or any harmful or deceptive content.</li>
+      <li>Interfere with or disrupt the integrity or performance of the Service.</li>
+      <li>Scrape or systematically extract data from the Service without our written permission.</li>
+    </ul>
+
+    <h2>6. AI-Generated Content</h2>
+    <p>The Service uses artificial intelligence to process your inputs and generate organized summaries, extracted tasks, and suggested actions. AI-generated outputs may be inaccurate, incomplete, or inappropriate. You are solely responsible for reviewing and verifying any AI-generated content before acting on it. We make no warranties regarding the accuracy, completeness, or fitness of AI outputs for any purpose.</p>
+
+    <h2>7. Privacy</h2>
+    <p>Your use of the Service is also governed by our <a href="privacy.html">Privacy Policy</a>, which is incorporated into these Terms by reference.</p>
+
+    <h2>8. Intellectual Property</h2>
+    <p>The Service, including its design, software, trademarks, and content we create, is owned by us and protected by applicable intellectual property laws. These Terms do not grant you any right to use our trademarks, logos, or other brand elements without our prior written consent.</p>
+
+    <h2>9. Third-Party Services</h2>
+    <p>The Service may integrate with or link to third-party services (such as Google or Apple for authentication). Your use of those services is governed by their own terms and privacy policies. We are not responsible for third-party services.</p>
+
+    <h2>10. Disclaimers</h2>
+    <p>The Service is provided "as is" and "as available" without warranties of any kind, either express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, or non-infringement. We do not warrant that the Service will be uninterrupted, error-free, or free of harmful components.</p>
+
+    <h2>11. Limitation of Liability</h2>
+    <p>To the fullest extent permitted by law, we will not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of or inability to use the Service, even if we have been advised of the possibility of such damages. Our total liability to you for any claim arising from or related to these Terms or the Service will not exceed the greater of (a) $100 USD or (b) the amount you paid us in the twelve months preceding the claim.</p>
+
+    <h2>12. Indemnification</h2>
+    <p>You agree to indemnify and hold harmless Pem and its officers, directors, employees, and agents from any claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of or in connection with your use of the Service or your violation of these Terms.</p>
+
+    <h2>13. Changes to the Service and Terms</h2>
+    <p>We may modify the Service or these Terms at any time. When we make material changes to these Terms, we will update the effective date above and notify you via the app or the email address associated with your account. Your continued use of the Service after changes take effect constitutes your acceptance of the revised Terms.</p>
+
+    <h2>14. Termination</h2>
+    <p>We may suspend or terminate your access to the Service at any time for violation of these Terms or for any other reason, with or without notice. You may stop using the Service and delete your account at any time. Sections that by their nature should survive termination will do so, including sections on intellectual property, disclaimers, and limitation of liability.</p>
+
+    <h2>15. Governing Law</h2>
+    <p>These Terms are governed by the laws of the State of California, United States, without regard to conflict of law principles. Any disputes will be resolved in the state or federal courts located in San Francisco County, California, and you consent to personal jurisdiction in those courts.</p>
+
+    <h2>16. Contact</h2>
+    <p>If you have questions about these Terms, please contact us at <a href="mailto:hello@heypem.com">hello@heypem.com</a>.</p>
+  </div>
+</main>
+
+<footer>
+  <span>&copy; 2026 Pem</span>
+  <div class="footer-links">
+    <a href="terms.html">Terms</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="index.html">Home</a>
+  </div>
+</footer>
+
+</body>
+</html>

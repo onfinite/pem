@@ -45,8 +45,22 @@ export function useClerkSocialSso() {
       setMessage(null);
       setLoading(label);
       try {
-        if (__DEV__) console.info("[Pem] Clerk SSO redirectUrl:", redirectUrl);
-        await finish(await recoverClerkSsoSessionIfNeeded(await startSSOFlow({ strategy, redirectUrl })));
+        if (__DEV__) console.warn("[Pem] Clerk SSO redirectUrl:", redirectUrl);
+        const ssoResult = await startSSOFlow({ strategy, redirectUrl });
+        // User agreed to legal terms on the welcome screen ("By continuing, you agree to…").
+        // Clerk requires explicit acceptance for new sign-ups when legal consent is enabled.
+        if (
+          !ssoResult.createdSessionId &&
+          ssoResult.signUp?.status === "missing_requirements" &&
+          ssoResult.signUp.missingFields?.length === 1 &&
+          ssoResult.signUp.missingFields[0] === "legal_accepted"
+        ) {
+          await ssoResult.signUp.update({ legalAccepted: true });
+        }
+        await finish(await recoverClerkSsoSessionIfNeeded({
+          ...ssoResult,
+          createdSessionId: ssoResult.signUp?.createdSessionId ?? ssoResult.createdSessionId,
+        }));
       } catch (e) {
         setMessage(e instanceof Error ? e.message : `${label} sign-in failed.`);
       } finally {

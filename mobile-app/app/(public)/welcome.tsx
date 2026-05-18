@@ -13,8 +13,8 @@ import { Animated, Image, StyleSheet, View } from "react-native";
 
 const pemLogo = require("@/assets/images/pem-icon-1024-transparent.png");
 
-const TERMS_URL = "https://heypem.com/terms";
-const PRIVACY_URL = "https://heypem.com/privacy";
+const TERMS_URL = "https://heypem.com/terms.html";
+const PRIVACY_URL = "https://heypem.com/privacy.html";
 
 const STAGGER_MS = 180;
 const FADE_DURATION = 500;

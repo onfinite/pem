@@ -570,7 +570,7 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.borderMuted, padding: 0, overflow: "hidden" }]}>
           <Pressable
             style={styles.legalRow}
-            onPress={() => void openExternalUrl("https://heypem.com/terms")}
+            onPress={() => void openExternalUrl("https://heypem.com/terms.html")}
           >
             <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>Terms of Service</PemText>
             <ChevronRight size={16} stroke={colors.textTertiary} />
@@ -578,7 +578,7 @@ export default function SettingsScreen() {
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.borderMuted }} />
           <Pressable
             style={styles.legalRow}
-            onPress={() => void openExternalUrl("https://heypem.com/privacy")}
+            onPress={() => void openExternalUrl("https://heypem.com/privacy.html")}
           >
             <PemText variant="body" style={{ flex: 1, color: colors.textPrimary }}>Privacy Policy</PemText>
             <ChevronRight size={16} stroke={colors.textTertiary} />
